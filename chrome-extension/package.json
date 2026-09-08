@@ -1,0 +1,10 @@
+{
+  "name": "shorthand-autofill-extension",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chrome extension that expands shorthands such as cool/ into full text.",
+  "scripts": {
+    "test": "node --test",
+    "check": "for f in src/*.js; do node --check \"$f\" || exit 1; done"
+  }
+}

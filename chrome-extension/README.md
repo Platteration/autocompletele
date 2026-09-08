@@ -32,10 +32,10 @@ inside it (the attribute also applies to all descendants).
 | `src/background.js`  | Service worker: seeds examples, keeps badge in sync     |
 | `src/options.*`      | Options page: manage, import, export, excluded sites    |
 | `src/popup.*`        | Toolbar popup: quick on/off, per-site on/off            |
-| `test/`              | Unit tests (`node --test chrome-extension/test`)        |
+| `test/`              | Unit tests (`npm test` in `chrome-extension/`)        |
 
 ## Tests
 
 ```
-node --test chrome-extension/test
+cd chrome-extension && npm test
 ```

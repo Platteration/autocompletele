@@ -15,9 +15,9 @@ jobs:
         with:
           node-version: "22"
       - name: Unit tests
-        run: node --test chrome-extension/test
+        run: cd chrome-extension && npm test
       - name: Syntax check
-        run: for f in chrome-extension/src/*.js; do node --check "$f"; done
+        run: cd chrome-extension && npm run check
 
   windows:
     name: Windows app build and tests

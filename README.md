@@ -46,7 +46,7 @@ builds the Android APK and runs its unit tests (uploading the debug APK).
 ## Tests
 
 ```
-node --test chrome-extension/test                         # extension logic
+cd chrome-extension && npm test                            # extension logic
 cd windows && dotnet run --project ShorthandExpander.Tests # Windows logic + storage
 cd android && ./gradlew testDebugUnitTest                  # Android logic + JSON
 ```
