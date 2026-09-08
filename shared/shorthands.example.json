@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "shorthands": [
+    { "trigger": "cool/", "expansion": "That is really cool, thanks for sharing!" },
+    { "trigger": "brb/", "expansion": "Be right back, give me a few minutes." },
+    { "trigger": "addr/", "expansion": "123 Example Street\nSpringfield, 12345" },
+    { "trigger": "sig/", "expansion": "Best regards,\n{cursor}" },
+    { "trigger": "td/", "expansion": "{date}" },
+    { "trigger": "now/", "expansion": "{datetime}" }
+  ]
+}

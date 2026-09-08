@@ -1,0 +1,14 @@
+# Windows / .NET
+windows/**/bin/
+windows/**/obj/
+*.user
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+# misc
+node_modules/
+.DS_Store
