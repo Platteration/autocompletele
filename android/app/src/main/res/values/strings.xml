@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Shorthand Expander</string>
+    <string name="accessibility_service_description">Watches text fields for shorthands you define (for example cool/) and replaces them with their full text as you type. Text is only read to find your triggers and is never stored or sent anywhere.</string>
+
+    <string name="status_service_on">Accessibility service is ON – shorthands expand in other apps.</string>
+    <string name="status_service_off">Accessibility service is OFF – shorthands will not expand until it is turned on.</string>
+    <string name="enable_service">Turn on in Accessibility settings</string>
+    <string name="expansion_enabled">Expansion enabled</string>
+    <string name="placeholder_hint">Placeholders: {date}, {time}, {datetime}, {cursor}. Triggers fire after a space, punctuation or at the start of a line.</string>
+    <string name="empty_list">No shorthands yet. Tap “Add shorthand” to create one.</string>
+    <string name="add_shorthand">Add shorthand</string>
+    <string name="edit_shorthand">Edit shorthand</string>
+    <string name="trigger">Trigger</string>
+    <string name="trigger_hint">cool/</string>
+    <string name="expansion">Expansion</string>
+    <string name="expansion_hint">That is really cool, thanks for sharing!</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="menu_import">Import JSON</string>
+    <string name="menu_export">Export JSON</string>
+    <string name="error_trigger_empty">Please enter a trigger.</string>
+    <string name="error_trigger_space">A trigger cannot contain spaces.</string>
+    <string name="error_trigger_duplicate">That trigger is already used.</string>
+    <string name="import_replace_title">Import shorthands</string>
+    <string name="import_replace_message">Replace your %1$d shorthand(s) with the %2$d from the file, or merge them?</string>
+    <string name="replace">Replace</string>
+    <string name="merge">Merge</string>
+    <string name="import_done">Imported %1$d shorthand(s).</string>
+    <string name="import_failed">Could not read that file: %1$s</string>
+    <string name="import_empty">No shorthands were found in that file.</string>
+    <string name="export_done">Exported %1$d shorthand(s).</string>
+    <string name="export_failed">Could not write that file: %1$s</string>
+    <string name="export_file_name">shorthands.json</string>
+</resources>

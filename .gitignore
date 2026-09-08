@@ -12,3 +12,4 @@ android/.idea/
 # misc
 node_modules/
 .DS_Store
+__pycache__/
