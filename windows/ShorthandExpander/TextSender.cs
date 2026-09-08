@@ -10,6 +10,7 @@ namespace ShorthandExpander
     public static class TextSender
     {
         private const int ChunkSize = 64;
+        private static readonly object SendLock = new object();
 
         /// <summary>
         /// Delete <paramref name="backspaces"/> characters before the caret, type
@@ -17,6 +18,41 @@ namespace ShorthandExpander
         /// <paramref name="cursorOffset"/> characters into the inserted text.
         /// </summary>
         public static void Replace(int backspaces, string text, int cursorOffset, bool shiftEnterForNewlines)
+        {
+            lock (SendLock) ReplaceCore(backspaces, text, cursorOffset, shiftEnterForNewlines);
+        }
+
+        /// <summary>
+        /// Reverse an expansion: delete <paramref name="charsAfterCaret"/> characters after the
+        /// caret and <paramref name="charsBeforeCaret"/> before it, then type <paramref name="trigger"/>.
+        /// </summary>
+        public static void Undo(int charsBeforeCaret, int charsAfterCaret, string trigger)
+        {
+            lock (SendLock)
+            {
+                var inputs = new List<INPUT>();
+                for (int i = 0; i < charsAfterCaret; i++) AddKey(inputs, VK_DELETE);
+                for (int i = 0; i < charsBeforeCaret; i++) AddKey(inputs, VK_BACK);
+                Flush(inputs);
+                Thread.Sleep(10);
+                foreach (char c in trigger) AddUnicode(inputs, c);
+                Flush(inputs);
+            }
+        }
+
+        /// <summary>Number of caret steps a piece of text occupies (newlines and surrogate pairs count once).</summary>
+        public static int CaretSteps(string text)
+        {
+            int n = 0;
+            foreach (char c in text)
+            {
+                if (c == '\r' || char.IsLowSurrogate(c)) continue;
+                n++;
+            }
+            return n;
+        }
+
+        private static void ReplaceCore(int backspaces, string text, int cursorOffset, bool shiftEnterForNewlines)
         {
             var inputs = new List<INPUT>();
             for (int i = 0; i < backspaces; i++) AddKey(inputs, VK_BACK);

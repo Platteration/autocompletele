@@ -9,9 +9,17 @@ textarea or rich-text editor (contenteditable), as you type.
 2. Click **Load unpacked** and choose this `chrome-extension` folder.
 3. The options page opens automatically; add your shorthands there.
 
+Type a trigger in the **Try it** box on the options page to see it work.
+Press Backspace right after an expansion to get the trigger back.
+
 The list is stored in `chrome.storage.sync`, so it follows your Chrome profile.
 Use **Export JSON** / **Import JSON** on the options page to move it to the
 Windows and Android apps (same file format, see `../shared/SPEC.md`).
+
+## For site authors
+
+Add `data-shorthand-ignore` to any element to stop the extension expanding
+inside it (the attribute also applies to all descendants).
 
 ## Files
 

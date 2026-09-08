@@ -92,6 +92,13 @@ object Expander {
         return Rendered(text, if (cursor < 0) text.length else cursor)
     }
 
+    /** The text after one Backspace at [caret] (a surrogate pair counts as one character), or null. */
+    fun deleteCharBefore(text: String, caret: Int): String? {
+        if (caret <= 0 || caret > text.length) return null
+        val n = if (caret >= 2 && Character.isLowSurrogate(text[caret - 1]) && Character.isHighSurrogate(text[caret - 2])) 2 else 1
+        return text.substring(0, caret - n) + text.substring(caret)
+    }
+
     /** Trim triggers, drop empties and duplicates (first one wins). */
     fun sanitize(list: List<Shorthand?>?): List<Shorthand> {
         if (list == null) return emptyList()

@@ -20,7 +20,7 @@
     </label>
     <label class="row column">
       <span>Never expand on these sites (one hostname per line)</span>
-      <textarea id="excluded" rows="3" placeholder="example.com&#10;mail.google.com"></textarea>
+      <textarea id="excluded" rows="3" placeholder="example.com&#10;mail.google.com" data-shorthand-ignore></textarea>
     </label>
   </section>
 
@@ -30,10 +30,10 @@
       <input type="hidden" id="editId">
       <div class="fields">
         <label>Trigger
-          <input type="text" id="trigger" placeholder="cool/" autocomplete="off" required>
+          <input type="text" id="trigger" placeholder="cool/" autocomplete="off" data-shorthand-ignore required>
         </label>
         <label>Expansion
-          <textarea id="expansion" rows="3" placeholder="That is really cool, thanks for sharing!" required></textarea>
+          <textarea id="expansion" rows="3" placeholder="That is really cool, thanks for sharing!" data-shorthand-ignore required></textarea>
         </label>
       </div>
       <div class="actions">
@@ -51,6 +51,12 @@
   </section>
 
   <section class="card">
+    <h2>Try it</h2>
+    <p class="hint">Type one of your triggers below to see it expand. Press Backspace right after an expansion to get the trigger back.</p>
+    <textarea id="tryit" rows="3" placeholder="cool/"></textarea>
+  </section>
+
+  <section class="card">
     <h2>Import / export</h2>
     <p class="hint">Uses the same JSON file as the Windows and Android apps, so one list can be shared everywhere.</p>
     <div class="actions">
@@ -63,6 +69,7 @@
 
   <script src="expander.js"></script>
   <script src="storage.js"></script>
+  <script src="content.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

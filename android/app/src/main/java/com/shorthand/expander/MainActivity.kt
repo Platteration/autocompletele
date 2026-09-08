@@ -149,7 +149,6 @@ class MainActivity : Activity() {
             type = "*/*"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/plain", "application/octet-stream"))
         }
-        @Suppress("DEPRECATION")
         startActivityForResult(intent, REQUEST_IMPORT)
     }
 
@@ -159,11 +158,9 @@ class MainActivity : Activity() {
             type = "application/json"
             putExtra(Intent.EXTRA_TITLE, getString(R.string.export_file_name))
         }
-        @Suppress("DEPRECATION")
         startActivityForResult(intent, REQUEST_EXPORT)
     }
 
-    @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return

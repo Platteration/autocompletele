@@ -13,6 +13,8 @@
     <Compile Include="../ShorthandExpander/Expander.cs" />
     <Compile Include="../ShorthandExpander/Models.cs" />
     <Compile Include="../ShorthandExpander/ShorthandStore.cs" />
+    <Compile Include="../ShorthandExpander/TextSender.cs" />
+    <Compile Include="../ShorthandExpander/NativeMethods.cs" />
   </ItemGroup>
 
 </Project>

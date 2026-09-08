@@ -45,6 +45,18 @@ Triggers therefore usually end in a character that is not part of ordinary
 words, such as `/`, `;` or `\`. That character acts as the "go" key, so a
 trigger like `cool/` never interferes with typing the word "cool".
 
+## Undo
+
+Pressing **Backspace** as the very next key after an expansion removes the
+expansion and puts the trigger back, so an accidental expansion costs one
+keystroke. Any other key, click or focus change closes the undo window.
+
+## Opting a field out (web only)
+
+Site authors and the extension's own options page can mark an element with
+`data-shorthand-ignore`; the extension never expands inside it or its
+descendants.
+
 ## Placeholders
 
 The following placeholders are substituted inside an expansion:

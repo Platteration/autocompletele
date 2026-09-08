@@ -30,7 +30,14 @@ or copy it over and open it).
 2. Back in the app, add your shorthands with **Add shorthand**. Tap one to
    edit or delete it.
 3. Type a trigger in any other app. It is replaced as soon as you type its
-   last character.
+   last character. Press Backspace right after an expansion to put the
+   trigger back.
+
+On Android 13 and newer, an app installed from an APK (rather than an app
+store) is blocked from the accessibility toggle with a "Restricted setting"
+message. To allow it: open **Settings → Apps → Shorthand Expander**, tap the
+**⋮** menu in the top-right corner, choose **Allow restricted settings**, then
+try the accessibility toggle again.
 
 The **Expansion enabled** switch pauses expansion without turning the
 service off. The overflow menu offers **Import JSON** and **Export JSON**,

@@ -64,6 +64,13 @@ namespace ShorthandExpander.Tests
             Equal("a/", clean[0].Trigger, "trims trigger");
             Equal("A", clean[0].Expansion, "first duplicate wins");
 
+            Console.WriteLine("CaretSteps");
+            Equal(5, TextSender.CaretSteps("hello"), "plain text");
+            Equal(3, TextSender.CaretSteps("a\r\nb"), "CRLF counts once");
+            Equal(3, TextSender.CaretSteps("a\nb"), "LF counts once");
+            Equal(2, TextSender.CaretSteps("a\U0001F600"), "surrogate pair counts once");
+            Equal(0, TextSender.CaretSteps(""), "empty");
+
             Console.WriteLine("Store");
             string dir = Path.Combine(Path.GetTempPath(), "ShorthandExpanderTests-" + Guid.NewGuid().ToString("N"));
             try

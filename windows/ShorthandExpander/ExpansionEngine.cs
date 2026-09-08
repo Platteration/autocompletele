@@ -17,6 +17,16 @@ namespace ShorthandExpander
         private readonly KeyboardHook _hook;
         private readonly StringBuilder _buffer = new StringBuilder();
 
+        private sealed class UndoInfo
+        {
+            public string Trigger = "";
+            public int CharsBeforeCaret;
+            public int CharsAfterCaret;
+        }
+
+        /// <summary>Set right after an expansion; a Backspace as the very next key reverts it.</summary>
+        private UndoInfo? _undo;
+
         public event EventHandler<Shorthand>? Expanded;
 
         public ExpansionEngine(ShorthandStore store, KeyboardHook hook)
@@ -27,13 +37,35 @@ namespace ShorthandExpander
             _hook.FocusChanged = ResetBuffer;
         }
 
-        public void ResetBuffer() => _buffer.Clear();
+        public void ResetBuffer()
+        {
+            _buffer.Clear();
+            _undo = null;
+        }
 
         /// <summary>Returns true when the key should be swallowed.</summary>
         private bool OnKeyTyped(TypedKey key)
         {
             var settings = _store.Settings;
-            if (!settings.Enabled) { _buffer.Clear(); return false; }
+            if (!settings.Enabled) { ResetBuffer(); return false; }
+
+            var undo = _undo;
+            if (key.IsBackspace && undo != null)
+            {
+                _undo = null;
+                // Backspace right after an expansion puts the trigger back.
+                _buffer.Clear();
+                _buffer.Append(undo.Trigger);
+                Task.Run(() =>
+                {
+                    try { TextSender.Undo(undo.CharsBeforeCaret, undo.CharsAfterCaret, undo.Trigger); }
+                    catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Undo failed: " + ex); }
+                });
+                return true;
+            }
+            // A modifier or dead key on its own does not cancel the undo window.
+            if (!key.IsBackspace && !key.ResetsBuffer && key.Text.Length == 0) return false;
+            _undo = null;
 
             if (key.IsBackspace)
             {
@@ -65,6 +97,13 @@ namespace ShorthandExpander
             int backspaces = sh.Trigger.Length - key.Text.Length;
             if (backspaces < 0) backspaces = 0;
             _buffer.Clear();
+
+            _undo = new UndoInfo
+            {
+                Trigger = sh.Trigger,
+                CharsBeforeCaret = TextSender.CaretSteps(rendered.Text.Substring(0, rendered.CursorOffset)),
+                CharsAfterCaret = TextSender.CaretSteps(rendered.Text.Substring(rendered.CursorOffset)),
+            };
 
             bool shiftEnter = settings.ShiftEnterForNewlines;
             Task.Run(() =>

@@ -26,6 +26,10 @@ class ShorthandAccessibilityService : AccessibilityService() {
     private var lastInjectedText: String? = null
     private var lastInjectedAt = 0L
 
+    /** Details of the last expansion so a Backspace right after it can restore the trigger. */
+    private class UndoInfo(val expandedText: String, val expandedCaret: Int, val originalText: String, val originalCaret: Int)
+    private var undo: UndoInfo? = null
+
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> reload() }
 
     override fun onServiceConnected() {
@@ -62,33 +66,50 @@ class ShorthandAccessibilityService : AccessibilityService() {
             }
 
             val caret = caretPosition(node, event, text.length)
-            if (caret <= 0 || caret > text.length) return
 
+            // Backspace right after an expansion: the field now holds the expanded text
+            // minus one character before the caret. Put the trigger back.
+            val u = undo
+            undo = null
+            if (u != null && text == Expander.deleteCharBefore(u.expandedText, u.expandedCaret)) {
+                writeText(node, u.originalText, u.originalCaret)
+                return
+            }
+
+            if (caret <= 0 || caret > text.length) return
             val match = Expander.findMatch(text.substring(0, caret), shorthands) ?: return
             val rendered = Expander.render(match.shorthand.expansion)
             val newText = text.substring(0, match.start) + rendered.text + text.substring(caret)
             val newCaret = match.start + rendered.cursorOffset
 
-            lastInjectedText = newText
-            lastInjectedAt = SystemClock.uptimeMillis()
-
-            val setText = Bundle()
-            setText.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
-            if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setText)) {
-                lastInjectedText = null
+            if (writeText(node, newText, newCaret)) {
+                undo = UndoInfo(newText, newCaret, text, caret)
+            } else {
                 Log.w(TAG, "ACTION_SET_TEXT rejected by ${event.packageName}")
-                return
             }
-            val select = Bundle()
-            select.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, newCaret)
-            select.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, newCaret)
-            node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, select)
         } catch (e: Exception) {
             Log.w(TAG, "Expansion failed", e)
         } finally {
             @Suppress("DEPRECATION")
             node.recycle()
         }
+    }
+
+    /** Replace the field's text and place the caret; returns false if the app refused. */
+    private fun writeText(node: AccessibilityNodeInfo, text: String, caret: Int): Boolean {
+        lastInjectedText = text
+        lastInjectedAt = SystemClock.uptimeMillis()
+        val setText = Bundle()
+        setText.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setText)) {
+            lastInjectedText = null
+            return false
+        }
+        val select = Bundle()
+        select.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, caret)
+        select.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, caret)
+        node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, select)
+        return true
     }
 
     private fun findFocusedEditable(): AccessibilityNodeInfo? {

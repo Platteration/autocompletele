@@ -38,6 +38,7 @@ The executable lands in `ShorthandExpander\bin\Release\net8.0-windows\win-x64\pu
   (see `../shared/SPEC.md`), so you can copy the file between devices or use
   the Import / Export buttons.
 * Placeholders `{date}`, `{time}`, `{datetime}` and `{cursor}` are supported.
+* Press Backspace right after an expansion to put the trigger back.
 
 ## Notes and limitations
 

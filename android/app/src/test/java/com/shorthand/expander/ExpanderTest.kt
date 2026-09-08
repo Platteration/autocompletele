@@ -74,6 +74,14 @@ class ExpanderTest {
         assertTrue(Expander.sanitize(null).isEmpty())
     }
 
+    @Test fun deleteCharBefore() {
+        assertEquals("abd", Expander.deleteCharBefore("abcd", 3))
+        assertEquals("bcd", Expander.deleteCharBefore("abcd", 1))
+        assertEquals("a", Expander.deleteCharBefore("a\uD83D\uDE00", 3))
+        assertNull(Expander.deleteCharBefore("abcd", 0))
+        assertNull(Expander.deleteCharBefore("abcd", 5))
+    }
+
     @Test fun jsonRoundTrip() {
         val json = ShorthandJson.toJson(list)
         assertTrue(json.contains("\"version\": 1"))

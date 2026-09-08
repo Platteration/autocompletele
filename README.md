@@ -22,6 +22,8 @@ as it is preceded by a space, punctuation or the start of the field. So
 the longest match wins. Ending triggers with a symbol such as `/` means they
 never get in the way of normal words.
 
+Pressing Backspace right after an expansion puts the trigger back.
+
 Expansions may contain the placeholders `{date}`, `{time}`, `{datetime}` and
 `{cursor}` (where the caret should land afterwards). See
 [`shared/SPEC.md`](shared/SPEC.md) for the details.
@@ -34,6 +36,12 @@ Expansions may contain the placeholders `{date}`, `{time}`, `{datetime}` and
   (needs the .NET 8 SDK). See [windows/README.md](windows/README.md).
 * **Android:** open `android/` in Android Studio, run on your phone, then
   enable the service under *Accessibility*. See [android/README.md](android/README.md).
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs the extension tests, builds the Windows app
+and runs its tests on a Windows runner (uploading a single-file `.exe`), and
+builds the Android APK and runs its unit tests (uploading the debug APK).
 
 ## Tests
 
