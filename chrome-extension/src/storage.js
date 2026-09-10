@@ -6,7 +6,8 @@
 
   const PREFIX = "sh:";
   const SETTINGS_KEY = "settings";
-  const DEFAULT_SETTINGS = { enabled: true, excludedHosts: [] };
+  // pickerTrigger opens the search overlay; an empty string turns it off.
+  const DEFAULT_SETTINGS = { enabled: true, excludedHosts: [], pickerTrigger: ";;" };
 
   function newId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);

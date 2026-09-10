@@ -6,6 +6,7 @@
   const $ = (id) => document.getElementById(id);
   const enabledEl = $("enabled");
   const excludedEl = $("excluded");
+  const pickerTriggerEl = $("pickerTrigger");
   const form = $("editor");
   const editId = $("editId");
   const triggerEl = $("trigger");
@@ -77,6 +78,11 @@
     shorthands = data.shorthands;
     enabledEl.checked = data.settings.enabled !== false;
     excludedEl.value = (data.settings.excludedHosts || []).join("\n");
+    if (document.activeElement !== pickerTriggerEl) {
+      pickerTriggerEl.value = typeof data.settings.pickerTrigger === "string"
+        ? data.settings.pickerTrigger
+        : storage.DEFAULT_SETTINGS.pickerTrigger;
+    }
     renderList();
   }
 
@@ -107,6 +113,15 @@
   cancelBtn.addEventListener("click", resetForm);
 
   enabledEl.addEventListener("change", () => storage.saveSettings({ enabled: enabledEl.checked }));
+
+  pickerTriggerEl.addEventListener("change", () => {
+    const value = pickerTriggerEl.value.trim();
+    if (/\s/.test(value)) {
+      pickerTriggerEl.value = storage.DEFAULT_SETTINGS.pickerTrigger;
+      return say(formMsg, "The search trigger cannot contain spaces.", true);
+    }
+    storage.saveSettings({ pickerTrigger: value });
+  });
 
   excludedEl.addEventListener("change", () => {
     const hosts = excludedEl.value

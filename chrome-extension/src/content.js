@@ -9,6 +9,7 @@
   let shorthands = [];
   let enabled = true;
   let hostExcluded = false;
+  let pickerTrigger = storage.DEFAULT_SETTINGS.pickerTrigger;
   let suppress = false; // true while we are inserting text ourselves
   let lastExpansion = null; // details of the most recent expansion, for undo
 
@@ -36,6 +37,9 @@
       shorthands = data.shorthands.filter((s) => s.trigger);
       enabled = data.settings.enabled !== false;
       hostExcluded = (data.settings.excludedHosts || []).includes(location.hostname);
+      pickerTrigger = typeof data.settings.pickerTrigger === "string"
+        ? data.settings.pickerTrigger
+        : storage.DEFAULT_SETTINGS.pickerTrigger;
     } catch (e) {
       // Extension context may be gone after an update/reload; stay quiet.
     }
@@ -154,6 +158,59 @@
     return true;
   }
 
+  // ---- picker ---------------------------------------------------------------
+
+  // The picker trigger is matched literally, with no word-boundary rule: it is
+  // punctuation that does not occur naturally, and requiring a boundary would
+  // stop it firing straight after a word.
+  function pickerArmed() {
+    return pickerTrigger && shorthands.length > 0 && self.ShorthandPicker && !self.ShorthandPicker.isOpen();
+  }
+
+  function tryOpenPickerInField(el) {
+    if (!pickerArmed()) return false;
+    const caret = el.selectionStart;
+    if (caret == null || caret !== el.selectionEnd) return false;
+    if (!el.value.slice(0, caret).endsWith(pickerTrigger)) return false;
+    const start = caret - pickerTrigger.length;
+
+    // The trigger text stays in the field while the picker is open; choosing a
+    // shorthand replaces it in one step, and cancelling leaves what was typed.
+    return self.ShorthandPicker.show({
+      shorthands,
+      anchorEl: el,
+      onPick(sh) {
+        const { text, cursorOffset } = render(sh.expansion);
+        replaceInField(el, start, caret, text, cursorOffset);
+        lastExpansion = { el, start, text, cursorOffset, trigger: pickerTrigger };
+      },
+    });
+  }
+
+  function tryOpenPickerInContentEditable(root) {
+    if (!pickerArmed()) return false;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE || !root.contains(node)) return false;
+    const end = range.startOffset;
+    if (!node.textContent.slice(0, end).endsWith(pickerTrigger)) return false;
+    const start = end - pickerTrigger.length;
+
+    return self.ShorthandPicker.show({
+      shorthands,
+      anchorEl: root,
+      onPick(sh) {
+        const { text, cursorOffset } = render(sh.expansion);
+        const liveSel = window.getSelection();
+        if (!liveSel) return;
+        replaceInNode(liveSel, node, start, end, text, text.length - cursorOffset);
+        lastExpansion = { el: root, text, cursorOffset, trigger: pickerTrigger };
+      },
+    });
+  }
+
   // ---- wiring ---------------------------------------------------------------
 
   function onInput(ev) {
@@ -165,14 +222,18 @@
     if (t && !t.startsWith("insert")) return; // only react to typing/pasting
     const el = ev.target;
     if (isIgnored(el)) return;
+    // A user's own shorthand always wins over the picker trigger.
     if (isTextInput(el)) {
-      expandInField(el);
+      if (!expandInField(el)) tryOpenPickerInField(el);
     } else if (isEditable(el)) {
-      expandInContentEditable(el);
+      if (!expandInContentEditable(el)) tryOpenPickerInContentEditable(el);
     }
   }
 
   function onKeyDown(ev) {
+    // The picker registers its own capture handler later, so this one runs
+    // first; while it is open every key belongs to it.
+    if (self.ShorthandPicker && self.ShorthandPicker.isOpen()) return;
     const u = lastExpansion;
     if (!u) return;
     if (ev.key !== "Backspace" || ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) {
