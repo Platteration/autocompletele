@@ -33,15 +33,20 @@ async function launch(options = {}) {
     "--headless=new",
     "--no-sandbox",
   ];
-  const launchOptions = { headless: true, args };
+  // headless must be false here. Playwright resolves headless:true to the
+  // "headless shell" build, which cannot load extensions at all, so the browser
+  // would come up with no extension and no service worker. Asking for the full
+  // Chromium and passing --headless=new gives a real browser with no display.
+  const launchOptions = { headless: false, args };
   const executablePath = process.env.CHROMIUM_PATH || "/opt/pw-browsers/chromium";
   if (fs.existsSync(executablePath)) launchOptions.executablePath = executablePath;
 
   const context = await chromium.launchPersistentContext(userDataDir, launchOptions);
 
-  // The service worker owns storage; wait for it, then seed through it.
+  // The service worker owns storage; wait for it, then seed through it. If it
+  // never arrives the extension did not load, and failing fast beats hanging.
   let [worker] = context.serviceWorkers();
-  if (!worker) worker = await context.waitForEvent("serviceworker");
+  if (!worker) worker = await context.waitForEvent("serviceworker", { timeout: 30000 });
   await worker.evaluate(async (shorthands) => {
     // Give the install handler time to seed its examples before replacing them.
     await new Promise((resolve) => setTimeout(resolve, 500));
