@@ -63,9 +63,13 @@
     shadow = host.attachShadow({ mode: "closed" });
     shadow.innerHTML = `
       <style>
+        /* Reset first so nothing inherits from the page, then position. The
+           host itself is the positioned box, which keeps it measurable from
+           outside the closed shadow root. */
         :host { all: initial; }
+        :host { position: fixed; z-index: 2147483647; }
         .panel {
-          position: fixed; z-index: 2147483647; width: 340px; max-width: 90vw;
+          width: 340px; max-width: 90vw;
           background: #fff; color: #1f2937; border: 1px solid #d1d5db;
           border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18);
           font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -115,7 +119,6 @@
   }
 
   function position(anchorEl) {
-    const panel = shadow.querySelector(".panel");
     let top = 60;
     let left = 40;
     try {
@@ -127,9 +130,9 @@
     } catch (_) {
       // Keep the fallback position.
     }
-    // Measure the panel rather than guessing: a two-item list needs far less
-    // room than a full one, and guessing high pushes it off the field.
-    const measured = panel.getBoundingClientRect();
+    // Measure rather than guess: a two-item list needs far less room than a
+    // full one, and guessing high pushes the panel off the field.
+    const measured = host.getBoundingClientRect();
     const width = measured.width || 340;
     const height = measured.height || 320;
 
@@ -139,8 +142,8 @@
       const above = rect ? rect.top - height - 6 : 8;
       top = above > 8 ? above : Math.max(8, window.innerHeight - height - 8);
     }
-    panel.style.top = top + "px";
-    panel.style.left = left + "px";
+    host.style.top = top + "px";
+    host.style.left = left + "px";
   }
 
   function refresh() {
