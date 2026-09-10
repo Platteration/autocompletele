@@ -5,6 +5,10 @@
   "description": "Chrome extension that expands shorthands such as cool/ into full text.",
   "scripts": {
     "test": "node --test",
+    "test:e2e": "node --test --test-concurrency=1 e2e/*.e2e.js",
     "check": "for f in src/*.js; do node --check \"$f\" || exit 1; done"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.1"
   }
 }

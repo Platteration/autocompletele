@@ -51,5 +51,12 @@ inside it (the attribute also applies to all descendants).
 ## Tests
 
 ```
-cd chrome-extension && npm test
+npm test           # matching, placeholder and ranking logic
+npm run test:e2e   # drives the real extension in Chromium (needs Playwright)
 ```
+
+The end-to-end suite in `e2e/` loads the unpacked extension into Chromium and
+types into a fixture page, covering what unit tests cannot: text insertion,
+caret placement, the undo window, and the overlay swallowing keystrokes without
+taking focus. Install its browser once with
+`npm install && npx playwright install chromium`.

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Shorthand Autofill test fixture</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; padding: 20px; }
+    label { display: block; margin-bottom: 12px; }
+    textarea, input { font: inherit; width: 420px; padding: 6px; }
+    #ce { border: 1px solid #999; min-height: 60px; width: 420px; padding: 6px; }
+  </style>
+</head>
+<body>
+  <label>Plain text input<br><input id="inp" type="text"></label>
+  <label>Textarea<br><textarea id="ta" rows="3"></textarea></label>
+  <label>Rich editor<br><div id="ce" contenteditable="true"></div></label>
+  <label>Password (must never expand)<br><input id="pw" type="password"></label>
+  <div data-shorthand-ignore>
+    <label>Opted out with data-shorthand-ignore<br><textarea id="ign" rows="2"></textarea></label>
+  </div>
+</body>
+</html>

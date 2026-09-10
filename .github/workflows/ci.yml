@@ -18,6 +18,10 @@ jobs:
         run: cd chrome-extension && npm test
       - name: Syntax check
         run: cd chrome-extension && npm run check
+      - name: Install Playwright and Chromium
+        run: cd chrome-extension && npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: cd chrome-extension && npm run test:e2e
 
   windows:
     name: Windows app build and tests
