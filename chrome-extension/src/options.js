@@ -16,9 +16,17 @@
   const formMsg = $("formMsg");
   const tbody = document.querySelector("#list tbody");
   const emptyEl = $("empty");
+  const noMatchesEl = $("noMatches");
+  const searchEl = $("search");
   const ioMsg = $("ioMsg");
 
   let shorthands = [];
+
+  function matchesSearch(sh, query) {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return sh.trigger.toLowerCase().includes(q) || sh.expansion.toLowerCase().includes(q);
+  }
 
   function say(el, text, isError) {
     el.textContent = text;
@@ -36,8 +44,16 @@
 
   function renderList() {
     tbody.textContent = "";
+    const query = searchEl.value.trim();
+    const visible = shorthands.filter((sh) => matchesSearch(sh, query));
+    // Warnings are computed over the whole list: a trigger is shadowed by
+    // another whether or not the search happens to be showing it.
+    const warnings = self.ShorthandConflicts.byTrigger(shorthands);
+
     emptyEl.hidden = shorthands.length > 0;
-    for (const sh of shorthands) {
+    noMatchesEl.hidden = shorthands.length === 0 || visible.length > 0;
+
+    for (const sh of visible) {
       const tr = document.createElement("tr");
       const t = document.createElement("td");
       t.className = "trigger";
@@ -45,6 +61,17 @@
       const e = document.createElement("td");
       e.className = "expansion";
       e.textContent = sh.expansion;
+
+      const found = warnings.get(sh.trigger);
+      if (found) {
+        tr.className = "has-warning";
+        for (const w of found) {
+          const note = document.createElement("small");
+          note.className = "warning";
+          note.textContent = w.message;
+          e.appendChild(note);
+        }
+      }
       const b = document.createElement("td");
       b.className = "buttons";
       const edit = document.createElement("button");
@@ -111,6 +138,8 @@
   });
 
   cancelBtn.addEventListener("click", resetForm);
+
+  searchEl.addEventListener("input", renderList);
 
   enabledEl.addEventListener("change", () => storage.saveSettings({ enabled: enabledEl.checked }));
 
