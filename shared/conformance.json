@@ -1,0 +1,239 @@
+{
+  "$comment": "Shared conformance suite. Every platform's test suite loads this file and asserts the same results, so the three implementations of the matching logic cannot drift. See SPEC.md for the rules being pinned down. Dates are given as [year, month(1-12), day, hour, minute] so no platform has to agree on a timestamp format or time zone.",
+  "version": 1,
+
+  "shorthands": [
+    { "trigger": "cool/", "expansion": "That is really cool!" },
+    { "trigger": "verycool/", "expansion": "Extremely cool!" },
+    { "trigger": "sig/", "expansion": "Best regards,\n{cursor}\nAlex" },
+    { "trigger": "td/", "expansion": "{date}" }
+  ],
+
+  "match": [
+    {
+      "name": "fires at the end of the text",
+      "input": "hey cool/",
+      "expect": { "trigger": "cool/", "start": 4 }
+    },
+    {
+      "name": "fires at the very start of the field",
+      "input": "cool/",
+      "expect": { "trigger": "cool/", "start": 0 }
+    },
+    {
+      "name": "a letter before the trigger blocks it",
+      "input": "school/",
+      "expect": null
+    },
+    {
+      "name": "an underscore before the trigger blocks it",
+      "input": "x_cool/",
+      "expect": null
+    },
+    {
+      "name": "a digit before the trigger blocks it",
+      "input": "1cool/",
+      "expect": null
+    },
+    {
+      "name": "an accented letter before the trigger blocks it",
+      "input": "café cool/",
+      "expect": { "trigger": "cool/", "start": 5 }
+    },
+    {
+      "name": "a letter with a diacritic directly before the trigger blocks it",
+      "input": "écool/",
+      "expect": null
+    },
+    {
+      "name": "a CJK character directly before the trigger blocks it",
+      "input": "中cool/",
+      "expect": null
+    },
+    {
+      "name": "an emoji is a boundary",
+      "input": "🎉cool/",
+      "expect": { "trigger": "cool/", "start": 2 }
+    },
+    {
+      "name": "an opening bracket is a boundary",
+      "input": "(cool/",
+      "expect": { "trigger": "cool/", "start": 1 }
+    },
+    {
+      "name": "a comma is a boundary",
+      "input": "hi,cool/",
+      "expect": { "trigger": "cool/", "start": 3 }
+    },
+    {
+      "name": "a newline is a boundary",
+      "input": "line\ncool/",
+      "expect": { "trigger": "cool/", "start": 5 }
+    },
+    {
+      "name": "the trigger must end at the caret",
+      "input": "cool/ and more",
+      "expect": null
+    },
+    {
+      "name": "the longest matching trigger wins",
+      "input": "verycool/",
+      "expect": { "trigger": "verycool/", "start": 0 }
+    },
+    {
+      "name": "matching is case sensitive",
+      "input": "COOL/",
+      "expect": null
+    },
+    {
+      "name": "empty input matches nothing",
+      "input": "",
+      "expect": null
+    },
+    {
+      "name": "text with no trigger matches nothing",
+      "input": "just some writing",
+      "expect": null
+    }
+  ],
+
+  "render": [
+    {
+      "name": "substitutes date and time",
+      "expansion": "Today is {date} at {time}",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "Today is 2026-09-08 at 14:05",
+      "expectCursor": 28
+    },
+    {
+      "name": "substitutes datetime",
+      "expansion": "{datetime}",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "2026-09-08 14:05",
+      "expectCursor": 16
+    },
+    {
+      "name": "placeholder names are case insensitive",
+      "expansion": "{DATE}",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "2026-09-08",
+      "expectCursor": 10
+    },
+    {
+      "name": "pads single digit months, days, hours and minutes",
+      "expansion": "{datetime}",
+      "now": [2026, 1, 2, 3, 4],
+      "expectText": "2026-01-02 03:04",
+      "expectCursor": 16
+    },
+    {
+      "name": "removes the cursor placeholder and reports its offset",
+      "expansion": "Best regards,\n{cursor}\nAlex",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "Best regards,\n\nAlex",
+      "expectCursor": 14
+    },
+    {
+      "name": "puts the caret at the end when there is no cursor placeholder",
+      "expansion": "hello",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "hello",
+      "expectCursor": 5
+    },
+    {
+      "name": "only the first cursor placeholder counts",
+      "expansion": "a{cursor}b{cursor}c",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "abc",
+      "expectCursor": 1
+    },
+    {
+      "name": "leaves unknown placeholders alone",
+      "expansion": "{nope}",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "{nope}",
+      "expectCursor": 6
+    },
+    {
+      "name": "unescapes a doubled brace to a literal placeholder",
+      "expansion": "{{date}}",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "{date}",
+      "expectCursor": 6
+    },
+    {
+      "name": "leaves a stray opening brace alone",
+      "expansion": "a { b",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "a { b",
+      "expectCursor": 5
+    },
+    {
+      "name": "renders an empty expansion",
+      "expansion": "",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "",
+      "expectCursor": 0
+    },
+    {
+      "name": "a cursor placeholder at the very start reports offset zero",
+      "expansion": "{cursor}tail",
+      "now": [2026, 9, 8, 14, 5],
+      "expectText": "tail",
+      "expectCursor": 0
+    }
+  ],
+
+  "sanitize": [
+    {
+      "name": "trims the trigger and keeps the expansion",
+      "input": [{ "trigger": "  a/ ", "expansion": "A" }],
+      "expect": [{ "trigger": "a/", "expansion": "A" }]
+    },
+    {
+      "name": "the first of two duplicate triggers wins",
+      "input": [
+        { "trigger": "a/", "expansion": "first" },
+        { "trigger": "a/", "expansion": "second" }
+      ],
+      "expect": [{ "trigger": "a/", "expansion": "first" }]
+    },
+    {
+      "name": "drops entries with an empty or whitespace-only trigger",
+      "input": [
+        { "trigger": "", "expansion": "x" },
+        { "trigger": "   ", "expansion": "y" },
+        { "trigger": "b/", "expansion": "B" }
+      ],
+      "expect": [{ "trigger": "b/", "expansion": "B" }]
+    },
+    {
+      "name": "drops null entries",
+      "input": [null, { "trigger": "c/", "expansion": "C" }, null],
+      "expect": [{ "trigger": "c/", "expansion": "C" }]
+    },
+    {
+      "name": "keeps an empty expansion",
+      "input": [{ "trigger": "d/", "expansion": "" }],
+      "expect": [{ "trigger": "d/", "expansion": "" }]
+    },
+    {
+      "name": "preserves order",
+      "input": [
+        { "trigger": "one/", "expansion": "1" },
+        { "trigger": "two/", "expansion": "2" },
+        { "trigger": "three/", "expansion": "3" }
+      ],
+      "expect": [
+        { "trigger": "one/", "expansion": "1" },
+        { "trigger": "two/", "expansion": "2" },
+        { "trigger": "three/", "expansion": "3" }
+      ]
+    },
+    {
+      "name": "an empty list stays empty",
+      "input": [],
+      "expect": []
+    }
+  ]
+}

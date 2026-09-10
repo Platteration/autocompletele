@@ -101,6 +101,8 @@ namespace ShorthandExpander.Tests
                 try { Directory.Delete(dir, true); } catch { /* ignore */ }
             }
 
+            Conformance.Run(Check, name => Console.WriteLine(name));
+
             Console.WriteLine();
             Console.WriteLine($"{_passed} passed, {_failed} failed");
             return _failed == 0 ? 0 : 1;

@@ -50,3 +50,8 @@ cd chrome-extension && npm test                            # extension logic
 cd windows && dotnet run --project ShorthandExpander.Tests # Windows logic + storage
 cd android && ./gradlew testDebugUnitTest                  # Android logic + JSON
 ```
+
+All three suites also run [`shared/conformance.json`](shared/conformance.json),
+one table of matching, placeholder and validation cases. Because the same file
+drives every platform, a rule change applied to only one of them fails on the
+other two. Add a case there before changing the rules.

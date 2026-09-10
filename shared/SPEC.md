@@ -4,6 +4,10 @@ All three apps (Chrome extension, Windows program, Android app) share one
 concept: a list of **shorthands**. Each shorthand has a short **trigger**
 the user types and an **expansion** that replaces it.
 
+The rules below are pinned down by `conformance.json` in this folder, which
+every platform's test suite loads and runs. Anything added to the rules should
+gain a case there first, so the three implementations cannot drift apart.
+
 ## File format
 
 Shorthands are stored and exchanged as JSON:
