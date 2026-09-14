@@ -7,30 +7,51 @@
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <header>
-    <h1>Shorthand Autofill</h1>
-    <p class="hint">Type a trigger such as <code>cool/</code> in any text field and it expands into the full text.
-      Placeholders: <code>{date}</code>, <code>{time}</code>, <code>{datetime}</code>, <code>{cursor}</code>.</p>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Shorthand Autofill</p>
+      <h1>Your typing shortcuts, under control.</h1>
+      <p class="hint">Type a trigger such as <code>cool/</code> in any text field and it expands into the full text. Placeholders: <code>{date}</code>, <code>{time}</code>, <code>{datetime}</code>, <code>{cursor}</code>.</p>
+    </div>
+    <div class="hero-status" aria-live="polite">
+      <strong id="shorthandCount">0</strong>
+      <span>shorthands</span>
+    </div>
   </header>
 
-  <section class="card">
-    <label class="row">
-      <input type="checkbox" id="enabled">
-      <span>Expansion enabled</span>
+  <section class="card settings-grid">
+    <label class="toggle-row">
+      <span>
+        <strong>Expansion</strong>
+        <small>Pause every shorthand without deleting anything.</small>
+      </span>
+      <input type="checkbox" id="enabled" aria-label="Expansion enabled">
     </label>
     <label class="row column">
-      <span>Search overlay trigger (type it in any field to search your shorthands; leave empty to turn off)</span>
+      <span><strong>Search overlay trigger</strong></span>
+      <small>Type it in any field to search your shorthands; leave empty to turn it off.</small>
       <input type="text" id="pickerTrigger" placeholder=";;" autocomplete="off" data-shorthand-ignore>
     </label>
-    <label class="row column">
-      <span>Never expand on these sites (one hostname per line)</span>
+    <label class="row column span-2">
+      <span><strong>Never expand on these sites</strong></span>
+      <small>One hostname per line. Useful for banking, admin consoles, and other sensitive contexts.</small>
       <textarea id="excluded" rows="3" placeholder="example.com&#10;mail.google.com" data-shorthand-ignore></textarea>
     </label>
   </section>
 
   <section class="card">
-    <h2>Shorthands</h2>
-    <form id="editor">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Library</p>
+        <h2>Shorthands</h2>
+      </div>
+      <label class="search-box">
+        <span class="sr-only">Search shorthands</span>
+        <input type="text" id="search" placeholder="Search triggers and expansions…" autocomplete="off" data-shorthand-ignore>
+      </label>
+    </div>
+
+    <form id="editor" class="editor-panel">
       <input type="hidden" id="editId">
       <div class="fields">
         <label>Trigger
@@ -42,43 +63,74 @@
       </div>
       <div class="actions">
         <button type="submit" id="saveBtn">Add shorthand</button>
-        <button type="button" id="cancelBtn" hidden>Cancel</button>
-        <span id="formMsg" class="msg"></span>
+        <button type="button" id="cancelBtn" class="secondary" hidden>Cancel</button>
+        <span id="formMsg" class="msg" role="status"></span>
       </div>
     </form>
 
-    <label class="row column search">
-      <input type="text" id="search" placeholder="Search triggers and expansions…" autocomplete="off" data-shorthand-ignore>
-    </label>
+    <div class="table-wrap">
+      <table id="list">
+        <thead><tr><th>Trigger</th><th>Expansion</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="empty" class="empty-state" hidden>No shorthands yet. Add your first one above.</p>
+    <p id="noMatches" class="empty-state" hidden>No shorthand matches that search.</p>
+  </section>
 
-    <table id="list">
-      <thead><tr><th>Trigger</th><th>Expansion</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <p id="empty" class="hint" hidden>No shorthands yet. Add one above.</p>
-    <p id="noMatches" class="hint" hidden>No shorthand matches that search.</p>
+  <section class="card try-card">
+    <div>
+      <p class="eyebrow">Playground</p>
+      <h2>Try it</h2>
+      <p class="hint">Type one of your triggers here. Press Backspace immediately after an expansion to restore the trigger.</p>
+    </div>
+    <textarea id="tryit" rows="4" placeholder="cool/"></textarea>
   </section>
 
   <section class="card">
-    <h2>Try it</h2>
-    <p class="hint">Type one of your triggers below to see it expand. Press Backspace right after an expansion to get the trigger back.</p>
-    <textarea id="tryit" rows="3" placeholder="cool/"></textarea>
-  </section>
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Portability</p>
+        <h2>Import / export</h2>
+        <p class="hint">Uses the same JSON format as the Windows and Android apps.</p>
+      </div>
+      <div class="actions compact">
+        <button type="button" id="exportBtn" class="secondary">Export JSON</button>
+        <button type="button" id="importBtn">Import JSON…</button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </div>
+    </div>
+    <span id="ioMsg" class="msg" role="status"></span>
 
-  <section class="card">
-    <h2>Import / export</h2>
-    <p class="hint">Uses the same JSON file as the Windows and Android apps, so one list can be shared everywhere.</p>
-    <div class="actions">
-      <button type="button" id="exportBtn">Export JSON</button>
-      <button type="button" id="importBtn">Import JSON…</button>
-      <input type="file" id="importFile" accept="application/json,.json" hidden>
-      <span id="ioMsg" class="msg"></span>
+    <div id="importPreview" class="import-preview" hidden>
+      <div class="preview-heading">
+        <div>
+          <strong>Import preview</strong>
+          <p id="importSummary" class="hint"></p>
+        </div>
+        <button type="button" id="cancelImportBtn" class="ghost small">Dismiss</button>
+      </div>
+      <div class="preview-stats" aria-label="Import summary">
+        <div><strong id="addCount">0</strong><span>new</span></div>
+        <div><strong id="updateCount">0</strong><span>updates</span></div>
+        <div><strong id="sameCount">0</strong><span>unchanged</span></div>
+      </div>
+      <div id="updatePreview" class="update-preview" hidden>
+        <p class="preview-label">Existing triggers that will change</p>
+        <ul id="updateList"></ul>
+      </div>
+      <div class="actions">
+        <button type="button" id="mergeBtn">Merge safely</button>
+        <button type="button" id="replaceBtn" class="danger">Replace everything</button>
+        <span class="hint">Merge keeps shortcuts not present in the file. Matching triggers are updated.</span>
+      </div>
     </div>
   </section>
 
   <script src="expander.js"></script>
   <script src="conflicts.js"></script>
   <script src="storage.js"></script>
+  <script src="import-plan.js"></script>
   <script src="picker.js"></script>
   <script src="content.js"></script>
   <script src="options.js"></script>
