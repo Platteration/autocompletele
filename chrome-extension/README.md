@@ -12,6 +12,17 @@ textarea or rich-text editor (contenteditable), as you type.
 Type a trigger in the **Try it** box on the options page to see it work.
 Press Backspace right after an expansion to get the trigger back.
 
+## Toolbar command palette
+
+Open the extension from Chrome's toolbar to get a compact searchable view of
+your shorthand library. Search matches triggers first and then expansion text;
+press Enter to copy the top result, or use the arrow keys to move through the
+results. The same popup also shows whether expansion is active globally and on
+the current site, with quick toggles for both.
+
+This makes the toolbar useful even when you only half remember a trigger, and
+lets you grab an expansion for places where automatic insertion is not wanted.
+
 ## Search overlay
 
 Typing `;;` in any field opens a search overlay listing every shorthand: type
@@ -27,7 +38,10 @@ Change or disable the trigger on the options page.
 
 The list is stored in `chrome.storage.sync`, so it follows your Chrome profile.
 Use **Export JSON** / **Import JSON** on the options page to move it to the
-Windows and Android apps (same file format, see `../shared/SPEC.md`).
+Windows and Android apps (same file format, see `../shared/SPEC.md`). Imports
+are previewed before applying: the manager shows how many triggers are new,
+updated, or unchanged, and **Merge safely** preserves local-only shorthands.
+A full replacement is still available when that is what you intend.
 
 ## For site authors
 
@@ -36,22 +50,24 @@ inside it (the attribute also applies to all descendants).
 
 ## Files
 
-| File                 | Purpose                                                 |
-| -------------------- | ------------------------------------------------------- |
-| `manifest.json`      | Manifest V3 definition                                  |
-| `src/expander.js`    | Pure matching/placeholder logic (shared with the tests) |
-| `src/storage.js`     | Storage helper (one sync key per shorthand)             |
-| `src/content.js`     | Watches editable fields and performs the replacement    |
-| `src/picker.js`      | The `;;` search overlay (closed shadow root, key capture) |
-| `src/background.js`  | Service worker: seeds examples, keeps badge in sync     |
-| `src/options.*`      | Options page: manage, import, export, excluded sites    |
-| `src/popup.*`        | Toolbar popup: quick on/off, per-site on/off            |
-| `test/`              | Unit tests (`npm test` in `chrome-extension/`)        |
+| File                  | Purpose                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| `manifest.json`       | Manifest V3 definition                                         |
+| `src/expander.js`     | Pure matching/placeholder logic (shared with the tests)        |
+| `src/storage.js`      | Storage helper (one sync key per shorthand)                    |
+| `src/content.js`      | Watches editable fields and performs the replacement           |
+| `src/picker.js`       | The `;;` search overlay (closed shadow root, key capture)       |
+| `src/palette.js`      | Pure ranking logic for the toolbar command palette             |
+| `src/import-plan.js`  | Pure import preview and safe-merge planning                    |
+| `src/background.js`   | Service worker: seeds examples, keeps badge in sync            |
+| `src/options.*`       | Library manager, previewed imports, export, excluded sites     |
+| `src/popup.*`         | Toolbar search/copy palette plus global and per-site controls  |
+| `test/`               | Unit tests (`npm test` in `chrome-extension/`)                 |
 
 ## Tests
 
 ```
-npm test           # matching, placeholder and ranking logic
+npm test           # matching, placeholders, import planning and palette ranking
 npm run test:e2e   # drives the real extension in Chromium (needs Playwright)
 ```
 
