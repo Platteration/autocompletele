@@ -3,18 +3,20 @@
 
   function normalize(list) {
     return (Array.isArray(list) ? list : []).map((item) => ({
-      trigger: String(item && item.trigger || ""),
-      expansion: String(item && item.expansion || ""),
+      trigger: String((item && item.trigger) || ""),
+      expansion: String((item && item.expansion) || ""),
     }));
   }
 
   function planImport(current, incoming) {
-    const existing = new Map(normalize(current).map((item) => [item.trigger, item.expansion]));
+    const cleanCurrent = normalize(current);
+    const cleanIncoming = normalize(incoming);
+    const existing = new Map(cleanCurrent.map((item) => [item.trigger, item.expansion]));
     const additions = [];
     const updates = [];
     const unchanged = [];
 
-    for (const item of normalize(incoming)) {
+    for (const item of cleanIncoming) {
       if (!existing.has(item.trigger)) {
         additions.push(item);
       } else if (existing.get(item.trigger) === item.expansion) {
@@ -28,7 +30,7 @@
       additions,
       updates,
       unchanged,
-      incomingCount: incoming.length,
+      incomingCount: cleanIncoming.length,
       changedCount: additions.length + updates.length,
     };
   }
@@ -47,5 +49,7 @@
     return result;
   }
 
-  root.ShorthandImportPlan = { planImport, mergeImport };
-})(typeof self !== "undefined" ? self : this);
+  const api = { planImport, mergeImport };
+  root.ShorthandImportPlan = api;
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+})(typeof self !== "undefined" ? self : globalThis);
