@@ -2,6 +2,7 @@
   "use strict";
   const storage = self.ShorthandStorage;
   const { sanitizeList } = self.ShorthandExpander;
+  const importPlan = self.ShorthandImportPlan;
 
   const $ = (id) => document.getElementById(id);
   const enabledEl = $("enabled");
@@ -19,8 +20,14 @@
   const noMatchesEl = $("noMatches");
   const searchEl = $("search");
   const ioMsg = $("ioMsg");
+  const shorthandCountEl = $("shorthandCount");
+  const importPreviewEl = $("importPreview");
+  const importSummaryEl = $("importSummary");
+  const updatePreviewEl = $("updatePreview");
+  const updateListEl = $("updateList");
 
   let shorthands = [];
+  let pendingImport = null;
 
   function matchesSearch(sh, query) {
     if (!query) return true;
@@ -42,14 +49,20 @@
     cancelBtn.hidden = true;
   }
 
+  function clearImportPreview() {
+    pendingImport = null;
+    importPreviewEl.hidden = true;
+    updateListEl.textContent = "";
+    updatePreviewEl.hidden = true;
+  }
+
   function renderList() {
     tbody.textContent = "";
     const query = searchEl.value.trim();
     const visible = shorthands.filter((sh) => matchesSearch(sh, query));
-    // Warnings are computed over the whole list: a trigger is shadowed by
-    // another whether or not the search happens to be showing it.
     const warnings = self.ShorthandConflicts.byTrigger(shorthands);
 
+    shorthandCountEl.textContent = String(shorthands.length);
     emptyEl.hidden = shorthands.length > 0;
     noMatchesEl.hidden = shorthands.length === 0 || visible.length > 0;
 
@@ -72,6 +85,7 @@
           e.appendChild(note);
         }
       }
+
       const b = document.createElement("td");
       b.className = "buttons";
       const edit = document.createElement("button");
@@ -86,6 +100,7 @@
         cancelBtn.hidden = false;
         triggerEl.focus();
       });
+
       const del = document.createElement("button");
       del.type = "button";
       del.className = "danger small";
@@ -94,6 +109,7 @@
         await storage.deleteShorthand(sh.id);
         await load();
       });
+
       b.append(edit, " ", del);
       tr.append(t, e, b);
       tbody.appendChild(tr);
@@ -111,6 +127,53 @@
         : storage.DEFAULT_SETTINGS.pickerTrigger;
     }
     renderList();
+  }
+
+  function showImportPreview(list) {
+    pendingImport = list;
+    const plan = importPlan.planImport(shorthands, list);
+    $("addCount").textContent = String(plan.additions.length);
+    $("updateCount").textContent = String(plan.updates.length);
+    $("sameCount").textContent = String(plan.unchanged.length);
+    importSummaryEl.textContent = `${plan.incomingCount} shorthand(s) found. ${plan.changedCount} would change your library.`;
+    updateListEl.textContent = "";
+
+    for (const update of plan.updates.slice(0, 8)) {
+      const li = document.createElement("li");
+      const code = document.createElement("code");
+      code.textContent = update.trigger;
+      const text = document.createElement("span");
+      text.textContent = ` will be updated`;
+      li.append(code, text);
+      updateListEl.appendChild(li);
+    }
+    if (plan.updates.length > 8) {
+      const li = document.createElement("li");
+      li.textContent = `…and ${plan.updates.length - 8} more`;
+      updateListEl.appendChild(li);
+    }
+
+    updatePreviewEl.hidden = plan.updates.length === 0;
+    importPreviewEl.hidden = false;
+    importPreviewEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  async function applyImport(mode) {
+    if (!pendingImport) return;
+    const list = mode === "merge"
+      ? importPlan.mergeImport(shorthands, pendingImport)
+      : pendingImport;
+    try {
+      await storage.replaceAll(list);
+    } catch (e) {
+      return say(ioMsg, "Import failed: " + (e && e.message ? e.message : e), true);
+    }
+    const importedCount = pendingImport.length;
+    clearImportPreview();
+    say(ioMsg, mode === "merge"
+      ? `Merged ${importedCount} shorthand(s) into your library.`
+      : `Replaced your library with ${importedCount} shorthand(s).`);
+    await load();
   }
 
   form.addEventListener("submit", async (ev) => {
@@ -138,9 +201,7 @@
   });
 
   cancelBtn.addEventListener("click", resetForm);
-
   searchEl.addEventListener("input", renderList);
-
   enabledEl.addEventListener("change", () => storage.saveSettings({ enabled: enabledEl.checked }));
 
   pickerTriggerEl.addEventListener("change", () => {
@@ -173,6 +234,9 @@
   });
 
   $("importBtn").addEventListener("click", () => $("importFile").click());
+  $("cancelImportBtn").addEventListener("click", clearImportPreview);
+  $("mergeBtn").addEventListener("click", () => applyImport("merge"));
+  $("replaceBtn").addEventListener("click", () => applyImport("replace"));
 
   $("importFile").addEventListener("change", async (ev) => {
     const file = ev.target.files && ev.target.files[0];
@@ -186,17 +250,9 @@
     }
     const list = sanitizeList(Array.isArray(parsed) ? parsed : parsed && parsed.shorthands);
     if (list.length === 0) return say(ioMsg, "No shorthands found in that file.", true);
-    if (shorthands.length && !confirm(`Replace your ${shorthands.length} shorthand(s) with the ${list.length} from the file?`)) return;
-    try {
-      await storage.replaceAll(list);
-    } catch (e) {
-      return say(ioMsg, "Import failed: " + (e && e.message ? e.message : e), true);
-    }
-    say(ioMsg, `Imported ${list.length} shorthand(s).`);
-    await load();
+    showImportPreview(list);
   });
 
   chrome.storage.onChanged.addListener((_c, area) => { if (area === "sync") load(); });
-
   load();
 })();
