@@ -12,6 +12,11 @@ textarea or rich-text editor (contenteditable), as you type.
 Type a trigger in the **Try it** box on the options page to see it work.
 Press Backspace right after an expansion to get the trigger back.
 
+A trigger fires only when you typed it (or pasted it). A page can read whatever
+lands in its own fields, so text a page's script writes into a field, input
+events it dispatches and keys it fakes in the search overlay never produce an
+expansion; otherwise any site could try `addr/` and read your address back.
+
 ## Toolbar command palette
 
 Open the extension from Chrome's toolbar to get a compact searchable view of

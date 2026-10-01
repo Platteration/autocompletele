@@ -31,6 +31,51 @@
     return !!(el && el.closest && el.closest("[" + IGNORE_ATTR + "]"));
   }
 
+  // ---- what the person actually typed --------------------------------------
+  //
+  // An expansion is the person's own text, and the page can read whatever lands
+  // in its fields. So a trigger only fires when the person typed it: a page
+  // script that writes "addr/" into a field, dispatches an input event, or calls
+  // execCommand("insertText") produces an input event too (execCommand's is even
+  // marked trusted), and without this it got the expansion back to read. Each
+  // field keeps the characters typed into it with real key presses or a real
+  // paste, and a trigger has to be at the end of those as well as of the text.
+
+  const TYPED_KEEP = 256;
+  const typedInto = new WeakMap(); // field -> recent characters the person entered
+
+  function noteTyped(el, text) {
+    if (!el) return;
+    typedInto.set(el, ((typedInto.get(el) || "") + text).slice(-TYPED_KEEP));
+  }
+
+  function personTyped(el, trigger) {
+    return (typedInto.get(el) || "").endsWith(trigger);
+  }
+
+  // Keys that type nothing themselves and move nothing: a dead key is the first
+  // half of an accented letter, whose keydown carries the letter itself.
+  const PASSIVE_KEYS = new Set(["Shift", "Alt", "AltGraph", "Control", "Meta", "OS", "Fn", "CapsLock", "NumLock", "ScrollLock", "Dead", "Process", "Unidentified"]);
+
+  function onTrustedKey(ev) {
+    if (!ev.isTrusted || ev.isComposing) return;
+    const el = ev.target;
+    if (ev.key === "Backspace") {
+      const typed = typedInto.get(el);
+      if (typed) typedInto.set(el, Array.from(typed).slice(0, -1).join(""));
+    } else if (Array.from(ev.key).length === 1 && !ev.ctrlKey && !ev.metaKey) {
+      noteTyped(el, ev.key);
+    } else if (!PASSIVE_KEYS.has(ev.key)) {
+      // Enter, arrows, Delete, a shortcut: what was typed is no longer what sits before the caret.
+      typedInto.delete(el);
+    }
+  }
+
+  function onTrustedPaste(ev) {
+    if (!ev.isTrusted) return;
+    noteTyped(ev.target, (ev.clipboardData && ev.clipboardData.getData("text/plain")) || "");
+  }
+
   async function reload() {
     try {
       const data = await storage.getAll();
@@ -76,7 +121,7 @@
     if (caret == null || caret !== el.selectionEnd) return false;
     const before = el.value.slice(0, caret);
     const match = findMatch(before, shorthands);
-    if (!match) return false;
+    if (!match || !personTyped(el, match.shorthand.trigger)) return false;
 
     const { text, cursorOffset } = render(match.shorthand.expansion);
     replaceInField(el, match.start, caret, text, cursorOffset);
@@ -132,7 +177,7 @@
 
     const before = node.textContent.slice(0, range.startOffset);
     const match = findMatch(before, shorthands);
-    if (!match) return false;
+    if (!match || !personTyped(root, match.shorthand.trigger)) return false;
 
     const { text, cursorOffset } = render(match.shorthand.expansion);
     replaceInNode(sel, node, match.start, range.startOffset, text, text.length - cursorOffset);
@@ -171,7 +216,7 @@
     if (!pickerArmed()) return false;
     const caret = el.selectionStart;
     if (caret == null || caret !== el.selectionEnd) return false;
-    if (!el.value.slice(0, caret).endsWith(pickerTrigger)) return false;
+    if (!el.value.slice(0, caret).endsWith(pickerTrigger) || !personTyped(el, pickerTrigger)) return false;
     const start = caret - pickerTrigger.length;
 
     // The trigger text stays in the field while the picker is open; choosing a
@@ -195,7 +240,7 @@
     const node = range.startContainer;
     if (node.nodeType !== Node.TEXT_NODE || !root.contains(node)) return false;
     const end = range.startOffset;
-    if (!node.textContent.slice(0, end).endsWith(pickerTrigger)) return false;
+    if (!node.textContent.slice(0, end).endsWith(pickerTrigger) || !personTyped(root, pickerTrigger)) return false;
     const start = end - pickerTrigger.length;
 
     return self.ShorthandPicker.show({
@@ -216,6 +261,7 @@
   function onInput(ev) {
     if (suppress) return;
     lastExpansion = null;
+    if (!ev.isTrusted) return; // dispatched by a page script, not typed
     if (!enabled || hostExcluded || shorthands.length === 0) return;
     if (ev.isComposing) return; // IME composition in progress
     const t = ev.inputType;
@@ -231,6 +277,7 @@
   }
 
   function onKeyDown(ev) {
+    if (!ev.isTrusted) return;
     // The picker registers its own capture handler later, so this one runs
     // first; while it is open every key belongs to it.
     if (self.ShorthandPicker && self.ShorthandPicker.isOpen()) return;
@@ -250,6 +297,8 @@
     }
   }
 
+  document.addEventListener("keydown", onTrustedKey, true);
+  document.addEventListener("paste", onTrustedPaste, true);
   document.addEventListener("input", onInput, true);
   document.addEventListener("keydown", onKeyDown, true);
   document.addEventListener("mousedown", () => { lastExpansion = null; }, true);
