@@ -1,4 +1,10 @@
-(function (root) {
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) {
+    module.exports = factory();
+  } else {
+    root.ShorthandPalette = factory();
+  }
+})(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
   function normalize(value) {
@@ -37,5 +43,5 @@
       .map((entry) => entry.item);
   }
 
-  root.ShorthandPalette = { score, search };
-})(typeof self !== "undefined" ? self : this);
+  return { score, search };
+});

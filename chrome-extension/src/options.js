@@ -28,6 +28,8 @@
 
   let shorthands = [];
   let pendingImport = null;
+  let skippedImportItems = 0;
+  let importing = false;
 
   function matchesSearch(sh, query) {
     if (!query) return true;
@@ -35,10 +37,10 @@
     return sh.trigger.toLowerCase().includes(q) || sh.expansion.toLowerCase().includes(q);
   }
 
-  function say(el, text, isError) {
+  function say(el, text, isError, persistent = false) {
     el.textContent = text;
     el.classList.toggle("error", !!isError);
-    if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 4000);
+    if (text && !persistent) setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 4000);
   }
 
   function resetForm() {
@@ -51,6 +53,7 @@
 
   function clearImportPreview() {
     pendingImport = null;
+    skippedImportItems = 0;
     importPreviewEl.hidden = true;
     updateListEl.textContent = "";
     updatePreviewEl.hidden = true;
@@ -129,13 +132,15 @@
     renderList();
   }
 
-  function showImportPreview(list) {
+  function showImportPreview(list, skipped) {
     pendingImport = list;
+    skippedImportItems = skipped;
     const plan = importPlan.planImport(shorthands, list);
     $("addCount").textContent = String(plan.additions.length);
     $("updateCount").textContent = String(plan.updates.length);
     $("sameCount").textContent = String(plan.unchanged.length);
     importSummaryEl.textContent = `${plan.incomingCount} shorthand(s) found. ${plan.changedCount} would change your library.`;
+    if (skipped) importSummaryEl.textContent += ` ${skipped} invalid or duplicate item(s) skipped.`;
     updateListEl.textContent = "";
 
     for (const update of plan.updates.slice(0, 8)) {
@@ -159,20 +164,40 @@
   }
 
   async function applyImport(mode) {
-    if (!pendingImport) return;
+    if (!pendingImport || importing) return;
+    importing = true;
+    const importedCount = pendingImport.length;
+    const incomingTriggers = new Set(pendingImport.map((item) => item.trigger));
+    const skipped = skippedImportItems;
     const list = mode === "merge"
       ? importPlan.mergeImport(shorthands, pendingImport)
       : pendingImport;
+    let result;
+    const importControls = [$("importBtn"), $("mergeBtn"), $("replaceBtn"), $("cancelImportBtn")];
+    importControls.forEach((button) => { button.disabled = true; });
     try {
-      await storage.replaceAll(list);
+      result = await storage.replaceAll(list);
     } catch (e) {
-      return say(ioMsg, "Import failed: " + (e && e.message ? e.message : e), true);
+      return say(ioMsg, "Import failed: " + (e && e.message ? e.message : e), true, true);
+    } finally {
+      importing = false;
+      importControls.forEach((button) => { button.disabled = false; });
     }
-    const importedCount = pendingImport.length;
+    const failedIncoming = result.failures.filter((failure) => incomingTriggers.has(failure.trigger));
     clearImportPreview();
-    say(ioMsg, mode === "merge"
-      ? `Merged ${importedCount} shorthand(s) into your library.`
-      : `Replaced your library with ${importedCount} shorthand(s).`);
+    if (result.failures.length || result.cleanupError) {
+      const failures = result.failures.map((failure) => `${failure.trigger}: ${failure.message}`).join("; ");
+      say(ioMsg,
+        `Imported ${importedCount - failedIncoming.length} shorthand(s); skipped ${failedIncoming.length + skipped} item(s). ` +
+        "Import incomplete; previous entries that were not updated have been kept. " +
+        (failures || result.cleanupError), true, true);
+    } else if (skipped) {
+      say(ioMsg, `Imported ${importedCount} shorthand(s); skipped ${skipped} invalid or duplicate item(s).`, true, true);
+    } else {
+      say(ioMsg, mode === "merge"
+        ? `Merged ${importedCount} shorthand(s) into your library.`
+        : `Replaced your library with ${importedCount} shorthand(s).`);
+    }
     await load();
   }
 
@@ -248,11 +273,12 @@
     } catch (_) {
       return say(ioMsg, "That file is not valid JSON.", true);
     }
-    const list = sanitizeList(Array.isArray(parsed) ? parsed : parsed && parsed.shorthands);
+    const rawList = Array.isArray(parsed) ? parsed : parsed && parsed.shorthands;
+    const list = sanitizeList(rawList);
     if (list.length === 0) return say(ioMsg, "No shorthands found in that file.", true);
-    showImportPreview(list);
+    showImportPreview(list, rawList.length - list.length);
   });
 
-  chrome.storage.onChanged.addListener((_c, area) => { if (area === "sync") load(); });
+  chrome.storage.onChanged.addListener((_c, area) => { if (area === storage.AREA) load(); });
   load();
 })();

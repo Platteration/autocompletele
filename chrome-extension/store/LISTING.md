@@ -1,0 +1,192 @@
+# Chrome Web Store and Firefox Add-ons submission
+
+Use the copy below for the extension's store listings. Finish the account
+declarations and release checks before submission.
+Creating a ZIP does not publish or sign the extension.
+
+## Listing copy
+
+**Name:** Shorthand Autofill
+
+**Short description / summary:** Expand short triggers into reusable text in supported webpage text fields.
+
+**Category:** Productivity in Chrome; select the closest productivity category in Firefox.
+
+**Language:** English
+
+**Single purpose:** Save reusable text and insert it using short triggers in supported webpage text fields.
+
+**Full description:**
+
+Turn phrases you type again and again into shortcuts you can remember. Create a
+trigger such as `cool/`, give it an expansion, and type the trigger in a supported
+webpage field to insert your saved text.
+
+- Build and search a personal library of text snippets.
+- Add `{date}`, `{time}`, and `{datetime}` placeholders, or use `{cursor}` to
+  choose where typing continues after insertion.
+- Type `;;` to search and insert a snippet without leaving the field. Change the
+  search trigger in settings or turn it off.
+- Press Backspace immediately after an expansion to restore the trigger while
+  the text and caret remain in place.
+- Search snippets from the toolbar and copy an expansion to your clipboard.
+- Pause expansion everywhere or on individual hostnames.
+- Preview JSON imports, merge them with your library, and export a backup to
+  transfer to another browser or the companion Windows and Android apps.
+
+In Chrome, snippets and settings use browser extension sync storage and can
+follow your Chrome profile when sync is enabled. In Firefox, they stay in your
+local Firefox profile and do not automatically sync. Move your library between
+browsers or devices using JSON export and import.
+
+Text matching happens in your browser. The extension has no publisher-operated
+data server, analytics, or advertising. Chrome's browser sync may transfer your
+snippets and settings through Google's sync service.
+
+Expansion works in supported text inputs, textareas, and rich-text fields.
+Password fields are excluded. Browser-protected pages and some custom editors
+do not support extensions or text expansion. File-page access, where supported,
+depends on the browser's extension permissions.
+
+## Permission and privacy answers
+
+**Storage:** Saves snippet triggers, expansion text, ordering, and settings so
+the library remains available between sessions. Chrome uses extension sync
+storage and can sync when the user's browser profile permits it. Firefox uses
+extension local storage without automatic synchronization.
+
+**Access to websites (`<all_urls>`):** Detects configured triggers and inserts
+snippets in editable fields on the websites the user chooses to use. The popup
+uses the active tab's hostname for the per-site expansion toggle. Restricting
+browser-granted site access limits where expansion can run. An exclusion in the
+extension's own settings pauses expansion but does not revoke that permission.
+
+**Remote code:** All executable extension code is included in the package. The
+extension does not load executable code from a remote service.
+
+**Privacy policy:** Use the public URL in the publisher details below for
+[PRIVACY.md](PRIVACY.md). Disclose Chrome
+sync and local processing of editable field text consistently in the dashboards
+and policy; do not describe Chrome data as necessarily staying on one device.
+
+**Dashboard declarations:** Review the final package against each store's
+current data definitions before certifying the privacy answers. The extension
+does not send data to its publisher. Chrome stores snippet content and excluded
+hostnames in browser sync. Firefox's manifest declares no data collection: that
+package stores snippets and settings locally and does not transmit them to a
+service. Clipboard copies and webpage insertion happen at the user's direction.
+
+## Publisher details
+
+| Field | Value |
+| --- | --- |
+| Publisher name | Platteration |
+| Privacy/support contact | https://github.com/Platteration/autocompletele/issues |
+| Public privacy-policy URL | https://github.com/Platteration/autocompletele/blob/codex/browser-store-release/chrome-extension/store/PRIVACY.md |
+| Support website | https://github.com/Platteration/autocompletele/issues |
+| Firefox license selection | All rights reserved; this repository does not grant an open-source license |
+| Developer accounts | Registered Chrome Web Store and Firefox Add-ons publisher accounts must be connected before submission |
+
+Store credentials belong in the stores' account flows or secure environment
+settings, never in this file. Store publication requires access to the owner's
+registered developer accounts. Keep the release branch available while its
+privacy-policy URL is used in store listings.
+
+### First submission
+
+1. Register in the [Chrome Web Store developer dashboard](https://chrome.google.com/webstore/devconsole/),
+   complete Google's developer verification and any registration fee shown, and
+   upload `dist/shorthand-autofill-chrome-1.0.0.zip` as a new item. Add the listing
+   copy, privacy-policy URL, permission explanations, icon, screenshots, and
+   promotional image from this directory, then complete the dashboard's
+   declarations and submit for review.
+2. Sign in to the [Firefox Add-ons developer hub](https://addons.mozilla.org/developers/),
+   register the developer account, and submit
+   `dist/shorthand-autofill-firefox-1.0.0.zip` for distribution on Firefox Add-ons.
+   Add the Firefox screenshot, listing copy, privacy policy, and reviewer
+   walkthrough. Select All rights reserved and complete the declarations.
+   The package contains readable, unminified JavaScript and no downloaded
+   executable code. Mozilla signs the add-on as part of its submission process.
+3. Record each store's item URL and version after submission. Submission is
+   distinct from approval and public availability; follow each dashboard's
+   review status before announcing the extension as available in that store.
+
+## Screenshots and artwork
+
+Prepared assets:
+
+| Asset | File |
+| --- | --- |
+| Chrome library manager, 1280×800 | [chrome-library-1280x800.png](images/chrome-library-1280x800.png) |
+| Chrome picker on a local demo page, 1280×800 | [chrome-picker-1280x800.png](images/chrome-picker-1280x800.png) |
+| Firefox library manager, 1280×800 | [firefox-library-1280x800.png](images/firefox-library-1280x800.png) |
+| Small promotional image, 440×280 | [promo-440x280.png](images/promo-440x280.png) |
+
+The Chrome screenshots show the actual running extension in Chromium; the demo
+page uses fictional text. Refresh these assets with `npm run build` followed by
+`node scripts/store-assets.js` from `chrome-extension/`, after installing the
+development dependencies and Chromium. The script renders the promotional tile
+using the existing icon and creates a fresh temporary profile for UI captures.
+Refresh the Firefox image with `node scripts/store-assets-firefox.js` and the
+Firefox driver environment described in the extension README.
+
+Capture the actual extension using synthetic snippets such as `thanks/` →
+`Thanks for your help!` and `followup/` → `I will follow up on {date}.` Avoid
+personal data, browser profile details, unrelated tabs, or another site's brand.
+
+- Chrome: at least one 1280×800 or 640×400 screenshot and a 440×280 small
+  promotional image. Use the included `icons/icon128.png` as the store icon.
+- Firefox: use screenshots captured with the Firefox package and the included
+  icon. Confirm current image requirements in the submission dashboard.
+- Useful screenshots: the library manager with a few snippets, the in-field
+  picker filtering a snippet, and the toolbar search/copy palette.
+- Promotional copy can read **Shorthand Autofill** and **Your repeated text,
+  one shortcut away.** Use the existing icon and actual UI where shown.
+
+## Reviewer walkthrough
+
+No extension account or login is needed. Chrome-profile sync is optional;
+Firefox stores the library locally.
+
+1. Install the package and open its options page. Create `thanks/` with expansion
+   `Thanks for your help!` and `next/` with expansion `Next step: {cursor} — {date}`.
+2. In **Try it**, type `thanks/`. Confirm insertion, then immediately press
+   Backspace to restore the trigger. Type `next/` and check the date and caret.
+3. Type `;;`, search for `thanks`, select the result with the arrow keys, and
+   press Enter. Repeat and press Escape to dismiss the picker.
+4. Open the toolbar popup, search for `thanks`, and copy it. Paste into a test
+   field to verify the result.
+5. Test on a normal webpage containing a text input, textarea, and rich editor.
+   The repository includes a fixture: from `chrome-extension/`, run
+   `python3 -m http.server 4173 --bind 127.0.0.1 --directory e2e/fixtures` and open
+   `http://127.0.0.1:4173/page.html`. Verify expansion in all three editable types
+   and no expansion in the password or opted-out fields.
+6. Pause expansion globally and confirm triggers stay unchanged. Re-enable it,
+   disable expansion for the fixture hostname in the popup, and confirm the
+   same result. Re-enable the site afterward.
+7. Export JSON. Import that file and confirm the preview shows unchanged
+   snippets. Add one synthetic snippet to a copy of the file, import with
+   **Merge safely**, and check that the new entry appears while existing entries
+   remain. Exercise **Replace everything** only with a disposable test library.
+8. Reload the browser and verify saved snippets and settings remain available.
+
+## Release checklist
+
+- [x] Run the documented syntax, unit, packaging, and browser checks in
+  [README.md](../README.md); inspect their actual results.
+- [ ] Test the exact Chrome and Firefox release packages using the walkthrough.
+- [x] Confirm no personal data, credentials, development tools, or test fixtures
+  are included in the upload archives.
+- [ ] Complete publisher/contact/license fields and publish the privacy policy.
+- [x] Add actual browser screenshots and the required Chrome promotional image.
+- [ ] Complete privacy, permission, source/build, and account declarations in
+  each store using the final package's behavior.
+- [ ] Check the chosen version is acceptable for the existing listing, if any.
+- [ ] Submit through the owner's accounts after final review; retain the
+  package version and digest for comparison with the reviewed release.
+
+References: [Chrome preparation](https://developer.chrome.com/docs/webstore/prepare),
+[Chrome images](https://developer.chrome.com/docs/webstore/images),
+[Chrome privacy guidance](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq),
+[Firefox submission](https://extensionworkshop.com/documentation/publish/submitting-an-add-on/),
+[Firefox data consent](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/).

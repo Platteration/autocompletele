@@ -9,7 +9,7 @@ built on one device can be exported and imported on the others:
 
 | Folder              | Platform | How it works                                                     |
 | ------------------- | -------- | ---------------------------------------------------------------- |
-| `chrome-extension/` | Chrome   | Manifest V3 extension; watches inputs, textareas and rich editors |
+| `chrome-extension/` | Chrome, Firefox | Manifest V3 extension; watches supported inputs, textareas and rich editors |
 | `windows/`          | Windows  | .NET 8 tray app with a global keyboard hook; works in every program |
 | `android/`          | Android  | Accessibility service; works in other apps' text fields          |
 | `shared/`           | –        | Format specification and an example `shorthands.json`            |
@@ -32,6 +32,10 @@ Expansions may contain the placeholders `{date}`, `{time}`, `{datetime}` and
 
 * **Chrome:** `chrome://extensions` → Developer mode → *Load unpacked* →
   pick `chrome-extension/`. See [chrome-extension/README.md](chrome-extension/README.md).
+* **Firefox 142+:** run `cd chrome-extension && npm run build`, then load
+  `dist/firefox/manifest.json` using **Load Temporary Add-on** in
+  `about:debugging#/runtime/this-firefox`. Chrome uses browser sync storage;
+  Firefox stores the library locally. Use JSON export/import to transfer it.
 * **Windows:** `cd windows && dotnet run --project ShorthandExpander`
   (needs the .NET 8 SDK). See [windows/README.md](windows/README.md).
 * **Android:** open `android/` in Android Studio, run on your phone, then

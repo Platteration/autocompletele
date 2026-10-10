@@ -1,0 +1,112 @@
+// Capture real extension UI with synthetic snippets in a disposable profile.
+// Run npm run build first, then node scripts/store-assets.js.
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const http = require("node:http");
+const os = require("node:os");
+const path = require("node:path");
+const { chromium } = require("playwright");
+
+const ROOT = path.resolve(__dirname, "..");
+const EXTENSION = path.join(ROOT, "dist", "chrome");
+const OUTPUT = path.join(ROOT, "store", "images");
+const SNIPPETS = [
+  { trigger: "thanks/", expansion: "Thanks for your help!" },
+  { trigger: "followup/", expansion: "Thanks for the update. I will follow up soon." },
+  { trigger: "next/", expansion: "Next step: {cursor} — {date}" },
+  { trigger: "sig/", expansion: "Best regards,\nAlex" },
+];
+
+// This is a local demonstration page, not a screenshot of a third-party service.
+const DEMO = `<!doctype html><html lang="en"><meta charset="utf-8">
+<title>Shorthand Autofill — writing demo</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6f8;color:#172033;font:18px/1.6 system-ui,sans-serif}
+main{max-width:1100px;margin:84px auto}.brand{font-size:13px;font-weight:750;letter-spacing:.14em;color:#2357d7}
+.layout{display:grid;grid-template-columns:360px 1fr;gap:64px;margin-top:58px}h1{font-size:44px;line-height:1.12;letter-spacing:-.04em;margin:0 0 24px}
+p{color:#536075}code{color:#2357d7;background:#e9efff;border-radius:5px;padding:2px 6px}
+.editor{background:white;border:1px solid #dfe4ea;border-radius:16px;padding:28px;box-shadow:0 10px 30px #1720330a}
+label{display:block;font-weight:650;margin-bottom:14px}textarea{display:block;resize:none;width:100%;height:280px;font:18px/1.65 system-ui,sans-serif;padding:18px;border:1px solid #bdc9dc;border-radius:9px;color:#172033}
+textarea:focus{outline:2px solid #2357d7;outline-offset:2px}.caption{font-size:13px;color:#677386;margin:14px 0 0}
+</style><main><div class="brand">SHORTHAND AUTOFILL · WRITING DEMO</div>
+<div class="layout"><section><h1>The right words,<br>at your fingertips.</h1>
+<p>Type <code>;;</code> in a supported text field to find a saved snippet.</p>
+<p>Choose with the arrow keys.<br>Press Enter to insert.</p></section>
+<section class="editor"><label for="message">Your message</label><textarea id="message"></textarea>
+<p class="caption">A local demo using fictional text and the running extension.</p></section></div></main></html>`;
+
+function promotionalHtml(icon) {
+  return `<!doctype html><html lang="en"><meta charset="utf-8"><title>Shorthand Autofill</title><style>
+*{box-sizing:border-box}body{margin:0;width:440px;height:280px;padding:28px 30px;background:#14264d;color:#fff;font-family:system-ui,sans-serif}
+header{display:flex;align-items:center;gap:14px}img{width:54px;height:54px;border-radius:12px}strong{font-size:25px;letter-spacing:-.035em}
+h1{font-size:33px;line-height:1.16;letter-spacing:-.035em;margin:22px 0 15px;font-weight:650}
+p{margin:0;color:#d2e0ff;font-size:15px}code{font-size:14px;background:#fff;color:#193d91;border-radius:6px;padding:5px 9px}span{padding:0 9px}
+</style><header><img src="data:image/png;base64,${icon}" alt=""><strong>Shorthand Autofill</strong></header>
+<h1>Your repeated text,<br>one shortcut away.</h1><p><code>thanks/</code><span>→</span>Thanks for your help!</p></html>`;
+}
+
+async function main() {
+  assert.ok(fs.existsSync(path.join(EXTENSION, "manifest.json")), "Run npm run build first.");
+  fs.mkdirSync(OUTPUT, { recursive: true });
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "shorthand-store-"));
+  const server = http.createServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    response.end(DEMO);
+  });
+  let context;
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    context = await chromium.launchPersistentContext(profile, {
+      headless: false,
+      ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
+      viewport: { width: 1280, height: 800 },
+      deviceScaleFactor: 1,
+      colorScheme: "light",
+      args: ["--headless=new", "--no-sandbox", `--disable-extensions-except=${EXTENSION}`, `--load-extension=${EXTENSION}`],
+    });
+    let [worker] = context.serviceWorkers();
+    if (!worker) worker = await context.waitForEvent("serviceworker", { timeout: 30000 });
+    const extensionId = new URL(worker.url()).host;
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/src/options.html`);
+    // Wait for first-install initialization before replacing the example library.
+    await options.waitForFunction(() => document.querySelectorAll("#list tbody tr").length > 0);
+    await worker.evaluate(async (snippets) => {
+      await self.ShorthandStorage.replaceAll(snippets);
+      await self.ShorthandStorage.saveSettings({ enabled: true, excludedHosts: [], pickerTrigger: ";;" });
+    }, SNIPPETS);
+    await options.reload();
+    await options.waitForFunction(() => document.querySelectorAll("#list tbody tr").length === 4);
+    // Scroll only; preserve the extension's own layout, styles, and controls.
+    await options.evaluate(() => window.scrollTo(0, document.querySelector("#editor").closest(".card").offsetTop - 24));
+    await options.screenshot({ path: path.join(OUTPUT, "chrome-library-1280x800.png") });
+
+    const demo = await context.newPage();
+    await demo.goto(`http://127.0.0.1:${server.address().port}/`);
+    const message = demo.locator("#message");
+    await message.fill("Hi Morgan,\n\n");
+    await message.pressSequentially(";;fol", { delay: 90 });
+    await demo.locator("#shorthand-picker-host").waitFor();
+    assert.equal(await message.evaluate((element) => document.activeElement === element), true);
+    await demo.screenshot({ path: path.join(OUTPUT, "chrome-picker-1280x800.png") });
+    await message.press("Enter");
+    assert.equal(await message.inputValue(), "Hi Morgan,\n\nThanks for the update. I will follow up soon.");
+
+    const promo = await context.newPage();
+    await promo.setViewportSize({ width: 440, height: 280 });
+    await promo.setContent(promotionalHtml(fs.readFileSync(path.join(ROOT, "icons", "icon128.png")).toString("base64")));
+    await promo.screenshot({ path: path.join(OUTPUT, "promo-440x280.png") });
+    console.log("Store images written to chrome-extension/store/images/ (synthetic snippets, actual Chromium extension UI).");
+  } finally {
+    if (context) await context.close();
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(profile, { recursive: true, force: true });
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

@@ -61,8 +61,10 @@
     host.id = HOST_ID;
     // The page's own styles must not reach inside, and ours must not leak out.
     shadow = host.attachShadow({ mode: "closed" });
-    shadow.innerHTML = `
-      <style>
+    // Constructed stylesheets keep the overlay styled on Firefox pages whose
+    // CSP rejects inline <style> elements inserted by content scripts.
+    const stylesheet = new CSSStyleSheet();
+    stylesheet.replaceSync(`
         /* Reset first so nothing inherits from the page, then position. The
            host itself is the positioned box, which keeps it measurable from
            outside the closed shadow root. */
@@ -97,7 +99,9 @@
         }
         .empty, .hint { padding: 8px 10px; opacity: .7; }
         .hint { border-top: 1px solid #e5e7eb; font-size: 11px; }
-      </style>
+    `);
+    shadow.adoptedStyleSheets = [stylesheet];
+    shadow.innerHTML = `
       <div class="panel" role="dialog" aria-label="Insert shorthand">
         <div class="query"></div>
         <div class="list" role="listbox"></div>

@@ -14,6 +14,12 @@ test("works on a page with a strict CSP", async (t) => {
   page.on("console", (m) => {
     if (/Content Security Policy/i.test(m.text())) violations.push(m.text());
   });
+  await page.addInitScript(() => {
+    window.__shorthandCspViolations = [];
+    document.addEventListener("securitypolicyviolation", (event) => {
+      window.__shorthandCspViolations.push(event.violatedDirective);
+    });
+  });
 
   await page.goto("file://" + path.join(__dirname, "fixtures", "strict-csp.html"));
   await page.waitForTimeout(400);
@@ -29,18 +35,20 @@ test("works on a page with a strict CSP", async (t) => {
     await page.keyboard.type(" ;;");
     await page.waitForTimeout(250);
     assert.equal(await pickerVisible(page), true);
-    // The panel's size comes from the stylesheet in its shadow root, so a box
-    // with real dimensions means those styles survived the policy.
+    // An unstyled block can also have large dimensions. Check the stylesheet's
+    // actual fixed positioning and bounded width, not only a nonempty box.
     const box = await page.evaluate(() => {
       const host = document.getElementById("shorthand-picker-host");
       const rect = host.getBoundingClientRect();
-      return { width: rect.width, height: rect.height };
+      return { width: rect.width, height: rect.height, position: getComputedStyle(host).position };
     });
-    assert.ok(box.width > 100, `expected a laid-out panel, got width ${box.width}`);
+    assert.equal(box.position, "fixed");
+    assert.ok(box.width >= 340 && box.width <= 342, `expected a 340px panel plus border, got width ${box.width}`);
     assert.ok(box.height > 50, `expected a laid-out panel, got height ${box.height}`);
   });
 
-  await t.test("the extension trips no CSP violation", () => {
+  await t.test("the extension trips no CSP violation", async () => {
     assert.deepEqual(violations, []);
+    assert.deepEqual(await page.evaluate(() => window.__shorthandCspViolations), []);
   });
 });

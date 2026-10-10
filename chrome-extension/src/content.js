@@ -255,7 +255,7 @@
   document.addEventListener("mousedown", () => { lastExpansion = null; }, true);
 
   chrome.storage.onChanged.addListener((_changes, area) => {
-    if (area === "sync") reload();
+    if (area === storage.AREA) reload();
   });
 
   reload();
