@@ -19,6 +19,7 @@
   function setStatus(enabled, siteEnabled) {
     const active = enabled && siteEnabled;
     statusEl.textContent = active ? "Active" : "Paused";
+    statusEl.dataset.state = active ? "active" : "paused";
     statusEl.setAttribute("aria-label", active ? "Expansion active" : "Expansion paused");
   }
 

@@ -233,8 +233,9 @@
     const value = pickerTriggerEl.value.trim();
     if (/\s/.test(value)) {
       pickerTriggerEl.value = storage.DEFAULT_SETTINGS.pickerTrigger;
-      return say(formMsg, "The search trigger cannot contain spaces.", true);
+      return say($("pickerMsg"), "The search trigger cannot contain spaces.", true);
     }
+    say($("pickerMsg"), "");
     storage.saveSettings({ pickerTrigger: value });
   });
 

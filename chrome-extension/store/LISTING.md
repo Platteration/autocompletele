@@ -118,8 +118,10 @@ Prepared assets:
 | Asset | File |
 | --- | --- |
 | Chrome library manager, 1280×800 | [chrome-library-1280x800.png](images/chrome-library-1280x800.png) |
+| Chrome library manager, dark theme, 1280×800 | [chrome-library-dark-1280x800.png](images/chrome-library-dark-1280x800.png) |
 | Chrome picker on a local demo page, 1280×800 | [chrome-picker-1280x800.png](images/chrome-picker-1280x800.png) |
 | Firefox library manager, 1280×800 | [firefox-library-1280x800.png](images/firefox-library-1280x800.png) |
+| Firefox library manager, dark theme, 1280×800 | [firefox-library-dark-1280x800.png](images/firefox-library-dark-1280x800.png) |
 | Small promotional image, 440×280 | [promo-440x280.png](images/promo-440x280.png) |
 
 The Chrome screenshots show the actual running extension in Chromium; the demo

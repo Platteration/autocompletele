@@ -27,6 +27,12 @@ source directory is not the Firefox package.
 
 ## Toolbar command palette
 
+The library, toolbar, and search overlay share a blue palette and follow the
+browser's light or dark appearance. The library opens first, with Settings and
+Backup links at the top. Narrow windows display each saved shorthand as a
+stacked row with its editing controls in view. Keyboard focus, selected results,
+and disabled import controls have distinct visual states.
+
 Open the extension from the browser's toolbar to get a compact searchable view of
 your shorthand library. Search matches triggers first and then expansion text;
 press Enter to copy the top result, or use the arrow keys to move through the
@@ -102,15 +108,17 @@ Firefox can associate updates and saved data with the same extension.
 ## Store submission
 
 [store/LISTING.md](store/LISTING.md) contains listing copy, permission
-justifications, screenshot specifications, and a reviewer walkthrough. Complete
-the owner fields in [store/PRIVACY.md](store/PRIVACY.md) and host it publicly
-before submission. Store accounts, the owner's license selection, and final
-dashboard declarations are required to publish.
+justifications, screenshot specifications, and a reviewer walkthrough. The
+completed [privacy policy](store/PRIVACY.md) has a public URL recorded in the
+listing. Registered store accounts and final dashboard declarations are required
+to publish.
 
-The [store images](store/LISTING.md#screenshots-and-artwork) include captures of
-the running Chromium extension and a small promotional tile. To refresh them
-after rebuilding, run `node scripts/store-assets.js`. This uses a disposable
-browser profile and fictional snippets; it does not modify your library.
+The [store images](store/LISTING.md#screenshots-and-artwork) include light/dark
+captures of the running Chrome and Firefox libraries, the in-field picker, and
+a small promotional tile. To refresh them after rebuilding, run
+`node scripts/store-assets.js` and `node scripts/store-assets-firefox.js` with
+the browser environment described below. These use disposable browser profiles
+and fictional snippets; they do not modify your library.
 
 ## Development and validation
 

@@ -7,43 +7,29 @@
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <header class="hero">
-    <div>
-      <p class="eyebrow">Shorthand Autofill</p>
-      <h1>Your typing shortcuts, under control.</h1>
-      <p class="hint">Type a trigger such as <code>cool/</code> in any text field and it expands into the full text. Placeholders: <code>{date}</code>, <code>{time}</code>, <code>{datetime}</code>, <code>{cursor}</code>.</p>
+  <header>
+    <div class="brand-bar">
+      <a class="brand" href="#library"><img src="../icons/icon48.png" width="32" height="32" alt="">Shorthand Autofill</a>
+      <nav aria-label="Page sections"><a href="#settings">Settings</a><a href="#backup">Backup</a></nav>
     </div>
-    <div class="hero-status" aria-live="polite">
-      <strong id="shorthandCount">0</strong>
-      <span>shorthands</span>
+    <div class="hero">
+      <div>
+        <h1>Your words, one shortcut away.</h1>
+        <p class="hint">Save the text you use often. Type a short trigger in a supported text field and keep going.</p>
+      </div>
+      <div class="hero-status" aria-live="polite">
+        <strong id="shorthandCount">0</strong>
+        <span>saved shorthands</span>
+      </div>
     </div>
   </header>
 
-  <section class="card settings-grid">
-    <label class="toggle-row">
-      <span>
-        <strong>Expansion</strong>
-        <small>Pause every shorthand without deleting anything.</small>
-      </span>
-      <input type="checkbox" id="enabled" aria-label="Expansion enabled">
-    </label>
-    <label class="row column">
-      <span><strong>Search overlay trigger</strong></span>
-      <small>Type it in any field to search your shorthands; leave empty to turn it off.</small>
-      <input type="text" id="pickerTrigger" placeholder=";;" autocomplete="off" data-shorthand-ignore>
-    </label>
-    <label class="row column span-2">
-      <span><strong>Never expand on these sites</strong></span>
-      <small>One hostname per line. Useful for banking, admin consoles, and other sensitive contexts.</small>
-      <textarea id="excluded" rows="3" placeholder="example.com&#10;mail.google.com" data-shorthand-ignore></textarea>
-    </label>
-  </section>
-
-  <section class="card">
+  <main>
+  <section class="card library-card" id="library" aria-labelledby="libraryTitle">
     <div class="section-heading">
       <div>
-        <p class="eyebrow">Library</p>
-        <h2>Shorthands</h2>
+        <p class="eyebrow">Your library</p>
+        <h2 id="libraryTitle">Shorthands</h2>
       </div>
       <label class="search-box">
         <span class="sr-only">Search shorthands</span>
@@ -58,7 +44,7 @@
           <input type="text" id="trigger" placeholder="cool/" autocomplete="off" data-shorthand-ignore required>
         </label>
         <label>Expansion
-          <textarea id="expansion" rows="3" placeholder="That is really cool, thanks for sharing!" data-shorthand-ignore required></textarea>
+          <textarea id="expansion" rows="2" placeholder="That is really cool, thanks for sharing!" data-shorthand-ignore required></textarea>
         </label>
       </div>
       <div class="actions">
@@ -69,8 +55,8 @@
     </form>
 
     <div class="table-wrap">
-      <table id="list">
-        <thead><tr><th>Trigger</th><th>Expansion</th><th></th></tr></thead>
+      <table id="list" aria-label="Saved shorthands">
+        <thead><tr><th scope="col">Trigger</th><th scope="col">Expansion</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -78,21 +64,57 @@
     <p id="noMatches" class="empty-state" hidden>No shorthand matches that search.</p>
   </section>
 
-  <section class="card try-card">
+  <div class="workspace-secondary">
+  <section class="card try-card" aria-labelledby="tryTitle">
     <div>
       <p class="eyebrow">Playground</p>
-      <h2>Try it</h2>
-      <p class="hint">Type one of your triggers here. Press Backspace immediately after an expansion to restore the trigger.</p>
+      <h2 id="tryTitle">Try it</h2>
+      <p class="hint">A little space to test your shortcuts before using them elsewhere.</p>
     </div>
+    <label for="tryit" class="sr-only">Test a shorthand</label>
     <textarea id="tryit" rows="4" placeholder="cool/"></textarea>
+    <p class="hint keyboard-hint">Press <kbd>Backspace</kbd> immediately after an expansion to undo it.</p>
+    <div class="quick-guide">
+      <h3>Make it personal</h3>
+      <p class="hint">Use placeholders in your expansions:</p>
+      <dl>
+        <div><dt><code>{date}</code></dt><dd>Today's date</dd></div>
+        <div><dt><code>{time}</code></dt><dd>The current time</dd></div>
+        <div><dt><code>{datetime}</code></dt><dd>Date and time together</dd></div>
+        <div><dt><code>{cursor}</code></dt><dd>Where typing continues</dd></div>
+      </dl>
+    </div>
   </section>
 
-  <section class="card">
+  <section class="card settings-card" id="settings" aria-labelledby="settingsTitle">
+    <p class="eyebrow">Your preferences</p>
+    <h2 id="settingsTitle">Settings</h2>
+    <div class="settings-grid">
+      <label class="toggle-row">
+        <span><strong>Expansion</strong><small>Pause shortcuts without deleting them.</small></span>
+        <input type="checkbox" id="enabled" aria-label="Expansion enabled">
+      </label>
+      <label class="row column">
+        <span><strong>Search overlay trigger</strong></span>
+        <small>Type this in a supported field to find a shorthand. Leave empty to turn it off.</small>
+        <input type="text" id="pickerTrigger" placeholder=";;" autocomplete="off" aria-describedby="pickerMsg" data-shorthand-ignore>
+        <span id="pickerMsg" class="msg" role="status"></span>
+      </label>
+      <label class="row column">
+        <span><strong>Never expand on these sites</strong></span>
+        <small>One hostname per line, such as example.com.</small>
+        <textarea id="excluded" rows="3" placeholder="example.com&#10;mail.google.com" data-shorthand-ignore></textarea>
+      </label>
+    </div>
+  </section>
+  </div>
+
+  <section class="card" id="backup" aria-labelledby="backupTitle">
     <div class="section-heading">
       <div>
         <p class="eyebrow">Portability</p>
-        <h2>Import / export</h2>
-        <p class="hint">Uses the same JSON format as the Windows and Android apps.</p>
+        <h2 id="backupTitle">Import / export</h2>
+        <p class="hint">Keep a backup or move your library between browsers, Windows, and Android.</p>
       </div>
       <div class="actions compact">
         <button type="button" id="exportBtn" class="secondary">Export JSON</button>
@@ -126,6 +148,8 @@
       </div>
     </div>
   </section>
+  </main>
+  <footer class="page-footer">Made for the words you use every day.</footer>
 
   <script src="expander.js"></script>
   <script src="conflicts.js"></script>

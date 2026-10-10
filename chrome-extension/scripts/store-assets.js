@@ -79,9 +79,12 @@ async function main() {
     }, SNIPPETS);
     await options.reload();
     await options.waitForFunction(() => document.querySelectorAll("#list tbody tr").length === 4);
-    // Scroll only; preserve the extension's own layout, styles, and controls.
-    await options.evaluate(() => window.scrollTo(0, document.querySelector("#editor").closest(".card").offsetTop - 24));
+    // Keep the product identity and library together in the store capture.
+    await options.evaluate(() => window.scrollTo(0, 0));
     await options.screenshot({ path: path.join(OUTPUT, "chrome-library-1280x800.png") });
+    await options.emulateMedia({ colorScheme: "dark" });
+    await options.screenshot({ path: path.join(OUTPUT, "chrome-library-dark-1280x800.png") });
+    await options.emulateMedia({ colorScheme: "light" });
 
     const demo = await context.newPage();
     await demo.goto(`http://127.0.0.1:${server.address().port}/`);
