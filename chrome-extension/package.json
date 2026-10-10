@@ -1,5 +1,5 @@
 {
-  "name": "shorthand-autofill-extension",
+  "name": "actle-extension",
   "version": "1.0.0",
   "private": true,
   "engines": { "node": ">=22.2.0" },

@@ -117,6 +117,8 @@ test("Firefox: real temporary add-on and browser UI", { timeout: 120000 }, async
     await click("#saveBtn");
     await driver.wait(async () => (await row("ff/")).getText().then((s) => s.includes("Firefox persisted")), 5000);
     await driver.navigate().refresh();
+    // Navigation completes before the asynchronous stored library is rendered.
+    await driver.wait(async () => (await driver.findElements(By.css("#list tbody tr"))).length === 6, 5000);
     assert.ok((await (await row("ff/")).getText()).includes("Firefox persisted"));
     await (await (await row("ff/")).findElement(By.css("button.danger"))).click();
     await driver.wait(async () => (await driver.findElements(By.css("#list tbody tr"))).length === 5, 5000);

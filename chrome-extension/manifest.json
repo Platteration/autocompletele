@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Shorthand Autofill",
+  "name": "actle",
   "version": "1.0.0",
   "description": "Expand short triggers into reusable text and fill-in templates in supported webpage fields.",
   "permissions": ["storage"],
@@ -19,7 +19,7 @@
   "options_page": "src/options.html",
   "action": {
     "default_popup": "src/popup.html",
-    "default_title": "Shorthand Autofill",
+    "default_title": "actle",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

@@ -1,5 +1,5 @@
-"""Generate the extension icons (blue rounded square with a white slash) without any image library."""
-import struct, zlib, os, math
+"""Generate actle's blue tile with a lowercase a and caret without any image library."""
+import struct, zlib, os
 
 def png(width, height, rows):
     def chunk(tag, data):
@@ -12,7 +12,6 @@ def png(width, height, rows):
 def icon(size):
     bg = (37, 99, 235); fg = (255, 255, 255)
     radius = size * 0.22
-    thick = size * 0.13
     rows = []
     ss = 4  # supersampling per axis
     for y in range(size):
@@ -28,10 +27,15 @@ def icon(size):
                     inside = (dx * dx + dy * dy) <= radius * radius
                     if not inside: continue
                     cov_bg += 1
-                    # slash from bottom-left to top-right, distance to line y = size - x
-                    d = abs(px + py - size) / math.sqrt(2)
-                    margin = size * 0.24
-                    if d <= thick / 2 and margin < px < size - margin and margin < py < size - margin:
+                    # A single-storey lowercase a, followed by an insertion caret.
+                    # The normalized grid keeps the bowl open and the caret one
+                    # pixel wide at the smallest, 16px toolbar size.
+                    gx = px / size * 16; gy = py / size * 16
+                    distance = (gx - 6.5) ** 2 + (gy - 8.5) ** 2
+                    bowl = 1.75 ** 2 <= distance <= 3.5 ** 2
+                    stem = 8.5 <= gx <= 10 and 5 <= gy <= 12
+                    caret = 12 <= gx <= 13 and 4 <= gy <= 12
+                    if bowl or stem or caret:
                         cov_fg += 1
             n = ss * ss
             a = cov_bg / n

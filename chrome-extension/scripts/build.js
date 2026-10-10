@@ -80,7 +80,7 @@ function buildPackages(output = path.join(ROOT, "dist")) {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.writeFileSync(target, bytes);
     }
-    fs.writeFileSync(path.join(output, `shorthand-autofill-${browser}-${manifest.version}.zip`), zip(files));
+    fs.writeFileSync(path.join(output, `actle-${browser}-${manifest.version}.zip`), zip(files));
   }
 }
 

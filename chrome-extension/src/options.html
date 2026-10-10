@@ -3,13 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shorthand Autofill – Options</title>
+  <title>actle – Options</title>
   <link rel="stylesheet" href="options.css">
+  <link rel="stylesheet" href="brand.css">
 </head>
 <body>
   <div class="app-shell">
   <aside class="sidebar">
-    <a class="brand" href="#library"><img src="../icons/icon48.png" width="36" height="36" alt=""><span>Shorthand<span class="brand-subtitle">Autofill</span></span></a>
+    <div class="brand">
+      <a class="brand-home" href="#library" aria-label="actle library"><img src="../icons/icon48.png" width="36" height="36" alt=""></a>
+      <button class="actle-brand" type="button" data-actle-brand aria-label="actle — autocompletes to autocompletele. Replay logo animation" title="actle → autocompletele"><span class="actle-brand__word" aria-hidden="true">actle</span></button>
+      <span class="brand-subtitle">A little goes a long way.</span>
+    </div>
     <nav class="sidebar-nav" aria-label="Page sections">
       <a href="#library" class="nav-primary"><span aria-hidden="true">01</span> Your library</a>
       <a href="#playground"><span aria-hidden="true">02</span> Playground</a>
@@ -180,6 +185,7 @@
   </div>
   </div>
 
+  <script src="brand.js"></script>
   <script src="expander.js"></script>
   <script src="template.js"></script>
   <script src="conflicts.js"></script>

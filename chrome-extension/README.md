@@ -1,9 +1,13 @@
-# Shorthand Autofill – Chrome and Firefox extension
+# actle – Chrome and Firefox extension
 
 Expands shorthands such as `cool/` into full text in supported webpage text
 fields, textareas, and rich-text editors (contenteditable), as you type.
 Password fields are excluded. Browser-protected pages and some custom editors
 do not allow expansion.
+
+![The actle logo autocompletes to autocompletele](store/images/actle-autocomplete.gif)
+
+The preview loops here; the extension plays the logo once and lets you replay it.
 
 ## Install in Chrome (unpacked)
 
@@ -34,6 +38,11 @@ The selected script is highlighted while you edit it. Narrow windows stack the
 library and editor, keeping the editing controls in view. The library, toolbar,
 search overlay, and fill-in form follow the browser's light or dark appearance.
 Keyboard focus, selected results, and disabled controls have distinct states.
+
+The actle logo completes `actle` into `autocompletele` once when the library or
+toolbar popup opens. Select the logo to replay the completion. Reduced-motion
+preferences suppress the animation. Store screenshots show the resting logo;
+the promotional tile uses a static `actle → autocompletele` motif.
 
 ## Fill-in templates
 
@@ -145,8 +154,8 @@ npm run build
 
 This uses Node's built-in modules and needs no dependency installation. It
 creates unpacked browser directories at `dist/chrome/` and `dist/firefox/`,
-plus `dist/shorthand-autofill-chrome-1.0.0.zip` and
-`dist/shorthand-autofill-firefox-1.0.0.zip` for the current manifest version.
+plus `dist/actle-chrome-1.0.0.zip` and
+`dist/actle-firefox-1.0.0.zip` for the current manifest version.
 Each ZIP places its browser-specific `manifest.json` at the root and includes
 only runtime scripts, styles, HTML, and icons. Tests, development dependencies,
 and store documentation are not bundled. Rebuild after changing runtime files.

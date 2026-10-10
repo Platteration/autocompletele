@@ -28,6 +28,9 @@ async function main() {
     await driver.wait(() => driver.executeScript(
       "return document.getElementById('templateFieldCount').textContent === '3 fill-in blanks'"
     ), 5000);
+    await driver.wait(() => driver.executeScript(
+      "return document.querySelector('button[data-actle-brand]')?.dataset.actleState === 'idle'"
+    ), 10000);
     await driver.manage().window().setRect({ width: 1280, height: 800 });
     const extra = await driver.executeScript(
       "return {width: outerWidth-innerWidth, height: outerHeight-innerHeight}"

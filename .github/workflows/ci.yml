@@ -39,7 +39,7 @@ jobs:
           GECKODRIVER_PATH: ${{ runner.temp }}/shorthand-geckodriver/geckodriver
       - uses: actions/upload-artifact@v4
         with:
-          name: ShorthandAutofill-browser-packages
+          name: actle-browser-packages
           path: chrome-extension/dist/*.zip
 
   windows:

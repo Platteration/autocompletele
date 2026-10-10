@@ -88,7 +88,7 @@ for (const theme of ["light", "dark"]) {
     t.after(() => app.close());
     const page = await openPage(app, "options", theme);
     await page.fill("#expansion", "Hello [[name]]");
-    await assertReadable(page, "#saveBtn, #importBtn, .hint, small, th, .warning, .eyebrow, button.secondary, button.danger, .sidebar-note, .sidebar-note-label, .sidebar-nav a, .brand-subtitle, .field-chip, #templateFieldCount, .template-badge, .library-note");
+    await assertReadable(page, "#saveBtn, #importBtn, .hint, small, th, .warning, .eyebrow, button.secondary, button.danger, .sidebar-note, .sidebar-note-label, .sidebar-nav a, .brand-subtitle, .actle-brand, .actle-brand__completion, .field-chip, #templateFieldCount, .template-badge, .library-note");
     await page.fill("#trigger", "sig/");
     await page.fill("#expansion", "Duplicate trigger");
     await page.click("#saveBtn");

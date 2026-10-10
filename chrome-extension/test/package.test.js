@@ -14,6 +14,8 @@ test("browser packages contain only runtime files and installable manifests", as
     const directory = path.join(output, browser);
     const manifest = JSON.parse(fs.readFileSync(path.join(directory, "manifest.json")));
     assert.equal(manifest.manifest_version, 3);
+    assert.equal(manifest.name, "actle");
+    assert.equal(manifest.action.default_title, "actle");
     assert.deepEqual(manifest.permissions, ["storage"]);
     assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
     if (browser === "chrome") {
@@ -36,8 +38,10 @@ test("browser packages contain only runtime files and installable manifests", as
     for (const file of files) assert.match(file, /^(manifest\.json|src\/[^/]+\.(js|html|css)|icons\/icon\d+\.png)$/);
     assert.ok(files.includes("src/options.js"));
     assert.ok(files.includes("src/popup.js"));
+    assert.ok(files.includes("src/brand.js"));
+    assert.ok(files.includes("src/brand.css"));
 
-    const archivePath = path.join(output, `shorthand-autofill-${browser}-${manifest.version}.zip`);
+    const archivePath = path.join(output, `actle-${browser}-${manifest.version}.zip`);
     const archive = fs.readFileSync(archivePath);
     archives[archivePath] = archive;
     // Inspect local entries independently of the writer, including exact file contents.

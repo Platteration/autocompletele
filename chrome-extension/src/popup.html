@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shorthand Autofill</title>
+  <title>actle</title>
   <style>
     :root { color-scheme: light dark; --bg:#f4f6f8; --panel:#fff; --text:#172033; --muted:#526078; --line:#d7deea; --control:#7d8ba1; --accent:#2357d7; --soft:#eaf0ff; --pressed:#dce6ff; }
     @media (prefers-color-scheme: dark) { :root { --bg:#0d1320; --panel:#151d2c; --text:#eef2f7; --muted:#a7b4c8; --line:#344159; --control:#7f8da5; --accent:#a4bdff; --soft:#233354; --pressed:#30446c; } }
@@ -49,12 +49,13 @@
     @media (prefers-color-scheme: dark) { .toggles input { accent-color:#315ccc; } }
     @media (forced-colors: active) { :focus-visible { outline-color:Highlight; } .result, .status, button.link { border:1px solid ButtonText; } }
   </style>
+  <link rel="stylesheet" href="brand.css">
 </head>
 <body>
   <div class="top">
     <div class="brand">
       <img src="../icons/icon48.png" width="32" height="32" alt="">
-      <div><h1>Shorthand Autofill</h1><p class="tagline">Your shortcut library</p></div>
+      <div><h1 class="sr-only">actle</h1><button class="actle-brand" type="button" data-actle-brand aria-label="actle — autocompletes to autocompletele. Replay logo animation" title="actle → autocompletele"><span class="actle-brand__word" aria-hidden="true">actle</span></button><p class="tagline">A little goes a long way.</p></div>
     </div>
     <span class="status" id="status">Ready</span>
   </div>
@@ -85,6 +86,7 @@
     <button class="link" id="options">Manage library →</button>
   </div>
 
+  <script src="brand.js"></script>
   <script src="expander.js"></script>
   <script src="template.js"></script>
   <script src="template-form.js"></script>

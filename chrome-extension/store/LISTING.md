@@ -6,7 +6,7 @@ Creating a ZIP does not publish or sign the extension.
 
 ## Listing copy
 
-**Name:** Shorthand Autofill
+**Name:** actle
 
 **Short description / summary:** Expand shortcuts into reusable text and fill-in templates in supported webpage fields.
 
@@ -18,7 +18,7 @@ Creating a ZIP does not publish or sign the extension.
 
 **Full description:**
 
-Turn phrases you type again and again into shortcuts you can remember. Create a
+With actle, turn phrases you type again and again into shortcuts you can remember. Create a
 trigger such as `cool/`, give it an expansion, and type the trigger in a supported
 webpage field to insert your saved text.
 
@@ -43,6 +43,10 @@ builder, and light and dark themes. Each template is one saved script with
 details you fill in each time. For example, `Hi [[name]], thanks for asking
 about [[topic]]!` asks for two answers before inserting your message. Cancel
 without changing the field if you are not ready to insert.
+
+The logo completes actle into autocompletele once when you open the library or
+toolbar. Replay it by selecting the logo, with reduced-motion preferences
+respected.
 
 Fill-in templates work in the Chrome and Firefox extensions. Windows and
 Android preserve their text during JSON transfer but do not show fill-in forms.
@@ -112,13 +116,13 @@ update store listings to a new policy URL if the extension's data practices chan
 
 1. Register in the [Chrome Web Store developer dashboard](https://chrome.google.com/webstore/devconsole/),
    complete Google's developer verification and any registration fee shown, and
-   upload `dist/shorthand-autofill-chrome-1.0.0.zip` as a new item. Add the listing
+   upload `dist/actle-chrome-1.0.0.zip` as a new item. Add the listing
    copy, privacy-policy URL, permission explanations, icon, screenshots, and
    promotional image from this directory, then complete the dashboard's
    declarations and submit for review.
 2. Sign in to the [Firefox Add-ons developer hub](https://addons.mozilla.org/developers/),
    register the developer account, and submit
-   `dist/shorthand-autofill-firefox-1.0.0.zip` for distribution on Firefox Add-ons.
+   `dist/actle-firefox-1.0.0.zip` for distribution on Firefox Add-ons.
    Add the Firefox screenshot, listing copy, privacy policy, and reviewer
    walkthrough. Select All rights reserved and complete the declarations.
    The package contains readable, unminified JavaScript and no downloaded
@@ -128,6 +132,8 @@ update store listings to a new policy URL if the extension's data practices chan
    review status before announcing the extension as available in that store.
 
 ## Screenshots and artwork
+
+The [animated logo preview](images/actle-autocomplete.gif) demonstrates the app identity; use the static PNG assets below for store uploads.
 
 Prepared assets:
 
@@ -146,7 +152,9 @@ The Chrome screenshots show the actual running extension in Chromium; the demo
 page uses fictional text. Refresh these assets with `npm run build` followed by
 `node scripts/store-assets.js` from `chrome-extension/`, after installing the
 development dependencies and Chromium. The script renders the promotional tile
-using the existing icon and creates a fresh temporary profile for UI captures.
+using the actle icon and creates a fresh temporary profile for UI captures.
+Library captures wait until the logo animation finishes. The demo page and
+promotional tile show a static `actle → autocompletele` completion motif.
 Refresh the Firefox images with `node scripts/store-assets-firefox.js` and the
 Firefox driver environment described in the extension README.
 
@@ -161,8 +169,8 @@ personal data, browser profile details, unrelated tabs, or another site's brand.
 - Useful screenshots: the library manager with a few snippets, the in-field
   picker filtering a snippet, the fill-in form with its live preview, and the
   toolbar search/copy palette.
-- Promotional copy can read **Shorthand Autofill** and **Your repeated text,
-  one shortcut away.** Use the existing icon and actual UI where shown.
+- Promotional copy can read **actle → autocompletele** and **Your repeated text,
+  one shortcut away.** Use the actle icon and actual UI where shown.
 
 ## Reviewer walkthrough
 
@@ -171,6 +179,8 @@ Firefox stores the library locally.
 
 1. Install the package and open its options page. Create `thanks/` with expansion
    `Thanks for your help!` and `next/` with expansion `Next step: {cursor} — {date}`.
+   Check the logo's single completion animation and replay control. With the
+   system's reduced-motion preference enabled, the logo should remain static.
 2. In **Try it**, type `thanks/`. Confirm insertion, then immediately press
    Backspace to restore the trigger. Type `next/` and check the date and caret.
 3. Type `;;`, search for `thanks`, select the result with the arrow keys, and

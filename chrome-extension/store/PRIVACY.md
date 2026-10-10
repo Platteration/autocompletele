@@ -1,4 +1,4 @@
-# Shorthand Autofill privacy policy
+# actle privacy policy
 
 **Publisher:** Platteration
 
@@ -6,13 +6,13 @@
 
 **Effective date:** October 10, 2026
 
-This policy covers the Shorthand Autofill browser extension. The contact page is
+This policy covers the actle browser extension. The contact page is
 public; do not include snippets, credentials, or other private information when
 opening an issue.
 
 ## Text and settings the extension uses
 
-Shorthand Autofill reads text in supported editable webpage fields to find your
+actle reads text in supported editable webpage fields to find your
 configured triggers and insert their expansions. This processing happens in your
 browser. The extension does not record a history of the text you type and does
 not expand triggers in password input fields.
