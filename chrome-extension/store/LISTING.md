@@ -82,15 +82,15 @@ service. Clipboard copies and webpage insertion happen at the user's direction.
 | --- | --- |
 | Publisher name | Platteration |
 | Privacy/support contact | https://github.com/Platteration/autocompletele/issues |
-| Public privacy-policy URL | https://github.com/Platteration/autocompletele/blob/codex/browser-store-release/chrome-extension/store/PRIVACY.md |
+| Public privacy-policy URL | https://raw.githubusercontent.com/Platteration/autocompletele/b7efcc0cc41549f8dcc0f0d02f33469f4e351983/chrome-extension/store/PRIVACY.md |
 | Support website | https://github.com/Platteration/autocompletele/issues |
 | Firefox license selection | All rights reserved; this repository does not grant an open-source license |
 | Developer accounts | Registered Chrome Web Store and Firefox Add-ons publisher accounts must be connected before submission |
 
 Store credentials belong in the stores' account flows or secure environment
 settings, never in this file. Store publication requires access to the owner's
-registered developer accounts. Keep the release branch available while its
-privacy-policy URL is used in store listings.
+registered developer accounts. The privacy-policy URL points to a fixed commit;
+update store listings to a new policy URL if the extension's data practices change.
 
 ### First submission
 
@@ -177,7 +177,7 @@ Firefox stores the library locally.
 - [ ] Test the exact Chrome and Firefox release packages using the walkthrough.
 - [x] Confirm no personal data, credentials, development tools, or test fixtures
   are included in the upload archives.
-- [ ] Complete publisher/contact/license fields and publish the privacy policy.
+- [x] Complete publisher/contact/license fields and publish the privacy policy.
 - [x] Add actual browser screenshots and the required Chrome promotional image.
 - [ ] Complete privacy, permission, source/build, and account declarations in
   each store using the final package's behavior.
