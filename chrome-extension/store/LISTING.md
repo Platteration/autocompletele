@@ -102,7 +102,7 @@ the library. Clipboard copies and webpage insertion happen at the user's directi
 | --- | --- |
 | Publisher name | Platteration |
 | Privacy/support contact | https://github.com/Platteration/autocompletele/issues |
-| Public privacy-policy URL | https://raw.githubusercontent.com/Platteration/autocompletele/0282f7df7641dbf6f16aa0421b5f5ddaa8c5c55f/chrome-extension/store/PRIVACY.md |
+| Public privacy-policy URL | https://raw.githubusercontent.com/Platteration/autocompletele/0d2eeef50822e7374347ccd3dce4850a180b16eb/chrome-extension/store/PRIVACY.md |
 | Support website | https://github.com/Platteration/autocompletele/issues |
 | Firefox license selection | All rights reserved; this repository does not grant an open-source license |
 | Developer accounts | Registered Chrome Web Store and Firefox Add-ons publisher accounts must be connected before submission |
