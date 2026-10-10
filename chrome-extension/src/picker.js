@@ -109,6 +109,7 @@
     emptyEl = shadow.querySelector(".empty");
 
     listEl.addEventListener("mousedown", (ev) => {
+      if (!ev.isTrusted || !anchorFocused()) return;
       // mousedown, not click: clicking must not blur the page's field.
       ev.preventDefault();
       const item = ev.target.closest(".item");
@@ -191,6 +192,12 @@
 
   let currentVisible = [];
 
+  function anchorFocused() {
+    const tree = anchor && anchor.getRootNode ? anchor.getRootNode() : document;
+    const active = tree.activeElement;
+    return !!anchor && (active === anchor || (anchor.isContentEditable && anchor.contains(active)));
+  }
+
   function pick() {
     const chosen = currentVisible[selected];
     // close() clears onPick, so take a reference before closing. The overlay
@@ -219,11 +226,13 @@
   }
 
   function onOutsideMouseDown(ev) {
+    if (!ev.isTrusted) return;
     if (ev.target !== host) close();
   }
 
   function onKeyDown(ev) {
-    if (!open) return;
+    if (!open || !ev.isTrusted) return;
+    if (!anchorFocused()) { close(); return; }
     const stop = () => {
       ev.preventDefault();
       ev.stopPropagation();
