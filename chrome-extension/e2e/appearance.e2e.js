@@ -83,10 +83,12 @@ for (const theme of ["light", "dark"]) {
     const app = await launch({ shorthands: [
       { trigger: "sig", expansion: "Alex" },
       { trigger: "sig/", expansion: "Regards, Alex" },
+      { trigger: "hello/", expansion: "Hello [[name]]" },
     ] });
     t.after(() => app.close());
     const page = await openPage(app, "options", theme);
-    await assertReadable(page, "#saveBtn, #importBtn, .hint, small, th, .warning, .eyebrow, button.secondary, button.danger");
+    await page.fill("#expansion", "Hello [[name]]");
+    await assertReadable(page, "#saveBtn, #importBtn, .hint, small, th, .warning, .eyebrow, button.secondary, button.danger, .sidebar-note, .sidebar-note-label, .sidebar-nav a, .brand-subtitle, .field-chip, #templateFieldCount, .template-badge, .library-note");
     await page.fill("#trigger", "sig/");
     await page.fill("#expansion", "Duplicate trigger");
     await page.click("#saveBtn");
@@ -111,8 +113,12 @@ for (const theme of ["light", "dark"]) {
     const app = await launch();
     t.after(() => app.close());
     const options = await openPage(app, "options", theme);
-    await assertKeyboardFocus(options, "#expansion", "Tab", "#saveBtn");
-    await assertKeyboardFocus(options, "#search", "Tab", "#trigger");
+    // Library rows precede the editor, and the blank builder sits between the
+    // script and Save. Verify the complete new keyboard path, not the old layout.
+    await assertKeyboardFocus(options, "#search", "Tab", "#list tbody tr:first-child button.secondary");
+    await assertKeyboardFocus(options, "#expansion", "Tab", "#fieldName");
+    await assertKeyboardFocus(options, "#fieldName", "Tab", "#addFieldBtn");
+    await assertKeyboardFocus(options, "#addFieldBtn", "Tab", "#saveBtn");
     const popup = await openPage(app, "popup", theme, 360);
     await assertKeyboardFocus(popup, "#search", "ArrowDown", ".result:first-child");
   });

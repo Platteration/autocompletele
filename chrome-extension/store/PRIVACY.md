@@ -23,6 +23,13 @@ overlay trigger, and the hostnames you exclude. When you open the toolbar popup,
 the extension reads the active tab's URL to identify its hostname for the site
 toggle. It does not keep a browsing-history log.
 
+Fill-in templates ask you for temporary answers to named blanks. The extension
+processes these answers in your browser to preview and fill the script. It does
+not save them to extension storage, synchronize them as library content, or
+include them in library exports. The saved script retains its blanks. Confirming
+**Insert text** places the completed text in the webpage; **Copy text** places
+it on your clipboard. Cancelling the form does neither.
+
 ## Storage and browser synchronization
 
 In Chrome, snippets and settings use the browser's extension `storage.sync`
@@ -47,8 +54,9 @@ it can access text you enter yourself. That site's own data practices apply.
 Choosing a snippet's copy action writes its expansion to your clipboard. The
 extension does not read the clipboard. Export creates a JSON file containing
 your snippets; the extension does not encrypt that file. Import reads the JSON
-file you select to preview and import its snippets. Exported files and anything
-you copy or insert may contain information you supplied in your snippets.
+file you select to preview and import its snippets. Exported files may contain
+information you saved in your snippets. Text you copy or insert may also contain
+answers you supplied to a fill-in template.
 
 ## Your controls
 

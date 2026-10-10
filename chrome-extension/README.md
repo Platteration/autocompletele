@@ -25,19 +25,64 @@ Temporary installations are removed when Firefox restarts. A regular Firefox
 release must be signed through Firefox Add-ons. The Chrome manifest in the
 source directory is not the Firefox package.
 
-## Toolbar command palette
+## Your shortcut library
 
-The library, toolbar, and search overlay share a blue palette and follow the
-browser's light or dark appearance. The library opens first, with Settings and
-Backup links at the top. Narrow windows display each saved shorthand as a
-stacked row with its editing controls in view. Keyboard focus, selected results,
-and disabled import controls have distinct visual states.
+The library has a navy sidebar linking to your library, playground, settings,
+and import/export tools. Saved shorthands appear beside the script editor, with
+three-line text previews and a badge showing each template's number of blanks.
+The selected script is highlighted while you edit it. Narrow windows stack the
+library and editor, keeping the editing controls in view. The library, toolbar,
+search overlay, and fill-in form follow the browser's light or dark appearance.
+Keyboard focus, selected results, and disabled controls have distinct states.
+
+## Fill-in templates
+
+Save one reusable script with named blanks, like a Mad Libs:
+
+```text
+Hi [[name]],
+
+Thanks for reaching out about [[topic]].
+I’ll follow up on {date}. Thanks again, [[name]]!
+```
+
+Give it a trigger such as `hello/`. Type that trigger, choose the script from
+the `;;` picker, or select **Fill in** in the toolbar. A form asks for `name`
+and `topic`, with a live preview of the finished text. Repeated `[[name]]`
+blanks share one answer. Fill every blank, then choose **Insert text** on a
+webpage or **Copy text** in the toolbar. Enter also submits a completed form;
+Escape or **Cancel** dismisses it without inserting or copying text. The page's
+trigger remains until you confirm. If the original field changes or becomes
+unavailable while the form is open, insertion stops with a message and your
+answers remain in the form.
+
+In the editor, type `[[name]]` directly or enter a name under **Add a fill-in
+blank** and choose **Insert blank** to add it at the script's caret. The script
+preview highlights blanks before you save. Names are trimmed and case-sensitive:
+`[[ name ]]` and `[[name]]` share an answer; `[[Name]]` is a separate blank.
+Names cannot be empty or contain brackets or line breaks. Write `\[[name]]`
+in the script to insert the literal text `[[name]]` without a prompt.
+
+The script can also use `{date}`, `{time}`, `{datetime}`, and `{cursor}`.
+Answers are inserted literally: entering `{date}`, `{cursor}`, or `[[other]]`
+as an answer does not run another placeholder or create another blank. Answers
+are temporary; they are not saved to your library, synchronized, or included in
+JSON exports. Your saved script keeps its blanks for the next use.
+
+Fill-in forms are available in the Chrome and Firefox extensions. JSON transfer
+preserves the script text in the Windows and Android apps, but those apps do not
+prompt for answers and leave `[[name]]` blanks in the expanded text.
+
+## Toolbar command palette
 
 Open the extension from the browser's toolbar to get a compact searchable view of
 your shorthand library. Search matches triggers first and then expansion text;
 press Enter to copy the top result, or use the arrow keys to move through the
-results. The same popup also shows whether expansion is active globally and on
-the current site, with quick toggles for both.
+results. A template opens its fill-in form first; **Copy text** copies the
+completed script with its built-in date/time placeholders rendered and its
+`{cursor}` marker removed. Ordinary snippets copy their saved text, including
+any built-in placeholders. The same popup also shows whether expansion is
+active globally and on the current site, with quick toggles for both.
 
 This makes the toolbar useful even when you only half remember a trigger, and
 lets you grab an expansion for places where automatic insertion is not wanted.
@@ -48,10 +93,11 @@ Typing `;;` in a supported field opens a search overlay listing every shorthand:
 to filter, arrow keys to choose, Enter to insert, Esc to cancel. It is there
 for the snippets you cannot remember the trigger for.
 
-Focus deliberately stays in the page's own field the whole time. The overlay
-never calls `focus()`, and instead intercepts keys at the document level, so
-sites that close menus or save drafts on blur are not disturbed. It renders in
-a closed shadow root so page styles cannot reach it and its own cannot leak.
+While you search, focus stays in the page's own field. The search overlay never
+calls `focus()`, and instead intercepts keys at the document level, so searching
+does not disturb sites that close menus or save drafts on blur. Selecting a
+template moves focus to its fill-in form until you insert or cancel. Both
+overlays render in closed shadow roots to isolate their styles from the page.
 
 Change or disable the trigger on the options page.
 
@@ -76,6 +122,8 @@ inside it (the attribute also applies to all descendants).
 | --------------------- | -------------------------------------------------------------- |
 | `manifest.json`       | Manifest V3 definition                                         |
 | `src/expander.js`     | Pure matching/placeholder logic (shared with the tests)        |
+| `src/template.js`     | Named-blank parsing and literal-answer substitution             |
+| `src/template-form.js` | Temporary fill-in form and live preview                       |
 | `src/storage.js`      | Chrome sync / Firefox local storage (one key per shorthand)    |
 | `src/content.js`      | Watches editable fields and performs the replacement           |
 | `src/picker.js`       | The `;;` search overlay (closed shadow root, key capture)       |
@@ -114,8 +162,9 @@ listing. Registered store accounts and final dashboard declarations are required
 to publish.
 
 The [store images](store/LISTING.md#screenshots-and-artwork) include light/dark
-captures of the running Chrome and Firefox libraries, the in-field picker, and
-a small promotional tile. To refresh them after rebuilding, run
+captures of the running Chrome and Firefox libraries, fill-in forms, the
+in-field picker, and a small promotional tile. To refresh them after rebuilding,
+run
 `node scripts/store-assets.js` and `node scripts/store-assets-firefox.js` with
 the browser environment described below. These use disposable browser profiles
 and fictional snippets; they do not modify your library.
@@ -136,7 +185,7 @@ Then run:
 
 ```sh
 npm run check             # JavaScript syntax
-npm test                  # matching, placeholders, storage, imports and packaging
+npm test                  # matching, templates, placeholders, storage, imports and packaging
 npm run build             # generate both browser packages
 npm run lint:firefox      # validate the generated Firefox extension with web-ext
 npm run test:e2e          # Chromium extension behavior
@@ -146,9 +195,10 @@ npm run test:e2e:firefox   # Firefox extension behavior
 The end-to-end suite in `e2e/` loads the unpacked extension into Chromium and
 types into a fixture page, covering what unit tests cannot: text insertion,
 caret placement, the undo window, and the overlay swallowing keystrokes without
-taking focus. The separate `e2e-firefox/` suite exercises the generated Firefox
-package. Install browser OS dependencies if Playwright reports them missing;
-on a supported Linux development machine, use `npx playwright install-deps`.
+taking focus while searching, plus filling and inserting templates. The separate
+`e2e-firefox/` suite exercises the generated Firefox package. Install browser OS
+dependencies if Playwright reports them missing; on a supported Linux development
+machine, use `npx playwright install-deps`.
 On other platforms, install geckodriver 0.37.1 and set `GECKODRIVER_PATH` to
 its executable. `FIREFOX_PATH` can override the dedicated Firefox executable.
 The driver uses `--allow-system-access` only in its disposable test profile to

@@ -11,14 +11,15 @@ const ROOT = path.resolve(__dirname, "..");
 const EXTENSION = path.join(ROOT, "dist", "chrome");
 const OUTPUT = path.join(ROOT, "store", "images");
 const SNIPPETS = [
-  { trigger: "thanks/", expansion: "Thanks for your help!" },
+  { trigger: "hello/", expansion: "Hi [[name]],\n\nYour [[item]] is ready for [[day]].\nThanks,\nAlex" },
   { trigger: "followup/", expansion: "Thanks for the update. I will follow up soon." },
   { trigger: "next/", expansion: "Next step: {cursor} — {date}" },
   { trigger: "sig/", expansion: "Best regards,\nAlex" },
 ];
 
 // This is a local demonstration page, not a screenshot of a third-party service.
-const DEMO = `<!doctype html><html lang="en"><meta charset="utf-8">
+function demoHtml(template = false) {
+  return `<!doctype html><html lang="en"><meta charset="utf-8">
 <title>Shorthand Autofill — writing demo</title><style>
 *{box-sizing:border-box}body{margin:0;background:#f4f6f8;color:#172033;font:18px/1.6 system-ui,sans-serif}
 main{max-width:1100px;margin:84px auto}.brand{font-size:13px;font-weight:750;letter-spacing:.14em;color:#2357d7}
@@ -28,11 +29,11 @@ p{color:#536075}code{color:#2357d7;background:#e9efff;border-radius:5px;padding:
 label{display:block;font-weight:650;margin-bottom:14px}textarea{display:block;resize:none;width:100%;height:280px;font:18px/1.65 system-ui,sans-serif;padding:18px;border:1px solid #bdc9dc;border-radius:9px;color:#172033}
 textarea:focus{outline:2px solid #2357d7;outline-offset:2px}.caption{font-size:13px;color:#677386;margin:14px 0 0}
 </style><main><div class="brand">SHORTHAND AUTOFILL · WRITING DEMO</div>
-<div class="layout"><section><h1>The right words,<br>at your fingertips.</h1>
-<p>Type <code>;;</code> in a supported text field to find a saved snippet.</p>
-<p>Choose with the arrow keys.<br>Press Enter to insert.</p></section>
+<div class="layout"><section><h1>${template ? "One script.<br>Make it personal." : "The right words,<br>at your fingertips."}</h1>
+${template ? "<p>Type <code>hello/</code> and fill in the details that change.</p><p>Preview your message.<br>Press Enter to insert.</p>" : "<p>Type <code>;;</code> in a supported text field to find a saved snippet.</p><p>Choose with the arrow keys.<br>Press Enter to insert.</p>"}</section>
 <section class="editor"><label for="message">Your message</label><textarea id="message"></textarea>
 <p class="caption">A local demo using fictional text and the running extension.</p></section></div></main></html>`;
+}
 
 function promotionalHtml(icon) {
   return `<!doctype html><html lang="en"><meta charset="utf-8"><title>Shorthand Autofill</title><style>
@@ -48,9 +49,9 @@ async function main() {
   assert.ok(fs.existsSync(path.join(EXTENSION, "manifest.json")), "Run npm run build first.");
   fs.mkdirSync(OUTPUT, { recursive: true });
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "shorthand-store-"));
-  const server = http.createServer((_request, response) => {
+  const server = http.createServer((request, response) => {
     response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    response.end(DEMO);
+    response.end(demoHtml(request.url === "/template"));
   });
   let context;
   try {
@@ -78,7 +79,9 @@ async function main() {
       await self.ShorthandStorage.saveSettings({ enabled: true, excludedHosts: [], pickerTrigger: ";;" });
     }, SNIPPETS);
     await options.reload();
-    await options.waitForFunction(() => document.querySelectorAll("#list tbody tr").length === 4);
+    await options.waitForFunction((count) => document.querySelectorAll("#list tbody tr").length === count, SNIPPETS.length);
+    await options.locator("#list tbody tr").filter({ hasText: "hello/" }).getByRole("button", { name: "Edit", exact: true }).click();
+    await options.waitForFunction(() => document.getElementById("templateFieldCount").textContent === "3 fill-in blanks");
     // Keep the product identity and library together in the store capture.
     await options.evaluate(() => window.scrollTo(0, 0));
     await options.screenshot({ path: path.join(OUTPUT, "chrome-library-1280x800.png") });
@@ -97,6 +100,19 @@ async function main() {
     await message.press("Enter");
     assert.equal(await message.inputValue(), "Hi Morgan,\n\nThanks for the update. I will follow up soon.");
 
+    await demo.goto(`http://127.0.0.1:${server.address().port}/template`);
+    await message.pressSequentially("hello/", { delay: 90 });
+    await demo.locator("#shorthand-template-host").waitFor();
+    await demo.keyboard.type("Morgan");
+    await demo.keyboard.press("Tab");
+    await demo.keyboard.type("design brief");
+    await demo.keyboard.press("Tab");
+    await demo.keyboard.type("Friday");
+    await demo.screenshot({ path: path.join(OUTPUT, "chrome-template-1280x800.png") });
+    await demo.keyboard.press("Enter");
+    await demo.locator("#shorthand-template-host").waitFor({ state: "detached" });
+    assert.equal(await message.inputValue(), "Hi Morgan,\n\nYour design brief is ready for Friday.\nThanks,\nAlex");
+
     const promo = await context.newPage();
     await promo.setViewportSize({ width: 440, height: 280 });
     await promo.setContent(promotionalHtml(fs.readFileSync(path.join(ROOT, "icons", "icon128.png")).toString("base64")));
@@ -109,7 +125,11 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+module.exports = { SNIPPETS, demoHtml };
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

@@ -8,13 +8,13 @@ Creating a ZIP does not publish or sign the extension.
 
 **Name:** Shorthand Autofill
 
-**Short description / summary:** Expand short triggers into reusable text in supported webpage text fields.
+**Short description / summary:** Expand shortcuts into reusable text and fill-in templates in supported webpage fields.
 
 **Category:** Productivity in Chrome; select the closest productivity category in Firefox.
 
 **Language:** English
 
-**Single purpose:** Save reusable text and insert it using short triggers in supported webpage text fields.
+**Single purpose:** Save reusable text and fill-in templates, then insert them using short triggers in supported webpage text fields.
 
 **Full description:**
 
@@ -23,16 +23,29 @@ trigger such as `cool/`, give it an expansion, and type the trigger in a support
 webpage field to insert your saved text.
 
 - Build and search a personal library of text snippets.
+- Turn one script into a fill-in template with `[[name]]`, `[[company]]`, or
+  other named blanks. Answer each blank, check the live preview, and confirm
+  insertion. Repeated names share one answer; answers are not saved.
 - Add `{date}`, `{time}`, and `{datetime}` placeholders, or use `{cursor}` to
   choose where typing continues after insertion.
-- Type `;;` to search and insert a snippet without leaving the field. Change the
-  search trigger in settings or turn it off.
+- Type `;;` to search snippets from the field and select one to insert or fill
+  in. Change the search trigger in settings or turn it off.
 - Press Backspace immediately after an expansion to restore the trigger while
   the text and caret remain in place.
-- Search snippets from the toolbar and copy an expansion to your clipboard.
+- Search snippets from the toolbar, fill in templates, and copy finished text
+  to your clipboard.
 - Pause expansion everywhere or on individual hostnames.
 - Preview JSON imports, merge them with your library, and export a backup to
   transfer to another browser or the companion Windows and Android apps.
+
+Keep saved scripts and their editor side by side, with clear previews, a blank
+builder, and light and dark themes. Each template is one saved script with
+details you fill in each time. For example, `Hi [[name]], thanks for asking
+about [[topic]]!` asks for two answers before inserting your message. Cancel
+without changing the field if you are not ready to insert.
+
+Fill-in templates work in the Chrome and Firefox extensions. Windows and
+Android preserve their text during JSON transfer but do not show fill-in forms.
 
 In Chrome, snippets and settings use browser extension sync storage and can
 follow your Chrome profile when sync is enabled. In Firefox, they stay in your
@@ -54,6 +67,8 @@ depends on the browser's extension permissions.
 the library remains available between sessions. Chrome uses extension sync
 storage and can sync when the user's browser profile permits it. Firefox uses
 extension local storage without automatic synchronization.
+Template answers are used temporarily to preview and fill the chosen script;
+they are not saved to extension storage or included in library exports.
 
 **Access to websites (`<all_urls>`):** Detects configured triggers and inserts
 snippets in editable fields on the websites the user chooses to use. The popup
@@ -74,7 +89,8 @@ current data definitions before certifying the privacy answers. The extension
 does not send data to its publisher. Chrome stores snippet content and excluded
 hostnames in browser sync. Firefox's manifest declares no data collection: that
 package stores snippets and settings locally and does not transmit them to a
-service. Clipboard copies and webpage insertion happen at the user's direction.
+service. Template answers are processed in the browser without being saved to
+the library. Clipboard copies and webpage insertion happen at the user's direction.
 
 ## Publisher details
 
@@ -120,8 +136,10 @@ Prepared assets:
 | Chrome library manager, 1280×800 | [chrome-library-1280x800.png](images/chrome-library-1280x800.png) |
 | Chrome library manager, dark theme, 1280×800 | [chrome-library-dark-1280x800.png](images/chrome-library-dark-1280x800.png) |
 | Chrome picker on a local demo page, 1280×800 | [chrome-picker-1280x800.png](images/chrome-picker-1280x800.png) |
+| Chrome fill-in template form, 1280×800 | [chrome-template-1280x800.png](images/chrome-template-1280x800.png) |
 | Firefox library manager, 1280×800 | [firefox-library-1280x800.png](images/firefox-library-1280x800.png) |
 | Firefox library manager, dark theme, 1280×800 | [firefox-library-dark-1280x800.png](images/firefox-library-dark-1280x800.png) |
+| Firefox fill-in template form, 1280×800 | [firefox-template-1280x800.png](images/firefox-template-1280x800.png) |
 | Small promotional image, 440×280 | [promo-440x280.png](images/promo-440x280.png) |
 
 The Chrome screenshots show the actual running extension in Chromium; the demo
@@ -129,7 +147,7 @@ page uses fictional text. Refresh these assets with `npm run build` followed by
 `node scripts/store-assets.js` from `chrome-extension/`, after installing the
 development dependencies and Chromium. The script renders the promotional tile
 using the existing icon and creates a fresh temporary profile for UI captures.
-Refresh the Firefox image with `node scripts/store-assets-firefox.js` and the
+Refresh the Firefox images with `node scripts/store-assets-firefox.js` and the
 Firefox driver environment described in the extension README.
 
 Capture the actual extension using synthetic snippets such as `thanks/` →
@@ -141,7 +159,8 @@ personal data, browser profile details, unrelated tabs, or another site's brand.
 - Firefox: use screenshots captured with the Firefox package and the included
   icon. Confirm current image requirements in the submission dashboard.
 - Useful screenshots: the library manager with a few snippets, the in-field
-  picker filtering a snippet, and the toolbar search/copy palette.
+  picker filtering a snippet, the fill-in form with its live preview, and the
+  toolbar search/copy palette.
 - Promotional copy can read **Shorthand Autofill** and **Your repeated text,
   one shortcut away.** Use the existing icon and actual UI where shown.
 
@@ -158,19 +177,36 @@ Firefox stores the library locally.
    press Enter. Repeat and press Escape to dismiss the picker.
 4. Open the toolbar popup, search for `thanks`, and copy it. Paste into a test
    field to verify the result.
-5. Test on a normal webpage containing a text input, textarea, and rich editor.
+5. Create `hello/` with expansion `Hi [[name]], thanks for asking about [[topic]].
+   Thanks again, [[name]]!`, using **Insert blank** in the editor to add the
+   named blanks. Check the script preview. Type `hello/` in **Try it**: the fill-in
+   form should ask for only `name` and `topic`. Submit with a blank answer to
+   check that it is required, then enter fictional answers and check the live
+   preview. Choose **Insert text** and confirm both occurrences of `name`
+   use the same answer. Immediately press Backspace to restore `hello/`.
+6. Open that template again and press Escape; confirm the trigger remains.
+   Select it through `;;` and confirm the same form opens. Select **Fill in**
+   from the toolbar, complete the form, choose **Copy text**, and paste the
+   result into a test field. Reopen the form and confirm answers start empty.
+   Enter `{date}`, `{cursor}`, or `[[other]]` as an answer and confirm it is
+   inserted literally. In the saved script, `[[ name ]]` shares the `name`
+   answer, `[[Name]]` requests a separate answer, and `\[[name]]` inserts
+   literal `[[name]]` without a prompt.
+7. Test on a normal webpage containing a text input, textarea, and rich editor.
    The repository includes a fixture: from `chrome-extension/`, run
    `python3 -m http.server 4173 --bind 127.0.0.1 --directory e2e/fixtures` and open
    `http://127.0.0.1:4173/page.html`. Verify expansion in all three editable types
    and no expansion in the password or opted-out fields.
-6. Pause expansion globally and confirm triggers stay unchanged. Re-enable it,
+8. Pause expansion globally and confirm triggers stay unchanged. Re-enable it,
    disable expansion for the fixture hostname in the popup, and confirm the
    same result. Re-enable the site afterward.
-7. Export JSON. Import that file and confirm the preview shows unchanged
-   snippets. Add one synthetic snippet to a copy of the file, import with
+9. Export JSON. Confirm the template's saved expansion still contains its
+   `[[name]]` blanks and none of the answers from the form. Import that file
+   and confirm the preview shows unchanged snippets. Add one synthetic snippet
+   to a copy of the file, import with
    **Merge safely**, and check that the new entry appears while existing entries
    remain. Exercise **Replace everything** only with a disposable test library.
-8. Reload the browser and verify saved snippets and settings remain available.
+10. Reload the browser and verify saved snippets and settings remain available.
 
 ## Release checklist
 

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Shorthand Autofill",
   "version": "1.0.0",
-  "description": "Type a short trigger like cool/ and have it expand into a full sentence, anywhere on the web.",
+  "description": "Expand short triggers into reusable text and fill-in templates in supported webpage fields.",
   "permissions": ["storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/expander.js", "src/storage.js", "src/picker.js", "src/content.js"],
+      "js": ["src/expander.js", "src/template.js", "src/storage.js", "src/picker.js", "src/template-form.js", "src/content.js"],
       "run_at": "document_idle",
       "all_frames": true
     }

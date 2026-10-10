@@ -3,8 +3,10 @@
 (function () {
   "use strict";
 
-  const { findMatch, render } = self.ShorthandExpander;
+  const { findMatch } = self.ShorthandExpander;
   const storage = self.ShorthandStorage;
+  const template = self.ShorthandTemplate;
+  const templateForm = self.ShorthandTemplateForm;
 
   let shorthands = [];
   let enabled = true;
@@ -12,6 +14,7 @@
   let pickerTrigger = storage.DEFAULT_SETTINGS.pickerTrigger;
   let suppress = false; // true while we are inserting text ourselves
   let lastExpansion = null; // details of the most recent expansion, for undo
+  let templateTarget = null; // original insertion point while a fill-in form has focus
 
   const TEXT_INPUT_TYPES = new Set(["text", "search", "url", "email", "tel", ""]);
   const IGNORE_ATTR = "data-shorthand-ignore";
@@ -53,6 +56,105 @@
     }
   }
 
+  // The fill-in form takes focus. Keep the original text and insertion point,
+  // then check them again before restoring focus: a page may save or replace
+  // its editor on blur, or receive an update while the form is being filled.
+  function fieldTarget(el, start, end, trigger) {
+    return { el, start, end, trigger, value: el.value };
+  }
+
+  function nodeTarget(el, node, start, end, trigger) {
+    return {
+      el, node, start, end, trigger,
+      parent: node.parentNode,
+      value: node.textContent,
+      rootText: el.textContent,
+    };
+  }
+
+  function targetUnchanged(target, checkSelection = true) {
+    const { el, node, end } = target;
+    if (!el.isConnected || isIgnored(el)) return false;
+    if (!node) {
+      if (!isTextInput(el) || el.value !== target.value) return false;
+      return !checkSelection || (el.selectionStart === end && el.selectionEnd === end);
+    }
+    if (!isEditable(el) || !node.isConnected || !el.contains(node) || isIgnored(node.parentElement)
+        || !isEditable(node.parentElement) || node.parentNode !== target.parent
+        || node.textContent !== target.value || el.textContent !== target.rootText) return false;
+    if (!checkSelection) return true;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return true;
+    const range = sel.getRangeAt(0);
+    // Browsers differ on whether focusing a shadow-root field moves the page
+    // selection. A selection still inside the original editor must be intact.
+    if (!el.contains(range.startContainer) && !el.contains(range.endContainer)) return true;
+    return sel.isCollapsed && range.startContainer === node && range.startOffset === end;
+  }
+
+  function restoreTarget(target) {
+    if (!targetUnchanged(target)) return false;
+    target.el.focus({ preventScroll: true });
+    // A focus handler can itself change or remove the editor.
+    if (document.activeElement !== target.el || !targetUnchanged(target, false)) return false;
+    if (target.node) {
+      const sel = window.getSelection();
+      if (!sel) return false;
+      const range = document.createRange();
+      range.setStart(target.node, target.end);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      target.el.setSelectionRange(target.end, target.end);
+    }
+    return true;
+  }
+
+  function fillTemplate(shorthand, target) {
+    if (!template.fields(shorthand.expansion).length) return false;
+    if (templateTarget || templateForm.isOpen()) return true;
+    templateTarget = target;
+    lastExpansion = null;
+    const shown = templateForm.show({
+      trigger: shorthand.trigger,
+      expansion: shorthand.expansion,
+      actionLabel: "Insert text",
+      anchorEl: target.el,
+      async onSubmit(result) {
+        let settings;
+        try {
+          ({ settings } = await storage.getAll());
+        } catch (_) {
+          return "Could not check your settings. Cancel this form and try again.";
+        }
+        if (settings.enabled === false || (settings.excludedHosts || []).includes(location.hostname)) {
+          return "Shorthand expansion is paused. Cancel this form and enable expansion before trying again.";
+        }
+        if (!restoreTarget(target)) {
+          return "The original field changed while this form was open. Cancel and try the shorthand again.";
+        }
+        const { text, cursorOffset } = result;
+        if (target.node) {
+          replaceInNode(window.getSelection(), target.node, target.start, target.end,
+            text, text.length - cursorOffset);
+          lastExpansion = { el: target.el, text, cursorOffset, trigger: target.trigger };
+        } else {
+          replaceInField(target.el, target.start, target.end, text, cursorOffset);
+          lastExpansion = { el: target.el, start: target.start, text, cursorOffset, trigger: target.trigger };
+        }
+        templateTarget = null;
+        return true;
+      },
+      onCancel() {
+        templateTarget = null;
+        restoreTarget(target);
+      },
+    });
+    if (!shown) templateTarget = null;
+    return shown;
+  }
+
   // ---- input / textarea -----------------------------------------------------
 
   function replaceInField(el, start, end, text, caretOffset) {
@@ -78,7 +180,9 @@
     const match = findMatch(before, shorthands);
     if (!match) return false;
 
-    const { text, cursorOffset } = render(match.shorthand.expansion);
+    if (fillTemplate(match.shorthand, fieldTarget(el, match.start, caret, match.shorthand.trigger))) return true;
+
+    const { text, cursorOffset } = template.render(match.shorthand.expansion);
     replaceInField(el, match.start, caret, text, cursorOffset);
     lastExpansion = { el, start: match.start, text, cursorOffset, trigger: match.shorthand.trigger };
     return true;
@@ -134,7 +238,10 @@
     const match = findMatch(before, shorthands);
     if (!match) return false;
 
-    const { text, cursorOffset } = render(match.shorthand.expansion);
+    if (fillTemplate(match.shorthand,
+      nodeTarget(root, node, match.start, range.startOffset, match.shorthand.trigger))) return true;
+
+    const { text, cursorOffset } = template.render(match.shorthand.expansion);
     replaceInNode(sel, node, match.start, range.startOffset, text, text.length - cursorOffset);
     lastExpansion = { el: root, text, cursorOffset, trigger: match.shorthand.trigger };
     return true;
@@ -164,7 +271,8 @@
   // punctuation that does not occur naturally, and requiring a boundary would
   // stop it firing straight after a word.
   function pickerArmed() {
-    return pickerTrigger && shorthands.length > 0 && self.ShorthandPicker && !self.ShorthandPicker.isOpen();
+    return pickerTrigger && shorthands.length > 0 && !templateTarget
+      && self.ShorthandPicker && !self.ShorthandPicker.isOpen();
   }
 
   function tryOpenPickerInField(el) {
@@ -173,6 +281,7 @@
     if (caret == null || caret !== el.selectionEnd) return false;
     if (!el.value.slice(0, caret).endsWith(pickerTrigger)) return false;
     const start = caret - pickerTrigger.length;
+    const target = fieldTarget(el, start, caret, pickerTrigger);
 
     // The trigger text stays in the field while the picker is open; choosing a
     // shorthand replaces it in one step, and cancelling leaves what was typed.
@@ -180,7 +289,8 @@
       shorthands,
       anchorEl: el,
       onPick(sh) {
-        const { text, cursorOffset } = render(sh.expansion);
+        if (fillTemplate(sh, target)) return;
+        const { text, cursorOffset } = template.render(sh.expansion);
         replaceInField(el, start, caret, text, cursorOffset);
         lastExpansion = { el, start, text, cursorOffset, trigger: pickerTrigger };
       },
@@ -197,12 +307,14 @@
     const end = range.startOffset;
     if (!node.textContent.slice(0, end).endsWith(pickerTrigger)) return false;
     const start = end - pickerTrigger.length;
+    const target = nodeTarget(root, node, start, end, pickerTrigger);
 
     return self.ShorthandPicker.show({
       shorthands,
       anchorEl: root,
       onPick(sh) {
-        const { text, cursorOffset } = render(sh.expansion);
+        if (fillTemplate(sh, target)) return;
+        const { text, cursorOffset } = template.render(sh.expansion);
         const liveSel = window.getSelection();
         if (!liveSel) return;
         replaceInNode(liveSel, node, start, end, text, text.length - cursorOffset);
@@ -214,7 +326,7 @@
   // ---- wiring ---------------------------------------------------------------
 
   function onInput(ev) {
-    if (suppress) return;
+    if (suppress || templateTarget || templateForm.isOpen()) return;
     lastExpansion = null;
     if (!enabled || hostExcluded || shorthands.length === 0) return;
     if (ev.isComposing) return; // IME composition in progress
@@ -233,7 +345,8 @@
   function onKeyDown(ev) {
     // The picker registers its own capture handler later, so this one runs
     // first; while it is open every key belongs to it.
-    if (self.ShorthandPicker && self.ShorthandPicker.isOpen()) return;
+    if (templateTarget || templateForm.isOpen()
+        || (self.ShorthandPicker && self.ShorthandPicker.isOpen())) return;
     const u = lastExpansion;
     if (!u) return;
     if (ev.key !== "Backspace" || ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) {

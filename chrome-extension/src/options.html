@@ -7,29 +7,36 @@
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <header>
-    <div class="brand-bar">
-      <a class="brand" href="#library"><img src="../icons/icon48.png" width="32" height="32" alt="">Shorthand Autofill</a>
-      <nav aria-label="Page sections"><a href="#settings">Settings</a><a href="#backup">Backup</a></nav>
-    </div>
-    <div class="hero">
+  <div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="#library"><img src="../icons/icon48.png" width="36" height="36" alt=""><span>Shorthand<span class="brand-subtitle">Autofill</span></span></a>
+    <nav class="sidebar-nav" aria-label="Page sections">
+      <a href="#library" class="nav-primary"><span aria-hidden="true">01</span> Your library</a>
+      <a href="#playground"><span aria-hidden="true">02</span> Playground</a>
+      <a href="#settings"><span aria-hidden="true">03</span> Settings</a>
+      <a href="#backup"><span aria-hidden="true">04</span> Import / export</a>
+    </nav>
+    <div class="sidebar-note"><span class="sidebar-note-label">A little shortcut</span><p>Type <kbd>;;</kbd> to find the right words without leaving your page.</p></div>
+  </aside>
+  <div class="main-content">
+  <header class="workspace-heading">
       <div>
-        <h1>Your words, one shortcut away.</h1>
-        <p class="hint">Save the text you use often. Type a short trigger in a supported text field and keep going.</p>
+        <p class="eyebrow">Write once. Make it yours.</p>
+        <h1>Your shortcut library</h1>
+        <p class="hint">Reusable words, with room for the details that change.</p>
       </div>
       <div class="hero-status" aria-live="polite">
         <strong id="shorthandCount">0</strong>
         <span>saved shorthands</span>
       </div>
-    </div>
   </header>
 
   <main>
   <section class="card library-card" id="library" aria-labelledby="libraryTitle">
     <div class="section-heading">
       <div>
-        <p class="eyebrow">Your library</p>
         <h2 id="libraryTitle">Shorthands</h2>
+        <p class="hint">Small triggers. Ready-to-use text.</p>
       </div>
       <label class="search-box">
         <span class="sr-only">Search shorthands</span>
@@ -37,15 +44,42 @@
       </label>
     </div>
 
+    <div class="library-workspace">
+    <div class="library-panel">
+      <div class="table-wrap">
+        <table id="list" aria-label="Saved shorthands">
+          <thead><tr><th scope="col">Trigger</th><th scope="col">Expansion</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="empty" class="empty-state" hidden>Your library starts here. Create a shorthand in the editor.</p>
+      <p id="noMatches" class="empty-state" hidden>No shorthand matches that search.</p>
+      <p class="library-note">Add <code>[[name]]</code> to a script for a fill-in blank.</p>
+    </div>
+
     <form id="editor" class="editor-panel">
+      <div class="editor-heading"><p class="eyebrow">Template builder</p><h3 id="editorTitle">Create a shorthand</h3></div>
       <input type="hidden" id="editId">
       <div class="fields">
         <label>Trigger
-          <input type="text" id="trigger" placeholder="cool/" autocomplete="off" data-shorthand-ignore required>
+          <input type="text" id="trigger" placeholder="hello/" autocomplete="off" data-shorthand-ignore required>
         </label>
-        <label>Expansion
-          <textarea id="expansion" rows="2" placeholder="That is really cool, thanks for sharing!" data-shorthand-ignore required></textarea>
+        <label>Expansion <small>Your reusable script</small>
+          <textarea id="expansion" rows="6" placeholder="Hi [[name]],&#10;&#10;Thanks for reaching out about [[topic]]." autocomplete="off" spellcheck="true" data-shorthand-ignore required></textarea>
         </label>
+      </div>
+      <div class="template-tools">
+        <div class="field-builder">
+          <label for="fieldName">Add a fill-in blank</label>
+          <div><input type="text" id="fieldName" placeholder="e.g. name, company, date" autocomplete="off" data-shorthand-ignore><button type="button" id="addFieldBtn" class="secondary">Insert blank</button></div>
+        </div>
+        <span id="fieldBuilderMsg" class="msg" role="status"></span>
+        <p class="hint">Fill in each blank when you use the script. Repeated names share one answer.</p>
+      </div>
+      <div class="template-preview">
+        <div class="preview-title"><h4>Script preview</h4><span id="templateFieldCount">No fill-in blanks</span></div>
+        <div id="templatePreview" class="preview-output"></div>
+        <p id="templateHint" class="hint">Plain text expands instantly. Blanks open a quick fill-in form.</p>
       </div>
       <div class="actions">
         <button type="submit" id="saveBtn">Add shorthand</button>
@@ -53,19 +87,11 @@
         <span id="formMsg" class="msg" role="status"></span>
       </div>
     </form>
-
-    <div class="table-wrap">
-      <table id="list" aria-label="Saved shorthands">
-        <thead><tr><th scope="col">Trigger</th><th scope="col">Expansion</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
-        <tbody></tbody>
-      </table>
     </div>
-    <p id="empty" class="empty-state" hidden>No shorthands yet. Add your first one above.</p>
-    <p id="noMatches" class="empty-state" hidden>No shorthand matches that search.</p>
   </section>
 
   <div class="workspace-secondary">
-  <section class="card try-card" aria-labelledby="tryTitle">
+  <section class="card try-card" id="playground" aria-labelledby="tryTitle">
     <div>
       <p class="eyebrow">Playground</p>
       <h2 id="tryTitle">Try it</h2>
@@ -76,8 +102,9 @@
     <p class="hint keyboard-hint">Press <kbd>Backspace</kbd> immediately after an expansion to undo it.</p>
     <div class="quick-guide">
       <h3>Make it personal</h3>
-      <p class="hint">Use placeholders in your expansions:</p>
+      <p class="hint">Add the details you need to your scripts:</p>
       <dl>
+        <div><dt><code>[[name]]</code></dt><dd>A blank to fill in each time</dd></div>
         <div><dt><code>{date}</code></dt><dd>Today's date</dd></div>
         <div><dt><code>{time}</code></dt><dd>The current time</dd></div>
         <div><dt><code>{datetime}</code></dt><dd>Date and time together</dd></div>
@@ -114,7 +141,7 @@
       <div>
         <p class="eyebrow">Portability</p>
         <h2 id="backupTitle">Import / export</h2>
-        <p class="hint">Keep a backup or move your library between browsers, Windows, and Android.</p>
+        <p class="hint">Back up every script and its fill-in blanks. Windows and Android preserve the text but do not show fill-in forms.</p>
       </div>
       <div class="actions compact">
         <button type="button" id="exportBtn" class="secondary">Export JSON</button>
@@ -150,12 +177,16 @@
   </section>
   </main>
   <footer class="page-footer">Made for the words you use every day.</footer>
+  </div>
+  </div>
 
   <script src="expander.js"></script>
+  <script src="template.js"></script>
   <script src="conflicts.js"></script>
   <script src="storage.js"></script>
   <script src="import-plan.js"></script>
   <script src="picker.js"></script>
+  <script src="template-form.js"></script>
   <script src="content.js"></script>
   <script src="options.js"></script>
 </body>

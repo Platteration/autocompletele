@@ -3,6 +3,7 @@
   const storage = self.ShorthandStorage;
   const { sanitizeList } = self.ShorthandExpander;
   const importPlan = self.ShorthandImportPlan;
+  const template = self.ShorthandTemplate;
 
   const $ = (id) => document.getElementById(id);
   const enabledEl = $("enabled");
@@ -30,6 +31,31 @@
   let pendingImport = null;
   let skippedImportItems = 0;
   let importing = false;
+  let expansionSelection = { start: 0, end: 0 };
+
+  function renderPreview() {
+    const preview = $("templatePreview");
+    preview.replaceChildren();
+    const text = expansionEl.value;
+    const fields = template.fields(text);
+    $("templateFieldCount").textContent = fields.length
+      ? `${fields.length} fill-in blank${fields.length === 1 ? "" : "s"}` : "No fill-in blanks";
+    preview.classList.toggle("is-empty", !text);
+    if (!text) {
+      preview.textContent = "Your script will appear here, with each fill-in blank highlighted.";
+      return;
+    }
+    for (const part of template.parts(text)) {
+      if (part.type === "text") preview.appendChild(document.createTextNode(part.value));
+      else {
+        const field = document.createElement("span");
+        field.className = "field-chip";
+        field.textContent = part.label;
+        field.setAttribute("aria-label", `Fill-in blank: ${part.label}`);
+        preview.appendChild(field);
+      }
+    }
+  }
 
   function matchesSearch(sh, query) {
     if (!query) return true;
@@ -49,6 +75,12 @@
     expansionEl.value = "";
     saveBtn.textContent = "Add shorthand";
     cancelBtn.hidden = true;
+    $("editorTitle").textContent = "Create a shorthand";
+    $("fieldName").value = "";
+    say($("fieldBuilderMsg"), "");
+    expansionSelection = { start: 0, end: 0 };
+    renderPreview();
+    for (const row of tbody.querySelectorAll(".is-editing")) row.classList.remove("is-editing");
   }
 
   function clearImportPreview() {
@@ -71,16 +103,27 @@
 
     for (const sh of visible) {
       const tr = document.createElement("tr");
+      tr.classList.toggle("is-editing", sh.id === editId.value);
       const t = document.createElement("td");
       t.className = "trigger";
       t.textContent = sh.trigger;
       const e = document.createElement("td");
       e.className = "expansion";
-      e.textContent = sh.expansion;
+      const expansionText = document.createElement("span");
+      expansionText.className = "expansion-text";
+      expansionText.textContent = sh.expansion;
+      e.appendChild(expansionText);
+      const fields = template.fields(sh.expansion);
+      if (fields.length) {
+        const badge = document.createElement("span");
+        badge.className = "template-badge";
+        badge.textContent = `${fields.length} fill-in blank${fields.length === 1 ? "" : "s"}`;
+        e.appendChild(badge);
+      }
 
       const found = warnings.get(sh.trigger);
       if (found) {
-        tr.className = "has-warning";
+        tr.classList.add("has-warning");
         for (const w of found) {
           const note = document.createElement("small");
           note.className = "warning";
@@ -101,6 +144,10 @@
         expansionEl.value = sh.expansion;
         saveBtn.textContent = "Save changes";
         cancelBtn.hidden = false;
+        $("editorTitle").textContent = "Edit shorthand";
+        expansionSelection = { start: sh.expansion.length, end: sh.expansion.length };
+        renderPreview();
+        renderList();
         triggerEl.focus();
       });
 
@@ -227,6 +274,34 @@
 
   cancelBtn.addEventListener("click", resetForm);
   searchEl.addEventListener("input", renderList);
+  expansionEl.addEventListener("input", renderPreview);
+  const rememberSelection = () => {
+    expansionSelection = { start: expansionEl.selectionStart, end: expansionEl.selectionEnd };
+  };
+  for (const event of ["select", "keyup", "click", "blur", "input"]) {
+    expansionEl.addEventListener(event, rememberSelection);
+  }
+  $("addFieldBtn").addEventListener("click", () => {
+    const name = $("fieldName").value.trim();
+    if (!name || /[\[\]\r\n]/.test(name)) {
+      return say($("fieldBuilderMsg"), "Give this blank a name without brackets or line breaks.", true);
+    }
+    const token = `[[${name}]]`;
+    const start = Math.min(expansionSelection.start, expansionEl.value.length);
+    const end = Math.min(expansionSelection.end, expansionEl.value.length);
+    expansionEl.setRangeText(token, start, end, "end");
+    expansionEl.focus();
+    rememberSelection();
+    renderPreview();
+    $("fieldName").value = "";
+    say($("fieldBuilderMsg"), "Blank added. Fill it in when you use this script.");
+  });
+  $("fieldName").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      $("addFieldBtn").click();
+    }
+  });
   enabledEl.addEventListener("change", () => storage.saveSettings({ enabled: enabledEl.checked }));
 
   pickerTriggerEl.addEventListener("change", () => {
@@ -281,5 +356,6 @@
   });
 
   chrome.storage.onChanged.addListener((_c, area) => { if (area === storage.AREA) load(); });
+  renderPreview();
   load();
 })();
