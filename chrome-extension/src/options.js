@@ -28,6 +28,7 @@
 
   let shorthands = [];
   let pendingImport = null;
+  let writable = true;
 
   function matchesSearch(sh, query) {
     if (!query) return true;
@@ -92,6 +93,7 @@
       edit.type = "button";
       edit.className = "secondary small";
       edit.textContent = "Edit";
+      edit.disabled = !writable;
       edit.addEventListener("click", () => {
         editId.value = sh.id;
         triggerEl.value = sh.trigger;
@@ -105,6 +107,7 @@
       del.type = "button";
       del.className = "danger small";
       del.textContent = "Delete";
+      del.disabled = !writable;
       del.addEventListener("click", async () => {
         await storage.deleteShorthand(sh.id);
         await load();
@@ -118,6 +121,7 @@
 
   async function load() {
     const data = await storage.getAll();
+    $("exportBtn").disabled = false;
     shorthands = data.shorthands;
     enabledEl.checked = data.settings.enabled !== false;
     excludedEl.value = (data.settings.excludedHosts || []).join("\n");
@@ -160,19 +164,21 @@
 
   async function applyImport(mode) {
     if (!pendingImport) return;
-    const list = mode === "merge"
-      ? importPlan.mergeImport(shorthands, pendingImport)
-      : pendingImport;
+    let outcome;
     try {
-      await storage.replaceAll(list);
+      // Merge against the current persisted library inside the writer lock,
+      // not a stale preview from another options tab.
+      outcome = await storage.replaceAll(pendingImport, { merge: mode === "merge" });
     } catch (e) {
       return say(ioMsg, "Import failed: " + (e && e.message ? e.message : e), true);
     }
     const importedCount = pendingImport.length;
     clearImportPreview();
-    say(ioMsg, mode === "merge"
+    say(ioMsg, outcome.skipped.length
+      ? `Skipped ${outcome.skipped.length} shorthand(s) that exceed Chrome sync limits. Entries that fit were merged; existing snippets were retained. ${outcome.skipped.map((s) => s.trigger + ": " + s.reason).join("; ")}`
+      : mode === "merge"
       ? `Merged ${importedCount} shorthand(s) into your library.`
-      : `Replaced your library with ${importedCount} shorthand(s).`);
+      : `Replaced your library with ${importedCount} shorthand(s).`, outcome.skipped.length > 0);
     await load();
   }
 
@@ -221,16 +227,25 @@
     storage.saveSettings({ excludedHosts: Array.from(new Set(hosts)) });
   });
 
-  $("exportBtn").addEventListener("click", () => {
-    const blob = new Blob([storage.toExportJson(shorthands)], { type: "application/json" });
+  function downloadLibrary(list, name) {
+    const blob = new Blob([storage.toExportJson(list)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "shorthands.json";
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  $("exportBtn").addEventListener("click", () => downloadLibrary(shorthands, "shorthands.json"));
+  $("backupBtn").addEventListener("click", async () => {
+    try {
+      const backup = await storage.getImportBackup();
+      if (!backup) return say(ioMsg, "No pre-import backup is saved yet.");
+      downloadLibrary(backup, "shorthands-before-import.json");
+    } catch (e) { say(ioMsg, "Backup export failed: " + e.message, true); }
   });
 
   $("importBtn").addEventListener("click", () => $("importFile").click());
@@ -254,5 +269,20 @@
   });
 
   chrome.storage.onChanged.addListener((_c, area) => { if (area === "sync") load(); });
-  load();
+  storage.recoverPendingImport().then(async (recovery) => {
+    await load();
+    if (recovery.conflicts.length) say(ioMsg, "Import recovery preserved newer edits to " + recovery.conflicts.length + " snippet(s). Export the pre-import backup to review originals.", true);
+  }).catch(async (e) => {
+    writable = false;
+    let readError = "";
+    try { await load(); }
+    catch (failure) {
+      $("exportBtn").disabled = true;
+      readError = " Current library could not be read: " + failure.message + ".";
+    }
+    say(ioMsg, "Library recovery needs attention: " + e.message + ". Export the pre-import backup before editing." + readError, true);
+    form.querySelectorAll("input, textarea, button").forEach((el) => { el.disabled = true; });
+    [enabledEl, excludedEl, pickerTriggerEl, $("importBtn"), $("importFile")].forEach((el) => { el.disabled = true; });
+    $("mergeBtn").disabled = $("replaceBtn").disabled = true;
+  });
 })();
