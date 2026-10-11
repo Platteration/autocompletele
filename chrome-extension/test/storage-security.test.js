@@ -8,7 +8,7 @@ const source = fs.readFileSync(path.join(__dirname, "../src/storage.js"), "utf8"
 const old = { "sh:one": { trigger: "old/", expansion: "keep me", order: 0 } };
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
-function environment(initial = old, limits = {}) {
+function environment(initial = old, limits = {}, { chromeKeyOrder = false } = {}) {
   const syncData = clone(initial), localData = {}, calls = [];
   let failure = null, onRead = null;
   function area(data, name) {
@@ -16,7 +16,10 @@ function environment(initial = old, limits = {}) {
       ...limits,
       async get(key) {
         if (name === "sync" && onRead) onRead(data);
-        return clone(key ? { [key]: data[key] } : data);
+        const result = clone(key ? { [key]: data[key] } : data);
+        // Chrome hands dictionaries back with their keys alphabetised, not in write order.
+        if (chromeKeyOrder) for (const [k, v] of Object.entries(result)) if (v && typeof v === "object" && !Array.isArray(v)) result[k] = Object.fromEntries(Object.entries(v).sort());
+        return result;
       },
       async set(values) {
         calls.push([name, "set", clone(values)]);
@@ -183,4 +186,14 @@ test("an import rechecks original values before overwriting a newer sync edit", 
   await assert.rejects(e.storage.replaceAll([{ trigger: "old/", expansion: "imported revision" }], { merge: true }), /concurrent edits.*preserved/i);
   assert.deepEqual(e.syncData, { "sh:one": edited });
   assert.deepEqual(e.localData["shorthand-import-backup"], old);
+});
+
+test("records that Chrome returns with alphabetised keys still count as persisted", async () => {
+  const e = environment(old, {}, { chromeKeyOrder: true });
+  const result = await e.storage.replaceAll([{ trigger: "new/", expansion: "replacement" }]);
+  assert.equal(result.skipped.length, 0);
+  assert.deepEqual(Object.values(e.syncData).map((s) => s.trigger), ["new/"]);
+  assert.equal(e.localData["shorthand-import-journal"], undefined);
+  await e.storage.replaceAll([{ trigger: "old/", expansion: "keep me" }], { merge: true });
+  assert.deepEqual(Object.values(e.syncData).map((s) => s.trigger).sort(), ["new/", "old/"]);
 });

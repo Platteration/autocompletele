@@ -192,7 +192,10 @@
           await dataStore.remove(toRemove);
         }
         const actual = records(await dataStore.get(null));
-        if (JSON.stringify(Object.entries(actual).sort()) !== JSON.stringify(Object.entries(payload).sort())) throw new Error("Imported library did not persist completely");
+        // Compare record by record: the browser returns dictionaries with their
+        // keys alphabetised, so a serialised comparison rejects every write.
+        const persisted = new Set([...Object.keys(actual), ...Object.keys(payload)]);
+        if ([...persisted].some((key) => !sameRecord(actual[key], payload[key]))) throw new Error("Imported library did not persist completely");
         await chrome.storage.local.set({ [JOURNAL_KEY]: { before, payload, committed: true } });
       } catch (error) {
         let recovery;
