@@ -97,6 +97,82 @@ test("fabricated Backspace cannot undo a trusted expansion", async () => {
   assert.equal(c.field.value, "private snippet");
 });
 
+// A rich editor with one text node, the way Chrome edits a plain contenteditable:
+// a trailing space is stored as U+00A0 and becomes U+0020 once more text follows.
+async function richContent() {
+  const listeners = {};
+  const textNode = { nodeType: 3, textContent: "", isConnected: true };
+  const root = { nodeType: 1, tagName: "DIV", isContentEditable: true, parentElement: null, isConnected: true,
+    get textContent() { return textNode.textContent; }, contains(node) { return node === textNode || node === root; },
+    closest() { return null; }, getRootNode() { return document; }, dispatchEvent() {}, focus() {} };
+  textNode.parentElement = textNode.parentNode = root;
+  let selStart = 0, selEnd = 0;
+  const selection = {
+    rangeCount: 1, get isCollapsed() { return selStart === selEnd; },
+    getRangeAt() { return { startContainer: textNode, endContainer: textNode, startOffset: selStart, endOffset: selEnd, collapsed: selStart === selEnd }; },
+    removeAllRanges() {}, addRange(range) { selStart = range.start; selEnd = range.end; },
+    collapse(_node, offset) { selStart = selEnd = offset; }, modify() {},
+  };
+  const document = {
+    activeElement: root, addEventListener(name, fn) { listeners[name] = fn; },
+    createRange() {
+      const range = { start: 0, end: 0,
+        setStart(_node, offset) { range.start = offset; }, setEnd(_node, offset) { range.end = offset; },
+        selectNodeContents() { range.start = 0; range.end = textNode.textContent.length; },
+        collapse(toStart) { if (toStart) range.end = range.start; else range.start = range.end; },
+        toString() { return textNode.textContent.slice(range.start, range.end); } };
+      return range;
+    },
+    execCommand(name, _ui, text) {
+      if (name !== "insertText") return false;
+      textNode.textContent = textNode.textContent.slice(0, selStart) + text + textNode.textContent.slice(selEnd);
+      selStart = selEnd = selStart + text.length;
+      return true;
+    },
+  };
+  const sandbox = {
+    self: {
+      ShorthandExpander: require("../src/expander.js"),
+      ShorthandStorage: { DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" }, async getAll() { return { shorthands: [{ trigger: "cool/", expansion: "That is really cool!" }], settings: {} }; } },
+      ShorthandPicker: { isOpen() { return false; }, show() { return true; } },
+      ShorthandTemplate: require("../src/template.js"),
+      ShorthandTemplateForm: { isOpen() { return false; }, show() { return false; } },
+      ShorthandExpansionFeedback: { show() {}, clear() {} },
+    },
+    document, window: { getSelection() { return selection; } }, location: { hostname: "page.example" },
+    chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {}, InputEvent: class {}, Node: { TEXT_NODE: 3 },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/content.js"), "utf8"), sandbox);
+  await new Promise((resolve) => setImmediate(resolve));
+  // One physical key: the browser then rewrites the text node to `resulting`.
+  function type(key, resulting) {
+    listeners.keydown({ target: root, type: "keydown", isTrusted: true, key });
+    textNode.textContent = resulting;
+    selStart = selEnd = selStart + 1;
+    listeners.input({ target: root, isTrusted: true, inputType: "insertText", data: key });
+  }
+  return { textNode, type };
+}
+
+test("a trigger typed after a space in a rich editor still expands despite the browser's nbsp rewriting", async () => {
+  const c = await richContent();
+  c.type("a", "a");
+  c.type(" ", "a\u00a0");
+  c.type("c", "a c");
+  for (const [key, text] of [["o", "a co"], ["o", "a coo"], ["l", "a cool"], ["/", "a cool/"]]) c.type(key, text);
+  assert.equal(c.textNode.textContent, "a That is really cool!");
+});
+
+test("the nbsp allowance does not let a page swap in different text for a keystroke", async () => {
+  const c = await richContent();
+  c.type("a", "a");
+  c.type(" ", "a\u00a0");
+  for (const [key, text] of [["c", "a c"], ["o", "a co"], ["o", "a coo"], ["l", "a cool"]]) c.type(key, text);
+  c.type("/", "a cool/x");
+  assert.equal(c.textNode.textContent, "a cool/x");
+});
+
 function picker() {
   const handlers = {}, parts = {};
   function element() {

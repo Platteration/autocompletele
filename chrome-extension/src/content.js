@@ -88,6 +88,13 @@
     inputGrant = { el, before, data, inputType, until: Date.now() + 1000 };
   }
 
+  // Rich editors store a trailing space as U+00A0 and turn it back into U+0020
+  // once more text follows. Both are boundaries and neither can be part of a
+  // trigger, so treating them alike cannot change which shorthand matched.
+  function sameText(a, b) {
+    return a.replace(/\u00a0/g, " ") === b.replace(/\u00a0/g, " ");
+  }
+
   function consumeEdit(grant, ev, el) {
     if (!grant || grant.el !== el || grant.until < Date.now() || ev.isComposing || ev.inputType !== grant.inputType) return false;
     // Browser-trusted execCommand input must not substitute another edit for a physical key,
@@ -96,11 +103,11 @@
     const before = grant.before;
     const expected = before.value.slice(0, before.start) + grant.data + before.value.slice(before.end);
     const live = editSnapshot(el);
-    if (!live || live.value !== expected || live.start !== before.start + grant.data.length || live.end !== live.start) return false;
+    if (!live || !sameText(live.value, expected) || live.start !== before.start + grant.data.length || live.end !== live.start) return false;
     if (isEditable(el)) {
       if (before.node && live.node !== before.node) return false;
       const rootExpected = before.rootValue.slice(0, before.offset + before.start) + grant.data + before.rootValue.slice(before.offset + before.end);
-      if (el.textContent !== rootExpected) return false;
+      if (!sameText(el.textContent, rootExpected)) return false;
     }
     const previous = trustedEdits.get(el);
     const continuing = previous && previous.value === before.value && previous.node === before.node &&
