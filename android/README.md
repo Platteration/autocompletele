@@ -23,10 +23,41 @@ cd android
 Install the APK on your phone (`adb install app/build/outputs/apk/debug/app-debug.apk`
 or copy it over and open it).
 
+### Release build
+
+Google Play takes an Android App Bundle signed with an upload key. Create the key once
+and keep it out of git (`.gitignore` already excludes it):
+
+```
+keytool -genkeypair -v -keystore upload-key.jks -alias upload \
+        -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Then either write `android/keystore.properties`:
+
+```
+KEYSTORE_FILE=upload-key.jks
+KEYSTORE_PASSWORD=...
+KEY_ALIAS=upload
+KEY_PASSWORD=...
+```
+
+or export the same four names as environment variables. `./gradlew bundleRelease` then
+writes a signed `app/build/outputs/bundle/release/app-release.aab`. Without a key the
+bundle is still built, unsigned, so CI can check the release configuration. CI signs it
+when the repository secrets `ANDROID_KEYSTORE_BASE64` (the `.jks` as base64),
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` exist.
+
+Bump `versionCode` in `app/build.gradle.kts` before every upload. The listing copy, the
+Play Console declarations (data safety, accessibility API) and the release checklist are
+in [`store/LISTING.md`](store/LISTING.md); the privacy policy the listing links to is
+[`store/PRIVACY.md`](store/PRIVACY.md).
+
 ## Use
 
 1. Open **Shorthand Expander** and tap **Turn on in Accessibility settings**.
-   Find *Shorthand Expander* in the list, enable it and confirm the prompt.
+   A dialog explains what the service reads and why; tap **Agree**, then find
+   *Shorthand Expander* in the list, enable it and confirm the prompt.
 2. Back in the app, add your shorthands with **Add shorthand**. Tap one to
    edit or delete it.
 3. Type a trigger in any other app. It is replaced as soon as you type its
@@ -55,9 +86,10 @@ using the same file format as the Chrome extension and the Windows app
   fields, which are deliberately ignored). Expansion simply does nothing
   there.
 * The app uses only framework widgets (no AndroidX) to keep it small; it
-  requires Android 7.0 (API 24) or newer.
-* If you publish this on Google Play you will need to justify the use of
-  the accessibility API in the Play Console declaration.
+  requires Android 7.0 (API 24) or newer and targets Android 16 (API 36).
+* The service is declared with `isAccessibilityTool="false"`, so Google Play
+  requires the in-app disclosure dialog and an AccessibilityService API
+  declaration in the Play Console; `store/LISTING.md` has the text for it.
 
 ## Project layout
 
@@ -69,4 +101,5 @@ using the same file format as the Chrome extension and the Windows app
 | `ShorthandJson.kt`                     | Shared JSON file format                              |
 | `ShorthandStore.kt`                    | Persistence in SharedPreferences                     |
 | `res/xml/accessibility_service_config.xml` | Service declaration (text-changed events only)   |
+| `store/`                               | Play listing copy, declarations, privacy policy, icon and feature graphic |
 | `src/test/.../ExpanderTest.kt`         | JUnit tests                                          |

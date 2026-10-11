@@ -6,6 +6,10 @@
     <string name="status_service_on">Accessibility service is ON – shorthands expand in other apps.</string>
     <string name="status_service_off">Accessibility service is OFF – shorthands will not expand until it is turned on.</string>
     <string name="enable_service">Turn on in Accessibility settings</string>
+    <string name="disclosure_title">How Shorthand Expander uses accessibility</string>
+    <string name="disclosure_message">Shorthand Expander uses Android\'s accessibility service to read the text you type in other apps\' text fields, so it can notice a trigger such as cool/ and replace it with your expansion.\n\nThe text is checked on this device only, as you type. It is never stored, logged or sent anywhere, and password fields are ignored.\n\nTap Agree to open Accessibility settings and turn the service on.</string>
+    <string name="disclosure_agree">Agree</string>
+    <string name="settings_unavailable">Accessibility settings could not be opened on this device.</string>
     <string name="expansion_enabled">Expansion enabled</string>
     <string name="placeholder_hint">Placeholders: {date}, {time}, {datetime}, {cursor}. Triggers fire after a space, punctuation or at the start of a line.</string>
     <string name="empty_list">No shorthands yet. Tap “Add shorthand” to create one.</string>

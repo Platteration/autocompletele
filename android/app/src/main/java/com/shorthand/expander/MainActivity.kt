@@ -2,9 +2,11 @@ package com.shorthand.expander
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.LayoutInflater
@@ -12,6 +14,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -19,6 +22,7 @@ import android.widget.ListView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.Toolbar
 
 /** Lets the user manage shorthands, toggle expansion and enable the accessibility service. */
 class MainActivity : Activity() {
@@ -35,6 +39,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        setActionBar(findViewById<Toolbar>(R.id.toolbar))
+        applyWindowInsets()
         store = ShorthandStore(this)
 
         statusText = findViewById(R.id.statusText)
@@ -49,9 +55,7 @@ class MainActivity : Activity() {
         list.setOnItemClickListener { _, _, position, _ -> showEditDialog(items[position]) }
 
         addButton.setOnClickListener { showEditDialog(null) }
-        enableServiceButton.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
+        enableServiceButton.setOnClickListener { showAccessibilityDisclosure() }
         enabledSwitch.setOnCheckedChangeListener { _, checked -> store.enabled = checked }
 
         refresh()
@@ -86,6 +90,60 @@ class MainActivity : Activity() {
     private fun persist() {
         store.shorthands = ArrayList(items)
         refresh()
+    }
+
+    /**
+     * Google Play's AccessibilityService API policy requires an in-app prominent
+     * disclosure, accepted by the user, before an app that is not an accessibility
+     * tool sends them to the accessibility settings. This dialog is that disclosure.
+     */
+    private fun showAccessibilityDisclosure() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.disclosure_title)
+            .setMessage(R.string.disclosure_message)
+            .setPositiveButton(R.string.disclosure_agree) { _, _ -> openAccessibilitySettings() }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun openAccessibilitySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        } catch (e: ActivityNotFoundException) {
+            toast(getString(R.string.settings_unavailable))
+        }
+    }
+
+    /**
+     * Android 15+ lays the window out edge to edge, so the toolbar extends under the
+     * status bar and the content under the navigation bar. Pad both by the system bar
+     * insets. On older versions the window decor consumes those insets and reports
+     * zero here, so the layout is unchanged there.
+     */
+    private fun applyWindowInsets() {
+        val root: View = findViewById(R.id.root)
+        val toolbar: View = findViewById(R.id.toolbar)
+        val content: View = findViewById(R.id.content)
+        val basePadding = content.paddingLeft // the same 16dp on every side in the layout
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val (left, top, right, bottom) = systemBarInsets(insets)
+            toolbar.setPadding(left, top, right, 0)
+            content.setPadding(basePadding + left, basePadding, basePadding + right, basePadding + bottom)
+            insets
+        }
+    }
+
+    /** Left, top, right and bottom insets of the status bar, navigation bar and display cutout. */
+    @Suppress("DEPRECATION") // systemWindowInset* is the only API before Android 11
+    private fun systemBarInsets(insets: WindowInsets): IntArray {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val i = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            return intArrayOf(i.left, i.top, i.right, i.bottom)
+        }
+        return intArrayOf(
+            insets.systemWindowInsetLeft, insets.systemWindowInsetTop,
+            insets.systemWindowInsetRight, insets.systemWindowInsetBottom,
+        )
     }
 
     private fun updateServiceStatus() {

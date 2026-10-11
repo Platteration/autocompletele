@@ -13,3 +13,7 @@ android/.idea/
 node_modules/
 .DS_Store
 __pycache__/
+# Android release signing (never commit the upload key)
+android/keystore.properties
+android/*.jks
+android/*.keystore

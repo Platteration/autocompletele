@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The white slash from the legacy launcher icon, drawn inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M32.9,74.3 L43.1,74.3 L75.1,42.3 L75.1,33.7 L64.9,33.7 L32.9,65.7 Z" />
+</vector>
