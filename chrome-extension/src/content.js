@@ -56,6 +56,13 @@
     }
   }
 
+  function showExpansionFeedback(el) {
+    // Visual feedback must never interrupt insertion or the undo window.
+    try {
+      self.ShorthandExpansionFeedback.show(el);
+    } catch (_) {}
+  }
+
   // The fill-in form takes focus. Keep the original text and insertion point,
   // then check them again before restoring focus: a page may save or replace
   // its editor on blur, or receive an update while the form is being filled.
@@ -144,6 +151,7 @@
           lastExpansion = { el: target.el, start: target.start, text, cursorOffset, trigger: target.trigger };
         }
         templateTarget = null;
+        showExpansionFeedback(target.el);
         return true;
       },
       onCancel() {
@@ -185,6 +193,7 @@
     const { text, cursorOffset } = template.render(match.shorthand.expansion);
     replaceInField(el, match.start, caret, text, cursorOffset);
     lastExpansion = { el, start: match.start, text, cursorOffset, trigger: match.shorthand.trigger };
+    showExpansionFeedback(el);
     return true;
   }
 
@@ -255,6 +264,7 @@
     const { text, cursorOffset } = template.render(match.shorthand.expansion);
     replaceInNode(sel, node, match.start, range.startOffset, text, text.length - cursorOffset);
     lastExpansion = { el: root, text, cursorOffset, trigger: match.shorthand.trigger };
+    showExpansionFeedback(root);
     return true;
   }
 
@@ -304,6 +314,7 @@
         const { text, cursorOffset } = template.render(sh.expansion);
         replaceInField(el, start, caret, text, cursorOffset);
         lastExpansion = { el, start, text, cursorOffset, trigger: pickerTrigger };
+        showExpansionFeedback(el);
       },
     });
   }
@@ -330,6 +341,7 @@
         if (!liveSel) return;
         replaceInNode(liveSel, node, start, end, text, text.length - cursorOffset);
         lastExpansion = { el: root, text, cursorOffset, trigger: pickerTrigger };
+        showExpansionFeedback(root);
       },
     });
   }

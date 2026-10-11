@@ -18,6 +18,15 @@ The preview loops here; the extension plays the logo once and lets you replay it
 Type a trigger in the **Try it** box on the options page to see it work.
 Press Backspace right after an expansion to get the trigger back.
 
+When a shorthand expands, a brief blue glow and sweep outline the writing
+field. Text appears immediately; the effect stops when you keep typing or
+move away. Reduced-motion preferences turn off this decoration. The same
+feedback follows insertion from the picker or a completed fill-in form.
+
+![A real browser expands yg to you got it with a brief blue outline](store/images/actle-expansion.gif)
+
+This demo loops; each expansion plays the effect once.
+
 ## Install in Firefox (temporary development install)
 
 Firefox 142 or later is required. From this directory, run `npm run build`,
@@ -167,6 +176,7 @@ inside it (the attribute also applies to all descendants).
 | `src/template-form.js` | Temporary fill-in form and live preview                       |
 | `src/storage.js`      | Chrome sync / Firefox local storage (one key per shorthand)    |
 | `src/content.js`      | Watches editable fields and performs the replacement           |
+| `src/expansion-feedback.js` | Temporary blue expansion cue, respecting reduced motion   |
 | `src/picker.js`       | The `;;` search overlay (closed shadow root, key capture)       |
 | `src/palette.js`      | Pure ranking logic for the toolbar command palette             |
 | `src/import-plan.js`  | Pure import preview and safe-merge planning                    |

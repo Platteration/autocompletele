@@ -35,6 +35,9 @@ webpage field to insert your saved text.
   in. Change the search trigger in settings or turn it off.
 - Press Backspace immediately after an expansion to restore the trigger while
   the text and caret remain in place.
+- See a brief blue glow and sweep around the writing field when text expands.
+  Insertion is immediate; continuing to type stops the effect. Reduced-motion
+  preferences suppress it.
 - Search snippets from the toolbar, fill in templates, and copy finished text
   to your clipboard.
 - Pause expansion everywhere or on individual hostnames.
@@ -140,6 +143,9 @@ update store listings to a new policy URL if the extension's data practices chan
 ## Screenshots and artwork
 
 The [animated logo preview](images/actle-autocomplete.gif) demonstrates the app identity; use the static PNG assets below for store uploads.
+The [expansion preview](images/actle-expansion.gif) captures `yg` becoming
+`you got it` in a real browser, with the brief blue outline and continued typing.
+Its documentation loop does not repeat the effect inside the extension.
 
 Prepared assets:
 
@@ -189,6 +195,8 @@ Firefox stores the library locally.
    system's reduced-motion preference enabled, the logo should remain static.
 2. In **Try it**, type `thanks/`. Confirm insertion, then immediately press
    Backspace to restore the trigger. Type `next/` and check the date and caret.
+   A brief blue outline should animate after insertion, disappear when you
+   keep typing, and stay absent with reduced motion enabled.
 3. Type `;;`, search for `thanks`, select the result with the arrow keys, and
    press Enter. Repeat and press Escape to dismiss the picker.
 4. Open the toolbar popup, search for `thanks`, and copy it. Paste into a test
