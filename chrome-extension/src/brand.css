@@ -1,0 +1,93 @@
+/* One reusable wordmark for the library and toolbar. The outer width stays
+   fixed while the letters inside it autocomplete. */
+button.actle-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: none;
+  max-width: 100%;
+  min-height: 36px;
+  margin: 0;
+  padding: 3px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.actle-brand__word {
+  display: inline-flex;
+  align-items: baseline;
+  flex: none;
+  width: calc(14ch + 5px);
+  font: 750 var(--actle-font-size, 16px)/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.actle-brand__completion {
+  display: inline-block;
+  flex: none;
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  color: var(--actle-completion, currentColor);
+}
+.actle-brand__completion--prefix { --actle-letters: 3; --actle-width: 3ch; }
+.actle-brand__completion--middle { --actle-letters: 5; --actle-width: 5ch; }
+.actle-brand__completion--suffix { --actle-letters: 1; --actle-width: 1ch; }
+.actle-brand__word::after {
+  content: "";
+  flex: none;
+  width: 2px;
+  height: .95em;
+  margin-left: 3px;
+  background: var(--actle-completion, currentColor);
+  opacity: 0;
+}
+.actle-brand[data-actle-state="playing"] .actle-brand__completion {
+  animation: actle-complete 3.6s steps(var(--actle-letters), end) both;
+}
+.actle-brand[data-actle-state="playing"] .actle-brand__word::after {
+  animation: actle-caret 3.6s step-end both;
+}
+@keyframes actle-complete {
+  0%, 16% { width: 0; opacity: 0; }
+  16.01% { width: 0; opacity: 1; }
+  40%, 78% { width: var(--actle-width); opacity: 1; }
+  94%, 100% { width: 0; opacity: 0; }
+}
+@keyframes actle-caret {
+  0%, 12%, 24%, 36%, 48%, 60%, 72% { opacity: 1; }
+  6%, 18%, 30%, 42%, 54%, 66%, 78%, 100% { opacity: 0; }
+}
+.actle-brand:hover:not(:disabled) {
+  border-color: currentColor;
+  background: transparent;
+  color: inherit;
+}
+.actle-brand:active:not(:disabled) {
+  transform: none;
+}
+.actle-brand:active:not(:disabled):not([aria-disabled="true"]) {
+  border-color: currentColor;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.actle-brand:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.actle-brand[aria-disabled="true"] { cursor: default; }
+.actle-brand[aria-disabled="true"]:hover { border-color: transparent; }
+@media (prefers-reduced-motion: reduce) {
+  .actle-brand[data-actle-state="playing"] .actle-brand__completion,
+  .actle-brand[data-actle-state="playing"] .actle-brand__word::after { animation: none; }
+}
+@media (forced-colors: active) {
+  button.actle-brand { color: ButtonText; }
+  .actle-brand__completion { color: ButtonText; }
+  .actle-brand__word::after { background: ButtonText; }
+  .actle-brand:focus-visible { outline-color: Highlight; }
+}

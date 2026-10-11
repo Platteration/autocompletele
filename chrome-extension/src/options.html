@@ -3,47 +3,45 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shorthand Autofill – Options</title>
+  <title>actle – Options</title>
   <link rel="stylesheet" href="options.css">
+  <link rel="stylesheet" href="brand.css">
 </head>
 <body>
-  <header class="hero">
-    <div>
-      <p class="eyebrow">Shorthand Autofill</p>
-      <h1>Your typing shortcuts, under control.</h1>
-      <p class="hint">Type a trigger such as <code>cool/</code> in any text field and it expands into the full text. Placeholders: <code>{date}</code>, <code>{time}</code>, <code>{datetime}</code>, <code>{cursor}</code>.</p>
+  <div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <a class="brand-home" href="#library" aria-label="actle library"><img src="../icons/icon48.png" width="36" height="36" alt=""></a>
+      <button class="actle-brand" type="button" data-actle-brand aria-label="actle — autocompletes to autocompletele. Replay logo animation" title="actle → autocompletele"><span class="actle-brand__word" aria-hidden="true">actle</span></button>
+      <span class="brand-subtitle">A little goes a long way.</span>
     </div>
-    <div class="hero-status" aria-live="polite">
-      <strong id="shorthandCount">0</strong>
-      <span>shorthands</span>
-    </div>
+    <nav class="sidebar-nav" aria-label="Page sections">
+      <a href="#library" class="nav-primary"><span aria-hidden="true">01</span> Your library</a>
+      <a href="#playground"><span aria-hidden="true">02</span> Playground</a>
+      <a href="#settings"><span aria-hidden="true">03</span> Settings</a>
+      <a href="#backup"><span aria-hidden="true">04</span> Import / export</a>
+    </nav>
+    <div class="sidebar-note"><span class="sidebar-note-label">A little shortcut</span><p>Type <kbd>;;</kbd> to find the right words without leaving your page.</p></div>
+  </aside>
+  <div class="main-content">
+  <header class="workspace-heading">
+      <div>
+        <p class="eyebrow">Write once. Make it yours.</p>
+        <h1>Your shortcut library</h1>
+        <p class="hint">Reusable words, with room for the details that change.</p>
+      </div>
+      <div class="hero-status" aria-live="polite">
+        <strong id="shorthandCount">0</strong>
+        <span>saved shorthands</span>
+      </div>
   </header>
 
-  <section class="card settings-grid">
-    <label class="toggle-row">
-      <span>
-        <strong>Expansion</strong>
-        <small>Pause every shorthand without deleting anything.</small>
-      </span>
-      <input type="checkbox" id="enabled" aria-label="Expansion enabled">
-    </label>
-    <label class="row column">
-      <span><strong>Search overlay trigger</strong></span>
-      <small>Type it in any field to search your shorthands; leave empty to turn it off.</small>
-      <input type="text" id="pickerTrigger" placeholder=";;" autocomplete="off" data-shorthand-ignore>
-    </label>
-    <label class="row column span-2">
-      <span><strong>Never expand on these sites</strong></span>
-      <small>One hostname per line. Useful for banking, admin consoles, and other sensitive contexts.</small>
-      <textarea id="excluded" rows="3" placeholder="example.com&#10;mail.google.com" data-shorthand-ignore></textarea>
-    </label>
-  </section>
-
-  <section class="card">
+  <main>
+  <section class="card library-card" id="library" aria-labelledby="libraryTitle">
     <div class="section-heading">
       <div>
-        <p class="eyebrow">Library</p>
-        <h2>Shorthands</h2>
+        <h2 id="libraryTitle">Shorthands</h2>
+        <p class="hint">Small triggers. Ready-to-use text.</p>
       </div>
       <label class="search-box">
         <span class="sr-only">Search shorthands</span>
@@ -51,15 +49,71 @@
       </label>
     </div>
 
+    <div class="library-workspace">
+    <div class="library-panel">
+      <div class="table-wrap">
+        <table id="list" aria-label="Saved shorthands">
+          <thead><tr><th scope="col">Trigger</th><th scope="col">Expansion</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="empty" class="empty-state" hidden>Your library starts here. Create a shorthand in the editor.</p>
+      <p id="noMatches" class="empty-state" hidden>No shorthand matches that search.</p>
+      <p class="library-note">Add <code>[[name]]</code> to a script for a fill-in blank.</p>
+    </div>
+
     <form id="editor" class="editor-panel">
+      <div class="editor-heading"><p class="eyebrow">Template builder</p><h3 id="editorTitle">Create a shorthand</h3></div>
       <input type="hidden" id="editId">
       <div class="fields">
         <label>Trigger
-          <input type="text" id="trigger" placeholder="cool/" autocomplete="off" data-shorthand-ignore required>
+          <input type="text" id="trigger" placeholder="hello/" autocomplete="off" data-shorthand-ignore required>
         </label>
-        <label>Expansion
-          <textarea id="expansion" rows="3" placeholder="That is really cool, thanks for sharing!" data-shorthand-ignore required></textarea>
+        <label>Expansion <small>Your reusable script</small>
+          <textarea id="expansion" rows="6" placeholder="Hi [[name]],&#10;&#10;Thanks for reaching out about [[topic]]." autocomplete="off" spellcheck="true" data-shorthand-ignore required></textarea>
         </label>
+      </div>
+      <div class="template-tools">
+        <div class="field-builder">
+          <label for="fieldName">Add a fill-in blank</label>
+          <div><input type="text" id="fieldName" placeholder="e.g. name, company, date" autocomplete="off" data-shorthand-ignore><button type="button" id="addFieldBtn" class="secondary">Insert blank</button></div>
+        </div>
+        <span id="fieldBuilderMsg" class="msg" role="status"></span>
+        <p class="hint">Fill in each blank when you use the script. Repeated names stay linked to one answer.</p>
+        <div id="repeatFields" class="repeat-fields" hidden>
+          <span class="tool-label">Reuse a blank</span>
+          <div id="repeatFieldButtons" class="repeat-field-buttons" aria-label="Insert a linked blank again"></div>
+        </div>
+        <div class="variable-builder">
+          <label for="variableToken">Insert a variable</label>
+          <div>
+            <select id="variableToken" aria-describedby="variableHint" data-shorthand-ignore>
+              <optgroup label="Date and time">
+                <option value="{weekday}">Weekday · {weekday}</option>
+                <option value="{date}">Date · {date}</option>
+                <option value="{time}">Time · {time}</option>
+                <option value="{datetime}">Date and time · {datetime}</option>
+              </optgroup>
+              <optgroup label="Chosen pronouns">
+                <option value="{subject}">Subject · she / he / they</option>
+                <option value="{object}">Object · her / him / them</option>
+                <option value="{possessive}">Before a noun · her / his / their</option>
+                <option value="{possessivepronoun}">On its own · hers / his / theirs</option>
+                <option value="{reflexive}">Reflexive · herself / himself / themself</option>
+              </optgroup>
+              <optgroup label="Editing">
+                <option value="{cursor}">Cursor position · {cursor}</option>
+              </optgroup>
+            </select>
+            <button type="button" id="addVariableBtn" class="secondary">Insert variable</button>
+          </div>
+        </div>
+        <p id="variableHint" class="hint">Weekday uses your local day. Choose pronouns each time you use the script.</p>
+      </div>
+      <div class="template-preview">
+        <div class="preview-title"><h4>Script preview</h4><span id="templateFieldCount">No fill-in blanks</span></div>
+        <div id="templatePreview" class="preview-output"></div>
+        <p id="templateHint" class="hint">Blanks and pronouns open a fill-in form. Complete it in Fields or In message view.</p>
       </div>
       <div class="actions">
         <button type="submit" id="saveBtn">Add shorthand</button>
@@ -67,32 +121,77 @@
         <span id="formMsg" class="msg" role="status"></span>
       </div>
     </form>
-
-    <div class="table-wrap">
-      <table id="list">
-        <thead><tr><th>Trigger</th><th>Expansion</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
     </div>
-    <p id="empty" class="empty-state" hidden>No shorthands yet. Add your first one above.</p>
-    <p id="noMatches" class="empty-state" hidden>No shorthand matches that search.</p>
   </section>
 
-  <section class="card try-card">
+  <div class="workspace-secondary">
+  <section class="card try-card" id="playground" aria-labelledby="tryTitle">
     <div>
       <p class="eyebrow">Playground</p>
-      <h2>Try it</h2>
-      <p class="hint">Type one of your triggers here. Press Backspace immediately after an expansion to restore the trigger.</p>
+      <h2 id="tryTitle">Try it</h2>
+      <p class="hint">A little space to test your shortcuts before using them elsewhere.</p>
     </div>
+    <label for="tryit" class="sr-only">Test a shorthand</label>
     <textarea id="tryit" rows="4" placeholder="cool/"></textarea>
+    <p class="hint keyboard-hint">Press <kbd>Backspace</kbd> immediately after an expansion to undo it.</p>
+    <div class="quick-guide">
+      <h3>Make it personal</h3>
+      <p class="hint">Add the details you need to your scripts:</p>
+      <dl>
+        <div><dt><code>[[name]]</code></dt><dd>A blank to fill in each time</dd></div>
+        <div><dt><code>{date}</code></dt><dd>Today's date</dd></div>
+        <div><dt><code>{time}</code></dt><dd>The current time</dd></div>
+        <div><dt><code>{datetime}</code></dt><dd>Date and time together</dd></div>
+        <div><dt><code>{weekday}</code></dt><dd>Your local weekday, in English</dd></div>
+        <div><dt><code>{subject}</code></dt><dd>Chosen pronouns: she, he, they, or custom</dd></div>
+        <div><dt><code>{object}</code></dt><dd>her, him, them, or custom</dd></div>
+        <div><dt><code>{possessive}</code></dt><dd>her, his, their, or custom</dd></div>
+        <div><dt><code>{possessivepronoun}</code></dt><dd>hers, his, theirs, or custom</dd></div>
+        <div><dt><code>{reflexive}</code></dt><dd>herself, himself, themself, or custom</dd></div>
+        <div><dt><code>{cursor}</code></dt><dd>Where typing continues</dd></div>
+      </dl>
+    </div>
   </section>
 
-  <section class="card">
+  <section class="card settings-card" id="settings" aria-labelledby="settingsTitle">
+    <p class="eyebrow">Your preferences</p>
+    <h2 id="settingsTitle">Settings</h2>
+    <div class="settings-grid">
+      <label class="toggle-row">
+        <span><strong>Expansion</strong><small>Pause shortcuts without deleting them.</small></span>
+        <input type="checkbox" id="enabled" aria-label="Expansion enabled">
+      </label>
+      <div class="row column">
+        <label for="animationMode"><strong>Text animation</strong></label>
+        <select id="animationMode" aria-describedby="animationHint animationMsg" data-shorthand-ignore>
+          <option value="expand">Expand</option>
+          <option value="casino">Casino</option>
+          <option value="off">Off — instant</option>
+        </select>
+        <small id="animationHint">Expand fills out the shortcut. Casino locks letters into place. Off inserts instantly. Reduced motion skips animation. <a href="#playground">Try it in the playground.</a></small>
+        <span id="animationMsg" class="msg" role="status"></span>
+      </div>
+      <label class="row column">
+        <span><strong>Search overlay trigger</strong></span>
+        <small>Type this in a supported field to find a shorthand. Leave empty to turn it off.</small>
+        <input type="text" id="pickerTrigger" placeholder=";;" autocomplete="off" aria-describedby="pickerMsg" data-shorthand-ignore>
+        <span id="pickerMsg" class="msg" role="status"></span>
+      </label>
+      <label class="row column">
+        <span><strong>Never expand on these sites</strong></span>
+        <small>One hostname per line, such as example.com.</small>
+        <textarea id="excluded" rows="3" placeholder="example.com&#10;mail.google.com" data-shorthand-ignore></textarea>
+      </label>
+    </div>
+  </section>
+  </div>
+
+  <section class="card" id="backup" aria-labelledby="backupTitle">
     <div class="section-heading">
       <div>
         <p class="eyebrow">Portability</p>
-        <h2>Import / export</h2>
-        <p class="hint">Uses the same JSON format as the Windows and Android apps.</p>
+        <h2 id="backupTitle">Import / export</h2>
+        <p class="hint">Back up every script and its variables. Windows and Android preserve the text; fill-in forms, weekday, and pronoun variables work in the browser extensions.</p>
       </div>
       <div class="actions compact">
         <button type="button" id="exportBtn" class="secondary">Export JSON</button>
@@ -127,12 +226,21 @@
       </div>
     </div>
   </section>
+  </main>
+  <footer class="page-footer">Made for the words you use every day.</footer>
+  </div>
+  </div>
 
+  <script src="brand.js"></script>
   <script src="expander.js"></script>
+  <script src="template.js"></script>
   <script src="conflicts.js"></script>
   <script src="storage.js"></script>
   <script src="import-plan.js"></script>
   <script src="picker.js"></script>
+  <script src="template-form.js"></script>
+  <script src="animation-frames.js"></script>
+  <script src="expansion-feedback.js"></script>
   <script src="content.js"></script>
   <script src="options.js"></script>
 </body>

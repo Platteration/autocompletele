@@ -2,6 +2,8 @@
   "use strict";
   const storage = self.ShorthandStorage;
   const palette = self.ShorthandPalette;
+  const template = self.ShorthandTemplate;
+  const templateForm = self.ShorthandTemplateForm;
   const enabledEl = document.getElementById("enabled");
   const siteEl = document.getElementById("site");
   const hostEl = document.getElementById("host");
@@ -19,6 +21,7 @@
   function setStatus(enabled, siteEnabled) {
     const active = enabled && siteEnabled;
     statusEl.textContent = active ? "Active" : "Paused";
+    statusEl.dataset.state = active ? "active" : "paused";
     statusEl.setAttribute("aria-label", active ? "Expansion active" : "Expansion paused");
   }
 
@@ -30,9 +33,32 @@
   }
 
   async function copy(shorthand) {
-    if (!shorthand) return;
+    if (!shorthand || templateForm.isOpen()) return;
+    if (template.requiresInput(shorthand.expansion)) {
+      const previous = document.activeElement;
+      templateForm.show({
+        trigger: shorthand.trigger,
+        expansion: shorthand.expansion,
+        actionLabel: "Copy text",
+        restoreFocus: true,
+        async onSubmit(result) {
+          try {
+            await navigator.clipboard.writeText(result.text);
+            say(`Copied ${shorthand.trigger}`);
+            if (previous && previous.isConnected) previous.focus({ preventScroll: true });
+            return true;
+          } catch (_) {
+            return "Could not copy to clipboard. Please try again.";
+          }
+        },
+      });
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(shorthand.expansion);
+      const text = template.variables(shorthand.expansion).length
+        ? template.render(shorthand.expansion).text
+        : template.fill(shorthand.expansion, {});
+      await navigator.clipboard.writeText(text);
       say(`Copied ${shorthand.trigger}`);
     } catch (_) {
       say("Could not copy to clipboard.");
@@ -54,7 +80,10 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "result";
-      button.title = `Copy expansion for ${shorthand.trigger}`;
+      const needsInput = template.requiresInput(shorthand.expansion);
+      button.title = needsInput
+        ? `Fill in and copy ${shorthand.trigger}`
+        : `Copy expansion for ${shorthand.trigger}`;
 
       const head = document.createElement("div");
       head.className = "result-head";
@@ -63,7 +92,7 @@
       trigger.textContent = shorthand.trigger;
       const copyHint = document.createElement("span");
       copyHint.className = "copy";
-      copyHint.textContent = "Copy";
+      copyHint.textContent = needsInput ? "Fill in" : "Copy";
       head.append(trigger, copyHint);
 
       const expansion = document.createElement("div");

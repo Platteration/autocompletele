@@ -8,7 +8,8 @@ const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
 
-const EXTENSION_DIR = path.join(__dirname, "..");
+// Also exercise the exact staged package before a store upload.
+const EXTENSION_DIR = path.resolve(process.env.EXTENSION_PATH || path.join(__dirname, ".."));
 const FIXTURE = "file://" + path.join(__dirname, "fixtures", "page.html");
 
 const DEFAULT_SHORTHANDS = [

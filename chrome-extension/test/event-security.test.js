@@ -10,8 +10,11 @@ async function content() {
   const sandbox = {
     self: {
       ShorthandExpander: require("../src/expander.js"),
-      ShorthandStorage: { DEFAULT_SETTINGS: { pickerTrigger: ";;" }, async getAll() { return { shorthands: [{ trigger: "secret/", expansion: "private snippet" }], settings: {} }; } },
+      ShorthandStorage: { DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" }, async getAll() { return { shorthands: [{ trigger: "secret/", expansion: "private snippet" }], settings: {} }; } },
       ShorthandPicker: { isOpen() { return false; }, show(opts) { opened.push(opts); return true; } },
+      ShorthandTemplate: require("../src/template.js"),
+      ShorthandTemplateForm: { isOpen() { return false; }, show() { return false; } },
+      ShorthandExpansionFeedback: { show() {}, clear() {} },
     },
     document, window: {}, location: { hostname: "page.example" }, chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {},
   };
@@ -114,7 +117,8 @@ function picker() {
     addEventListener(name, fn) { handlers[name] = fn; }, removeEventListener(name) { delete handlers[name]; },
     body: { appendChild(el) { el.parentNode = this; }, removeChild(el) { el.parentNode = null; } },
   };
-  const sandbox = { self: {}, document, window: { innerWidth: 800, innerHeight: 600, addEventListener() {}, removeEventListener() {} } };
+  // The picker styles its closed shadow root with a constructed stylesheet.
+  const sandbox = { self: {}, document, CSSStyleSheet: class { replaceSync() {} }, window: { innerWidth: 800, innerHeight: 600, addEventListener() {}, removeEventListener() {} } };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/picker.js"), "utf8"), sandbox);
   const anchor = { getRootNode() { return document; }, getBoundingClientRect() { return { width: 10, height: 10, bottom: 10, left: 0 }; } };

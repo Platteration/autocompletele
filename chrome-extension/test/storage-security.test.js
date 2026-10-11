@@ -31,7 +31,7 @@ function environment(initial = old, limits = {}) {
       },
     };
   }
-  const chrome = { storage: { sync: area(syncData, "sync"), local: area(localData, "local") } };
+  const chrome = { runtime: { getManifest: () => ({}) }, storage: { sync: area(syncData, "sync"), local: area(localData, "local") } };
   const load = () => {
     const sandbox = { self: {}, chrome, TextEncoder };
     vm.createContext(sandbox); vm.runInContext(source, sandbox);

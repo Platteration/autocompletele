@@ -61,43 +61,61 @@
     host.id = HOST_ID;
     // The page's own styles must not reach inside, and ours must not leak out.
     shadow = host.attachShadow({ mode: "closed" });
-    shadow.innerHTML = `
-      <style>
+    // Constructed stylesheets keep the overlay styled on Firefox pages whose
+    // CSP rejects inline <style> elements inserted by content scripts.
+    const stylesheet = new CSSStyleSheet();
+    stylesheet.replaceSync(`
         /* Reset first so nothing inherits from the page, then position. The
            host itself is the positioned box, which keeps it measurable from
            outside the closed shadow root. */
         :host { all: initial; }
-        :host { position: fixed; z-index: 2147483647; }
+        :host {
+          position: fixed; z-index: 2147483647; color-scheme: light dark;
+          --panel: #fff; --text: #172033; --muted: #526078;
+          --line: #d7deea; --control: #7d8ba1; --accent: #2357d7;
+          --soft: #eaf0ff; --pressed: #dce6ff;
+        }
         .panel {
           width: 340px; max-width: 90vw;
-          background: #fff; color: #1f2937; border: 1px solid #d1d5db;
-          border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18);
+          background: var(--panel); color: var(--text); border: 1px solid var(--control);
+          border-radius: 12px; box-shadow: 0 12px 32px rgba(13,19,32,.2);
           font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
           overflow: hidden;
         }
         @media (prefers-color-scheme: dark) {
-          .panel { background: #1f2937; color: #f3f4f6; border-color: #4b5563; }
-          .query { border-bottom-color: #4b5563 !important; }
-          .item[data-selected="true"] { background: #374151 !important; }
-          .trigger { color: #93c5fd !important; }
-          .hint { color: #9ca3af !important; border-top-color: #4b5563 !important; }
+          :host {
+            --panel: #151d2c; --text: #eef2f7; --muted: #a7b4c8;
+            --line: #344159; --control: #7f8da5; --accent: #a4bdff;
+            --soft: #233354; --pressed: #30446c;
+          }
         }
         .query {
-          padding: 8px 10px; border-bottom: 1px solid #e5e7eb;
+          padding: 10px 12px; border-bottom: 1px solid var(--line);
           font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all;
         }
-        .caret { opacity: .5; }
-        .list { max-height: 260px; overflow-y: auto; }
-        .item { padding: 7px 10px; cursor: pointer; display: block; }
-        .item[data-selected="true"] { background: #eff6ff; }
-        .trigger { font-family: ui-monospace, monospace; font-weight: 600; color: #2563eb; }
+        .caret { color: var(--muted); }
+        .list { max-height: 260px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--control) var(--panel); }
+        .item { padding: 9px 12px; cursor: pointer; display: block; border-left: 3px solid transparent; }
+        .item:hover { background: var(--soft); }
+        .item[data-selected="true"] { background: var(--soft); border-left-color: var(--accent); }
+        .item:active { background: var(--pressed); }
+        .trigger {
+          display: block; font-family: ui-monospace, monospace; font-weight: 600;
+          color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
         .expansion {
-          display: block; opacity: .75; white-space: nowrap;
+          display: block; margin-top: 2px; color: var(--muted); white-space: nowrap;
           overflow: hidden; text-overflow: ellipsis;
         }
-        .empty, .hint { padding: 8px 10px; opacity: .7; }
-        .hint { border-top: 1px solid #e5e7eb; font-size: 11px; }
-      </style>
+        .empty, .hint { padding: 10px 12px; color: var(--muted); }
+        .hint { border-top: 1px solid var(--line); font-size: 11px; }
+        @media (forced-colors: active) {
+          .panel { border-color: ButtonText; }
+          .item[data-selected="true"] { border-left-color: Highlight; outline: 1px solid Highlight; outline-offset: -1px; }
+        }
+    `);
+    shadow.adoptedStyleSheets = [stylesheet];
+    shadow.innerHTML = `
       <div class="panel" role="dialog" aria-label="Insert shorthand">
         <div class="query"></div>
         <div class="list" role="listbox"></div>
@@ -172,6 +190,7 @@
       item.setAttribute("role", "option");
       item.dataset.index = String(i);
       item.dataset.selected = String(i === selected);
+      item.setAttribute("aria-selected", String(i === selected));
       const t = document.createElement("span");
       t.className = "trigger";
       t.textContent = sh.trigger;

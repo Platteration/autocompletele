@@ -1,14 +1,20 @@
 {
-  "name": "shorthand-autofill-extension",
+  "name": "actle-extension",
   "version": "1.0.0",
   "private": true,
-  "description": "Chrome extension that expands shorthands such as cool/ into full text.",
+  "engines": { "node": ">=22.2.0" },
+  "description": "Chrome and Firefox extension that expands shorthands such as cool/ into full text.",
   "scripts": {
     "test": "node --test",
     "test:e2e": "node --test --test-concurrency=1 e2e/*.e2e.js",
-    "check": "for f in src/*.js; do node --check \"$f\" || exit 1; done"
+    "test:e2e:firefox": "node --test --test-concurrency=1 e2e-firefox/*.e2e.js",
+    "build": "node scripts/build.js",
+    "lint:firefox": "web-ext lint --source-dir dist/firefox --warnings-as-errors",
+    "check": "bash -n scripts/install-geckodriver.sh && for f in src/*.js scripts/*.js test/*.js e2e/*.js e2e-firefox/*.js; do node --check \"$f\" || exit 1; done"
   },
   "devDependencies": {
-    "playwright": "1.56.1"
+    "playwright": "1.64.0",
+    "selenium-webdriver": "4.51.0",
+    "web-ext": "10.7.0"
   }
 }

@@ -3,47 +3,67 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shorthand Autofill</title>
+  <title>actle</title>
   <style>
-    :root { color-scheme: light dark; --bg:#f8fafc; --panel:#fff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0; --accent:#4f46e5; --soft:#eef2ff; }
-    @media (prefers-color-scheme: dark) { :root { --bg:#0f172a; --panel:#111827; --text:#f8fafc; --muted:#94a3b8; --line:#334155; --accent:#818cf8; --soft:#1e1b4b; } }
+    :root { color-scheme: light dark; --bg:#f4f6f8; --panel:#fff; --text:#172033; --muted:#526078; --line:#d7deea; --control:#7d8ba1; --accent:#2357d7; --soft:#eaf0ff; --pressed:#dce6ff; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#0d1320; --panel:#151d2c; --text:#eef2f7; --muted:#a7b4c8; --line:#344159; --control:#7f8da5; --accent:#a4bdff; --soft:#233354; --pressed:#30446c; } }
     * { box-sizing:border-box; }
-    body { margin:0; width:360px; min-height:420px; padding:14px; font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--text); background:var(--bg); }
-    .top { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
-    h1 { font-size:15px; margin:0; letter-spacing:-.01em; }
-    .status { padding:3px 8px; border-radius:999px; font-size:11px; font-weight:700; color:var(--accent); background:var(--soft); }
+    body { margin:0; width:360px; min-height:420px; padding:16px; font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--text); background:var(--bg); }
+    .top { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:16px; }
+    .brand { display:flex; align-items:center; min-width:0; gap:9px; }
+    .brand img { width:32px; height:32px; flex:none; }
+    h1 { font-size:15px; margin:0; letter-spacing:-.02em; }
+    .tagline { margin:2px 0 0; color:var(--muted); font-size:11px; }
+    .status { flex:none; padding:4px 8px; border-radius:999px; font-size:11px; font-weight:700; color:var(--accent); background:var(--soft); }
+    .status[data-state="paused"] { color:var(--muted); background:var(--panel); border:1px solid var(--control); }
     .search { position:relative; margin-bottom:10px; }
-    .search input { width:100%; padding:9px 34px 9px 10px; border:1px solid var(--line); border-radius:9px; background:var(--panel); color:var(--text); font:inherit; outline:none; }
-    .search input:focus { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
-    .key { position:absolute; right:9px; top:8px; color:var(--muted); font-size:11px; }
-    #results { display:grid; gap:6px; max-height:218px; overflow:auto; padding:1px; }
-    .result { width:100%; text-align:left; border:1px solid var(--line); border-radius:9px; padding:8px 9px; background:var(--panel); color:var(--text); cursor:pointer; }
-    .result:hover,.result:focus { border-color:var(--accent); outline:none; }
-    .result-head { display:flex; justify-content:space-between; gap:8px; align-items:center; }
-    .trigger { font:700 12px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--accent); }
-    .copy { color:var(--muted); font-size:11px; }
-    .expansion { margin-top:3px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .empty { color:var(--muted); text-align:center; padding:22px 8px; }
-    .divider { height:1px; background:var(--line); margin:12px 0; }
-    .toggles { display:grid; gap:8px; }
-    label { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; }
-    label span:first-child { min-width:0; }
-    .sub { display:block; color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:250px; }
-    .footer { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+    .search input { width:100%; padding:10px 62px 10px 11px; border:1px solid var(--control); border-radius:10px; background:var(--panel); color:var(--text); font:inherit; }
+    .search input::placeholder { color:var(--muted); opacity:1; }
+    :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .search input:focus-visible { border-color:var(--accent); }
+    .key { position:absolute; right:11px; top:11px; color:var(--muted); font-size:11px; line-height:1.5; pointer-events:none; }
+    .search input:not(:placeholder-shown) + .key { display:none; }
+    #results { display:grid; gap:7px; max-height:218px; overflow:auto; padding:3px; margin:0 -3px; scrollbar-width:thin; scrollbar-color:var(--control) var(--bg); }
+    .result { min-width:0; width:100%; text-align:left; border:1px solid var(--line); border-radius:10px; padding:9px 10px; background:var(--panel); color:var(--text); font:inherit; cursor:pointer; }
+    .result:hover { border-color:var(--accent); background:var(--soft); }
+    .result:active { background:var(--pressed); }
+    .result-head { display:flex; min-width:0; justify-content:space-between; gap:8px; align-items:center; }
+    .trigger { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:700 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--accent); }
+    .copy { flex:none; color:var(--muted); font-size:11px; }
+    .expansion { margin-top:4px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .empty { color:var(--muted); text-align:center; padding:26px 12px; border:1px dashed var(--control); border-radius:10px; background:var(--panel); }
+    .divider { height:1px; background:var(--line); margin:10px 0 12px; }
+    .toggles { display:grid; gap:12px; }
+    .toggles label { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; }
+    .toggles label > span { min-width:0; font-weight:600; }
+    .toggles input { flex:none; width:17px; height:17px; margin:0 2px 0 0; accent-color:#2357d7; cursor:pointer; }
+    .toggles label:has(input:disabled), .toggles input:disabled { cursor:default; color:var(--muted); }
+    .sub { display:block; color:var(--muted); font-size:11px; font-weight:400; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
+    .footer { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:16px; }
     .muted { color:var(--muted); font-size:11px; }
-    button.link { border:0; padding:4px 0; background:transparent; color:var(--accent); font:600 12px/1.2 inherit; cursor:pointer; }
-    #toast { min-height:18px; margin-top:8px; color:var(--accent); font-size:11px; }
+    button.link { border:1px solid var(--control); border-radius:8px; padding:8px 10px; background:var(--panel); color:var(--accent); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+    button.link:hover { border-color:var(--accent); background:var(--soft); }
+    button.link:active { background:var(--pressed); }
+    #toast { min-height:18px; margin-top:8px; color:var(--accent); font-size:11px; overflow-wrap:anywhere; }
+    @media (prefers-color-scheme: dark) { .toggles input { accent-color:#315ccc; } }
+    @media (forced-colors: active) { :focus-visible { outline-color:Highlight; } .result, .status, button.link { border:1px solid ButtonText; } }
   </style>
+  <link rel="stylesheet" href="brand.css">
 </head>
 <body>
   <div class="top">
-    <h1>Shorthand Autofill</h1>
+    <div class="brand">
+      <img src="../icons/icon48.png" width="32" height="32" alt="">
+      <div><h1 class="sr-only">actle</h1><button class="actle-brand" type="button" data-actle-brand aria-label="actle — autocompletes to autocompletele. Replay logo animation" title="actle → autocompletele"><span class="actle-brand__word" aria-hidden="true">actle</span></button><p class="tagline">A little goes a long way.</p></div>
+    </div>
     <span class="status" id="status">Ready</span>
   </div>
 
   <div class="search">
+    <label class="sr-only" for="search">Search shorthands</label>
     <input id="search" type="search" placeholder="Find a shorthand…" autocomplete="off" autofocus>
-    <span class="key">↵ copy</span>
+    <span class="key" aria-hidden="true">↵ copy</span>
   </div>
   <div id="results" aria-live="polite"></div>
   <div id="toast" role="status"></div>
@@ -52,7 +72,7 @@
 
   <div class="toggles">
     <label>
-      <span>Expansion <small class="sub">Across Chrome</small></span>
+      <span>Expansion <small class="sub">Across this browser</small></span>
       <input type="checkbox" id="enabled">
     </label>
     <label>
@@ -66,6 +86,10 @@
     <button class="link" id="options">Manage library →</button>
   </div>
 
+  <script src="brand.js"></script>
+  <script src="expander.js"></script>
+  <script src="template.js"></script>
+  <script src="template-form.js"></script>
   <script src="storage.js"></script>
   <script src="palette.js"></script>
   <script src="popup.js"></script>

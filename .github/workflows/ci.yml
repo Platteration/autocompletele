@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   chrome-extension:
-    name: Chrome extension tests
+    name: Chrome and Firefox extension tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -18,14 +18,32 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
+      - name: Install test tools
+        run: cd chrome-extension && npm ci --no-audit --no-fund
       - name: Unit tests
         run: cd chrome-extension && npm test
       - name: Syntax check
         run: cd chrome-extension && npm run check
-      - name: Install Playwright and Chromium
-        run: cd chrome-extension && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
-      - name: End-to-end tests
+      - name: Build browser packages
+        run: cd chrome-extension && npm run build
+      - name: Validate Firefox package
+        run: cd chrome-extension && npm run lint:firefox
+      - name: Install browser runtimes
+        run: cd chrome-extension && npx playwright install --with-deps --no-shell chromium firefox
+      - name: Chrome end-to-end tests
         run: cd chrome-extension && npm run test:e2e
+        env:
+          EXTENSION_PATH: dist/chrome
+      - name: Install Firefox WebDriver
+        run: bash chrome-extension/scripts/install-geckodriver.sh "$RUNNER_TEMP/shorthand-geckodriver"
+      - name: Firefox end-to-end tests
+        run: cd chrome-extension && npm run test:e2e:firefox
+        env:
+          GECKODRIVER_PATH: ${{ runner.temp }}/shorthand-geckodriver/geckodriver
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: actle-browser-packages
+          path: chrome-extension/dist/*.zip
 
   windows:
     name: Windows app build and tests
