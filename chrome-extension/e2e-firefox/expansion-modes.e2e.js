@@ -118,10 +118,13 @@ test("Firefox: glyph animation modes preserve the real editing transaction", { t
           strokeWidth: getComputedStyle(mirror).getPropertyValue("-webkit-text-stroke-width"),
           strokeColor: getComputedStyle(mirror).getPropertyValue("-webkit-text-stroke-color"),
         } } : {}),
-        ...(inspectOutline ? { outline: {
-          opacity: Number(getComputedStyle(frame).opacity), width: bounds.width, height: bounds.height,
-          border: getComputedStyle(frame).borderTopColor,
-        } } : {}),
+        ...(inspectOutline ? { outline: (() => {
+          // Seek the fade to its midpoint before measuring, as the feedback suite
+          // does: a reading on the first animation frame sees the 0% keyframe.
+          for (const animation of frame.getAnimations()) { animation.pause(); animation.currentTime = 340; }
+          const style = getComputedStyle(frame);
+          return { opacity: Number(style.opacity), width: bounds.width, height: bounds.height, border: style.borderTopColor };
+        })() } : {}),
       };
     }, frame, inspectOutline);
   }
@@ -273,20 +276,21 @@ test("Firefox: glyph animation modes preserve the real editing transaction", { t
 
   await t.test("composition and programmatic edits immediately discard the visual mirror", async () => {
     await playground("casino");
+    // Page-fabricated composition and input events are not user typing: they
+    // must neither expand (see e2e/security.e2e.js) nor animate.
     await driver.executeScript(() => {
       const editor = document.getElementById("tryit");
       editor.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
       editor.value = "yg";
       editor.setSelectionRange(2, 2);
       editor.dispatchEvent(new InputEvent("input", { data: "g", isComposing: true, bubbles: true }));
-    });
-    assert.equal(await value("#tryit"), "yg");
-    assert.equal((await trace()).added, 0);
-    await driver.executeScript(() => {
-      const editor = document.getElementById("tryit");
       editor.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
       editor.dispatchEvent(new InputEvent("input", { data: "g", bubbles: true }));
     });
+    assert.equal(await value("#tryit"), "yg");
+    assert.equal(await count(), 0);
+    assert.equal((await trace()).added, 0);
+    await fill("#tryit", "yg");
     assert.equal(await value("#tryit"), "you got it");
     assert.equal(await count(), 1);
     await driver.executeScript(() => document.getElementById("tryit").dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
@@ -404,19 +408,20 @@ test("Firefox: glyph animation modes preserve the real editing transaction", { t
     await fixture("expand");
     const prefix = "Earlier text. ".repeat(7) + "Reply: ";
     const suffix = " ending.";
+    // The whole trigger is typed: a page-prefilled prefix is not a user shortcut.
     await driver.executeScript(async (prefix, suffix) => {
       const element = document.getElementById("inp");
       element.style.cssText = "box-sizing:border-box;width:254px;padding:14px;border:1px solid #999;font:16px/1.6 system-ui,sans-serif";
-      element.value = prefix + "y" + suffix;
+      element.value = prefix + suffix;
       element.focus();
-      element.setSelectionRange(prefix.length + 1, prefix.length + 1);
+      element.setSelectionRange(prefix.length, prefix.length);
       element.scrollLeft = element.scrollWidth;
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
       window.nativeAnimationScrolls = [];
       element.addEventListener("scroll", (event) => window.nativeAnimationScrolls.push({ trusted: event.isTrusted, value: element.value }));
     }, prefix, suffix);
-    await keys("g");
+    await keys("yg");
     await driver.executeScript(async () => {
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
@@ -449,14 +454,14 @@ test("Firefox: glyph animation modes preserve the real editing transaction", { t
     await driver.executeScript(async (suffix) => {
       const element = document.getElementById("inp");
       element.style.cssText = "box-sizing:border-box;width:254px;padding:14px;border:1px solid #999;font:16px/1.6 system-ui,sans-serif";
-      element.value = "y" + suffix;
+      element.value = suffix;
       element.focus();
-      element.setSelectionRange(1, 1);
+      element.setSelectionRange(0, 0);
       element.scrollLeft = 0;
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
     }, longSuffix);
-    await keys("g");
+    await keys("yg");
     assert.equal(await value("#inp"), "you got it" + longSuffix);
     const native = await driver.executeScript(() => {
       const element = document.getElementById("inp");
