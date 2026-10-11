@@ -331,7 +331,25 @@
         if (failed) failed.remove();
       }
       const started = root.performance.now();
-      session.timer = root.setTimeout(stop, DURATION + 170);
+      // The clock is a safety net; the glyph mirror normally ends itself once
+      // its final frame has painted. Starved frames (a busy or backgrounded tab)
+      // can leave the mirror mid-scramble when the clock runs out, so paint the
+      // finished phrase first and remove the cue on the next frame, with a short
+      // timer behind it in case frames stay suspended.
+      session.timer = root.setTimeout(() => {
+        if (current !== session) return;
+        if (glyphAnimation && !finalPainted) {
+          try {
+            glyphAnimation.glyphs.textContent = glyphAnimation.helper.frame(glyphAnimation.sequence, details.mode, Infinity).text;
+          } catch (_) { stop(); return; }
+          finalPainted = true;
+          root.cancelAnimationFrame(session.raf);
+          session.raf = root.requestAnimationFrame(stop);
+          session.timer = root.setTimeout(stop, 100);
+          return;
+        }
+        stop();
+      }, DURATION + 170);
 
       function watchLayout() {
         if (current !== session) return;

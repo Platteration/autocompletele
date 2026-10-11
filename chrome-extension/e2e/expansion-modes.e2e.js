@@ -171,6 +171,25 @@ test("Chrome animation modes preserve the real editing transaction", { timeout: 
     assert.equal(trace.added, 1);
   });
 
+  await t.test("Casino paints the final phrase before the safety clock removes a starved mirror", async () => {
+    await playground(app, "casino");
+    // Starve animation frames the way a busy or backgrounded tab does: each frame
+    // arrives half a second late, so the clock runs out while the mirror is still
+    // scrambled. The observer samples through a MutationObserver, not frames.
+    await page.evaluate(() => {
+      window.requestAnimationFrame = (callback) => setTimeout(() => callback(performance.now()), 500);
+      window.cancelAnimationFrame = (id) => clearTimeout(id);
+    });
+    await page.keyboard.type("yg");
+    await page.waitForSelector(CUE, { state: "detached", timeout: 2000 });
+    const trace = await page.evaluate(() => window.animationTrace);
+    assertCommitted(trace, "you got it");
+    const frames = [...new Set(trace.samples.map((sample) => sample.text))];
+    assert.equal(frames.at(-1), "you got it", `The mirror must show the finished phrase before it is removed: ${JSON.stringify(frames)}`);
+    assert.ok(frames.some((text) => text !== "yg" && text !== "you got it"), `A starved frame must still have been scrambled: ${JSON.stringify(frames)}`);
+    assert.equal(trace.added, 1);
+  });
+
   await t.test("both animated modes cover inputs, textareas, and simple rich text without losing surrounding text or undo", async () => {
     for (const mode of ["expand", "casino"]) {
       await fixture(mode);
