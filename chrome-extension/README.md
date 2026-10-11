@@ -18,14 +18,32 @@ The preview loops here; the extension plays the logo once and lets you replay it
 Type a trigger in the **Try it** box on the options page to see it work.
 Press Backspace right after an expansion to get the trigger back.
 
-When a shorthand expands, a brief blue glow and sweep outline the writing
-field. Text appears immediately; the effect stops when you keep typing or
-move away. Reduced-motion preferences turn off this decoration. The same
-feedback follows insertion from the picker or a completed fill-in form.
+Choose **Settings → Text animation** to change how shortcuts appear:
 
-![A real browser expands yg to you got it with a brief blue outline](store/images/actle-expansion.gif)
+- **Expand** (default): keep matching shorthand letters and quickly fill the
+  missing letters around them, so `yg` grows into `you got it`.
+- **Casino**: cycle random letters, then lock the correct letters from left
+  to right.
+- **Off — instant**: replace the shorthand immediately with no animation.
 
-This demo loops; each expansion plays the effect once.
+The effects take less than a second and finish immediately when you continue
+typing, undo, or move away. Reduced-motion preferences suppress both effects.
+The same choice applies to picker and completed-template insertion; toolbar
+copying does not animate.
+
+The page receives the finished text in one edit. Intermediate letters are
+temporary visual feedback, so a page's autosave never receives scrambled text.
+Text animation supports ordinary inputs, textareas and plain rich-text fields.
+Complex formatting or backgrounds, masked fields, overflowing or horizontally
+scrolled single-line inputs, right-to-left layouts and long expansions use a
+brief blue outline when it can be positioned correctly. Otherwise, replacement
+appears instantly. **Off** also suppresses the outline.
+
+![A real browser grows yg into you got it](store/images/actle-expansion.gif)
+
+![Casino letters settle into you got it in a real browser](store/images/actle-casino.gif)
+
+These demos loop; each expansion plays the effect once.
 
 ## Install in Firefox (temporary development install)
 
@@ -176,7 +194,8 @@ inside it (the attribute also applies to all descendants).
 | `src/template-form.js` | Temporary fill-in form and live preview                       |
 | `src/storage.js`      | Chrome sync / Firefox local storage (one key per shorthand)    |
 | `src/content.js`      | Watches editable fields and performs the replacement           |
-| `src/expansion-feedback.js` | Temporary blue expansion cue, respecting reduced motion   |
+| `src/animation-frames.js` | Grapheme-aware Expand and Casino animation frames             |
+| `src/expansion-feedback.js` | Temporary in-field animation, respecting reduced motion    |
 | `src/picker.js`       | The `;;` search overlay (closed shadow root, key capture)       |
 | `src/palette.js`      | Pure ranking logic for the toolbar command palette             |
 | `src/import-plan.js`  | Pure import preview and safe-merge planning                    |

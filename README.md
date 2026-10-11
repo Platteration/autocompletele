@@ -3,12 +3,16 @@
 actle is the Chrome and Firefox extension for reusable text and fill-in
 templates. Define shorthands once and use them in supported webpage fields.
 When you type a trigger such as
-`cool/`, it is instantly replaced by whatever you defined for it, for example
+`cool/`, it is replaced by whatever you defined for it, for example
 *"That is really cool, thanks for sharing!"*.
 
 Its logo completes `actle` into `autocompletele` once when you open the library
 or toolbar popup. Select the logo to replay it; reduced-motion preferences are
 respected. The companion Windows and Android apps retain their existing names.
+
+For shortcut text, choose Expand to fill letters around the shorthand, Casino
+to settle scrambling letters, or Off for instant replacement. Continuing to type
+finishes the visual effect immediately; reduced-motion preferences suppress it.
 
 Three apps share the same idea and the same JSON file format, so a list
 built on one device can be exported and imported on the others:

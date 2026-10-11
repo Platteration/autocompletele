@@ -161,6 +161,16 @@
         <span><strong>Expansion</strong><small>Pause shortcuts without deleting them.</small></span>
         <input type="checkbox" id="enabled" aria-label="Expansion enabled">
       </label>
+      <div class="row column">
+        <label for="animationMode"><strong>Text animation</strong></label>
+        <select id="animationMode" aria-describedby="animationHint animationMsg" data-shorthand-ignore>
+          <option value="expand">Expand</option>
+          <option value="casino">Casino</option>
+          <option value="off">Off — instant</option>
+        </select>
+        <small id="animationHint">Expand fills out the shortcut. Casino locks letters into place. Off inserts instantly. Reduced motion skips animation. <a href="#playground">Try it in the playground.</a></small>
+        <span id="animationMsg" class="msg" role="status"></span>
+      </div>
       <label class="row column">
         <span><strong>Search overlay trigger</strong></span>
         <small>Type this in a supported field to find a shorthand. Leave empty to turn it off.</small>
@@ -228,6 +238,7 @@
   <script src="import-plan.js"></script>
   <script src="picker.js"></script>
   <script src="template-form.js"></script>
+  <script src="animation-frames.js"></script>
   <script src="expansion-feedback.js"></script>
   <script src="content.js"></script>
   <script src="options.js"></script>

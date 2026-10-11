@@ -9,6 +9,7 @@
   const enabledEl = $("enabled");
   const excludedEl = $("excluded");
   const pickerTriggerEl = $("pickerTrigger");
+  const animationModeEl = $("animationMode");
   const form = $("editor");
   const editId = $("editId");
   const triggerEl = $("trigger");
@@ -32,6 +33,8 @@
   let skippedImportItems = 0;
   let importing = false;
   let expansionSelection = { start: 0, end: 0 };
+  let savedAnimationMode = storage.DEFAULT_SETTINGS.animationMode;
+  let savingAnimationMode = false;
 
   function renderPreview() {
     const preview = $("templatePreview");
@@ -215,6 +218,10 @@
     shorthands = data.shorthands;
     enabledEl.checked = data.settings.enabled !== false;
     excludedEl.value = (data.settings.excludedHosts || []).join("\n");
+    if (!savingAnimationMode) {
+      savedAnimationMode = data.settings.animationMode;
+      animationModeEl.value = savedAnimationMode;
+    }
     if (document.activeElement !== pickerTriggerEl) {
       pickerTriggerEl.value = typeof data.settings.pickerTrigger === "string"
         ? data.settings.pickerTrigger
@@ -346,6 +353,32 @@
     say($("fieldBuilderMsg"), `${token} inserted at the script’s caret.`);
   });
   enabledEl.addEventListener("change", () => storage.saveSettings({ enabled: enabledEl.checked }));
+
+  animationModeEl.addEventListener("change", async () => {
+    if (savingAnimationMode) return;
+    const previous = savedAnimationMode;
+    const restoreFocus = document.activeElement === animationModeEl;
+    savingAnimationMode = true;
+    animationModeEl.disabled = true;
+    say($("animationMsg"), "Saving animation…", false, true);
+    try {
+      const settings = await storage.saveSettings({ animationMode: animationModeEl.value });
+      savedAnimationMode = settings.animationMode;
+      animationModeEl.value = savedAnimationMode;
+      say($("animationMsg"), `Animation saved: ${animationModeEl.selectedOptions[0].textContent}.`);
+    } catch (error) {
+      animationModeEl.value = previous;
+      say($("animationMsg"), "Could not save animation: "
+        + (error && error.message ? error.message : error) + ". Previous style kept.", true, true);
+    } finally {
+      savingAnimationMode = false;
+      animationModeEl.disabled = false;
+      if (restoreFocus && document.hasFocus()
+          && (document.activeElement === document.body || document.activeElement === animationModeEl)) {
+        animationModeEl.focus({ preventScroll: true });
+      }
+    }
+  });
 
   pickerTriggerEl.addEventListener("change", () => {
     const value = pickerTriggerEl.value.trim();

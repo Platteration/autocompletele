@@ -9,7 +9,11 @@
   const AREA = chrome.runtime.getManifest().browser_specific_settings?.gecko ? "local" : "sync";
   const dataStore = chrome.storage[AREA];
   // pickerTrigger opens the search overlay; an empty string turns it off.
-  const DEFAULT_SETTINGS = { enabled: true, excludedHosts: [], pickerTrigger: ";;" };
+  const DEFAULT_SETTINGS = { enabled: true, excludedHosts: [], pickerTrigger: ";;", animationMode: "expand" };
+
+  function animationMode(value) {
+    return ["expand", "casino", "off"].includes(value) ? value : DEFAULT_SETTINGS.animationMode;
+  }
 
   function newId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -29,6 +33,7 @@
     }
     shorthands.sort((a, b) => a.order - b.order || a.trigger.localeCompare(b.trigger));
     const settings = Object.assign({}, DEFAULT_SETTINGS, items[SETTINGS_KEY] || {});
+    settings.animationMode = animationMode(settings.animationMode);
     return { shorthands, settings };
   }
 
@@ -95,6 +100,7 @@
   async function saveSettings(patch) {
     const { settings } = await getAll();
     const next = Object.assign({}, settings, patch);
+    next.animationMode = animationMode(next.animationMode);
     await dataStore.set({ [SETTINGS_KEY]: next });
     return next;
   }

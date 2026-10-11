@@ -12,6 +12,7 @@
   let enabled = true;
   let hostExcluded = false;
   let pickerTrigger = storage.DEFAULT_SETTINGS.pickerTrigger;
+  let animationMode = storage.DEFAULT_SETTINGS.animationMode;
   let suppress = false; // true while we are inserting text ourselves
   let lastExpansion = null; // details of the most recent expansion, for undo
   let templateTarget = null; // original insertion point while a fill-in form has focus
@@ -43,6 +44,11 @@
       pickerTrigger = typeof data.settings.pickerTrigger === "string"
         ? data.settings.pickerTrigger
         : storage.DEFAULT_SETTINGS.pickerTrigger;
+      const previousMode = animationMode;
+      animationMode = data.settings.animationMode;
+      if (previousMode !== animationMode || !enabled || hostExcluded) {
+        self.ShorthandExpansionFeedback.clear();
+      }
     } catch (e) {
       // Extension context may be gone after an update/reload; stay quiet.
     }
@@ -56,11 +62,22 @@
     }
   }
 
-  function showExpansionFeedback(el) {
+  function showExpansionFeedback(el, detail) {
     // Visual feedback must never interrupt insertion or the undo window.
     try {
-      self.ShorthandExpansionFeedback.show(el);
+      self.ShorthandExpansionFeedback.show(el, detail);
     } catch (_) {}
+  }
+
+  function nodeFeedback(el, node, start, text, trigger, mode = animationMode) {
+    let offset = null;
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.setEnd(node, start);
+      offset = range.toString().length;
+    } catch (_) { /* An unsupported editor can still use the outline cue. */ }
+    return { mode, start: offset, text, trigger };
   }
 
   // The fill-in form takes focus. Keep the original text and insertion point,
@@ -142,6 +159,9 @@
           return "The original field changed while this form was open. Cancel and try the shorthand again.";
         }
         const { text, cursorOffset } = result;
+        const feedback = target.node
+          ? nodeFeedback(target.el, target.node, target.start, text, target.trigger, settings.animationMode)
+          : { mode: settings.animationMode, start: target.start, text, trigger: target.trigger };
         if (target.node) {
           replaceInNode(window.getSelection(), target.node, target.start, target.end,
             text, text.length - cursorOffset);
@@ -151,7 +171,7 @@
           lastExpansion = { el: target.el, start: target.start, text, cursorOffset, trigger: target.trigger };
         }
         templateTarget = null;
-        showExpansionFeedback(target.el);
+        showExpansionFeedback(target.el, feedback);
         return true;
       },
       onCancel() {
@@ -193,7 +213,7 @@
     const { text, cursorOffset } = template.render(match.shorthand.expansion);
     replaceInField(el, match.start, caret, text, cursorOffset);
     lastExpansion = { el, start: match.start, text, cursorOffset, trigger: match.shorthand.trigger };
-    showExpansionFeedback(el);
+    showExpansionFeedback(el, { mode: animationMode, start: match.start, text, trigger: match.shorthand.trigger });
     return true;
   }
 
@@ -262,9 +282,10 @@
       nodeTarget(root, node, match.start, range.startOffset, match.shorthand.trigger))) return true;
 
     const { text, cursorOffset } = template.render(match.shorthand.expansion);
+    const feedback = nodeFeedback(root, node, match.start, text, match.shorthand.trigger);
     replaceInNode(sel, node, match.start, range.startOffset, text, text.length - cursorOffset);
     lastExpansion = { el: root, text, cursorOffset, trigger: match.shorthand.trigger };
-    showExpansionFeedback(root);
+    showExpansionFeedback(root, feedback);
     return true;
   }
 
@@ -313,8 +334,8 @@
         if (fillTemplate(sh, target)) return;
         const { text, cursorOffset } = template.render(sh.expansion);
         replaceInField(el, start, caret, text, cursorOffset);
-        lastExpansion = { el, start, text, cursorOffset, trigger: pickerTrigger };
-        showExpansionFeedback(el);
+        lastExpansion = { el, start, text, cursorOffset, trigger: target.trigger };
+        showExpansionFeedback(el, { mode: animationMode, start, text, trigger: target.trigger });
       },
     });
   }
@@ -339,9 +360,10 @@
         const { text, cursorOffset } = template.render(sh.expansion);
         const liveSel = window.getSelection();
         if (!liveSel) return;
+        const feedback = nodeFeedback(root, node, start, text, target.trigger);
         replaceInNode(liveSel, node, start, end, text, text.length - cursorOffset);
-        lastExpansion = { el: root, text, cursorOffset, trigger: pickerTrigger };
-        showExpansionFeedback(root);
+        lastExpansion = { el: root, text, cursorOffset, trigger: target.trigger };
+        showExpansionFeedback(root, feedback);
       },
     });
   }

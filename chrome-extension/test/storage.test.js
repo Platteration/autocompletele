@@ -178,3 +178,66 @@ test("total quota pressure preserves the old library and reports additions that 
   assert.equal(app.items["sh:sig"].expansion, "Update fits in existing slot");
   assert.equal(app.calls.some((call) => call.operation === "remove"), false);
 });
+
+test("new and existing libraries default to Expand without rewriting saved data", async () => {
+  for (const existing of [{}, initial]) {
+    const app = storageWith(existing);
+    assert.equal((await app.storage.getAll()).settings.animationMode, "expand");
+    assert.equal(app.storage.DEFAULT_SETTINGS.animationMode, "expand");
+    assert.deepEqual(app.items, existing);
+    assert.deepEqual(app.calls, []);
+  }
+});
+
+test("unknown saved animation modes normalize on read without changing other settings", async () => {
+  for (const animationMode of ["unknown", "Expand", "", null, 3, {}, ["casino"]]) {
+    const saved = {
+      ...initial,
+      settings: { enabled: false, excludedHosts: ["example.com"], pickerTrigger: "//", animationMode },
+    };
+    const app = storageWith(saved);
+    assert.deepEqual(plain((await app.storage.getAll()).settings), {
+      enabled: false, excludedHosts: ["example.com"], pickerTrigger: "//", animationMode: "expand",
+    });
+    assert.deepEqual(app.items, saved);
+    assert.deepEqual(app.calls, []);
+  }
+});
+
+test("all animation modes round-trip in Chrome and Firefox without changing library or other settings", async () => {
+  for (const firefox of [false, true]) {
+    const saved = {
+      ...initial,
+      settings: { enabled: false, excludedHosts: ["example.com"], pickerTrigger: "//", retained: "keep" },
+    };
+    const app = storageWith(saved, { firefox });
+    for (const animationMode of ["casino", "off", "expand"]) {
+      const next = await app.storage.saveSettings({ animationMode });
+      assert.equal(next.animationMode, animationMode);
+      assert.equal((await app.storage.getAll()).settings.animationMode, animationMode);
+      assert.deepEqual(app.items, { ...saved, settings: { ...saved.settings, animationMode } });
+    }
+    await app.storage.saveSettings({ enabled: true });
+    assert.deepEqual(app.items.settings, { ...saved.settings, animationMode: "expand", enabled: true });
+  }
+});
+
+test("unknown animation writes normalize to Expand while keeping the rest of the patch", async () => {
+  const app = storageWith({ ...initial, settings: { enabled: true, animationMode: "casino" } });
+  const settings = await app.storage.saveSettings({ animationMode: "unavailable", enabled: false });
+  assert.equal(settings.animationMode, "expand");
+  assert.equal(settings.enabled, false);
+  assert.equal(app.items.settings.animationMode, "expand");
+  assert.deepEqual(app.items["sh:local"], initial["sh:local"]);
+  assert.deepEqual(app.items["sh:sig"], initial["sh:sig"]);
+});
+
+test("a failed animation preference save reports failure and retains the saved selection and library", async () => {
+  const saved = { ...initial, settings: { enabled: false, animationMode: "casino" } };
+  const app = storageWith(saved, {
+    rejectSet() { throw new Error("Storage write rejected"); },
+  });
+  await assert.rejects(app.storage.saveSettings({ animationMode: "off" }), /Storage write rejected/);
+  assert.deepEqual(app.items, saved);
+  assert.equal((await app.storage.getAll()).settings.animationMode, "casino");
+});
