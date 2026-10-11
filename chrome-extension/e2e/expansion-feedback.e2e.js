@@ -263,7 +263,8 @@ test("Chrome expansion feedback respects editing and motion preferences", { time
     await options.evaluate(() => {
       self.ShorthandExpansionFeedback.show = () => { throw new Error("Simulated decorative setup failure"); };
     });
-    await options.locator("#tryit").fill("yg");
+    await options.click("#tryit");
+    await options.keyboard.type("yg");
     assert.equal(await options.inputValue("#tryit"), "you got it");
     await options.keyboard.press("Backspace");
     assert.equal(await options.inputValue("#tryit"), "yg");

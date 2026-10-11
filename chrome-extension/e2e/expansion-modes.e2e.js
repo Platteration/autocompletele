@@ -110,10 +110,13 @@ async function rendered(page, inspectOutline = false) {
             strokeWidth: getComputedStyle(mirror).getPropertyValue("-webkit-text-stroke-width"),
             strokeColor: getComputedStyle(mirror).getPropertyValue("-webkit-text-stroke-color"),
           } } : {}),
-          ...(inspectOutline ? { outline: {
-            opacity: Number(getComputedStyle(frame).opacity), width: bounds.width, height: bounds.height,
-            border: getComputedStyle(frame).borderTopColor,
-          } } : {}),
+          ...(inspectOutline ? { outline: (() => {
+            // Seek the fade to its midpoint before measuring, as the feedback suite
+            // does: a reading on the first animation frame sees the 0% keyframe.
+            for (const animation of frame.getAnimations()) { animation.pause(); animation.currentTime = 340; }
+            const style = getComputedStyle(frame);
+            return { opacity: Number(style.opacity), width: bounds.width, height: bounds.height, border: style.borderTopColor };
+          })() } : {}),
         };
       }.toString(),
     });
@@ -281,20 +284,22 @@ test("Chrome animation modes preserve the real editing transaction", { timeout: 
 
   await t.test("composition and programmatic edits immediately discard the visual mirror", async () => {
     await playground(app, "casino");
+    // Page-fabricated composition and input events are not user typing: they
+    // must neither expand (see security.e2e.js) nor animate.
     await page.evaluate(() => {
       const editor = document.getElementById("tryit");
       editor.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
       editor.value = "yg";
       editor.setSelectionRange(2, 2);
       editor.dispatchEvent(new InputEvent("input", { data: "g", isComposing: true, bubbles: true }));
-    });
-    assert.equal(await page.inputValue("#tryit"), "yg");
-    assert.equal(await page.evaluate(() => window.animationTrace.added), 0);
-    await page.evaluate(() => {
-      const editor = document.getElementById("tryit");
       editor.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
       editor.dispatchEvent(new InputEvent("input", { data: "g", bubbles: true }));
     });
+    assert.equal(await page.inputValue("#tryit"), "yg");
+    assert.equal(await absent(), 0);
+    assert.equal(await page.evaluate(() => window.animationTrace.added), 0);
+    await page.fill("#tryit", "");
+    await page.keyboard.type("yg");
     assert.equal(await page.inputValue("#tryit"), "you got it");
     assert.equal(await absent(), 1);
     await page.evaluate(() => document.getElementById("tryit").dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
@@ -417,18 +422,19 @@ test("Chrome animation modes preserve the real editing transaction", { timeout: 
     await fixture("expand");
     const prefix = "Earlier text. ".repeat(7) + "Reply: ";
     const suffix = " ending.";
+    // The whole trigger is typed: a page-prefilled prefix is not a user shortcut.
     await page.locator("#inp").evaluate(async (element, { prefix, suffix }) => {
       element.style.cssText = "box-sizing:border-box;width:254px;padding:14px;border:1px solid #999;font:16px/1.6 system-ui,sans-serif";
-      element.value = prefix + "y" + suffix;
+      element.value = prefix + suffix;
       element.focus();
-      element.setSelectionRange(prefix.length + 1, prefix.length + 1);
+      element.setSelectionRange(prefix.length, prefix.length);
       element.scrollLeft = element.scrollWidth;
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
       window.nativeAnimationScrolls = [];
       element.addEventListener("scroll", (event) => window.nativeAnimationScrolls.push({ trusted: event.isTrusted, value: element.value }));
     }, { prefix, suffix });
-    await page.keyboard.type("g");
+    await page.keyboard.type("yg");
     await page.evaluate(async () => {
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
@@ -457,14 +463,14 @@ test("Chrome animation modes preserve the real editing transaction", { timeout: 
     const longSuffix = " ending.".repeat(12);
     await page.locator("#inp").evaluate(async (element, suffix) => {
       element.style.cssText = "box-sizing:border-box;width:254px;padding:14px;border:1px solid #999;font:16px/1.6 system-ui,sans-serif";
-      element.value = "y" + suffix;
+      element.value = suffix;
       element.focus();
-      element.setSelectionRange(1, 1);
+      element.setSelectionRange(0, 0);
       element.scrollLeft = 0;
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
     }, longSuffix);
-    await page.keyboard.type("g");
+    await page.keyboard.type("yg");
     assert.equal(await page.inputValue("#inp"), "you got it" + longSuffix);
     const native = await page.locator("#inp").evaluate((element) => ({ left: element.scrollLeft, overflowing: element.scrollWidth > element.clientWidth, caret: [element.selectionStart, element.selectionEnd] }));
     assert.deepEqual(native, { left: 0, overflowing: true, caret: [10, 10] }, "The long-suffix case must reach overflow with an unscrolled caret");
