@@ -21,14 +21,14 @@
     *, *::before, *::after { box-sizing: border-box; }
     [hidden] { display: none !important; }
     .panel {
-      width: 440px; max-width: 100%; max-height: 85vh; max-height: 85dvh;
+      width: 620px; max-width: 100%; max-height: 85vh; max-height: 85dvh;
       display: flex; flex-direction: column; overflow: hidden;
       border: 1px solid var(--control); border-radius: 20px;
       color: var(--text); background: var(--panel); box-shadow: var(--shadow);
       font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
       text-align: left; letter-spacing: normal; word-spacing: normal;
     }
-    .heading { padding: 24px 24px 20px; border-bottom: 1px solid var(--line); }
+    .heading { padding: 24px 24px 20px; border-bottom: 1px solid var(--line); background: linear-gradient(120deg, var(--soft), var(--panel)); }
     .eyebrow { margin: 0 0 7px; color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
     h2 { margin: 0; font-size: 23px; font-weight: 750; line-height: 1.2; letter-spacing: -.04em; }
     .description { margin: 8px 0 14px; color: var(--muted); font-size: 12px; }
@@ -36,17 +36,35 @@
     .trigger { min-width: 0; margin: 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); color: var(--accent); font: 650 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
     .count { color: var(--muted); font-size: 11px; white-space: nowrap; }
     .body { padding: 20px 24px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--control) var(--panel); }
-    .fields { display: grid; gap: 15px; }
+    .view-tabs { display: flex; gap: 4px; margin-bottom: 18px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .view-tabs button { flex: 1; min-height: 34px; padding: 5px 10px; border-color: transparent; background: transparent; color: var(--muted); font-size: 12px; }
+    .view-tabs button[aria-selected="true"] { border-color: var(--accent); background: var(--soft); color: var(--accent); }
+    .field-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; border: 1px solid var(--control); border-radius: 10px; overflow: hidden; }
+    .field-table caption { padding: 0 0 9px; color: var(--muted); font-size: 11px; text-align: left; }
+    .field-table th, .field-table td { padding: 10px; vertical-align: middle; text-align: left; overflow-wrap: anywhere; }
+    .field-table thead th { border-bottom: 1px solid var(--line); background: var(--soft); color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+    .field-table thead th:first-child { width: 32%; }
+    .field-table tbody th { color: var(--text); font-size: 12px; font-weight: 650; }
+    .field-table tbody tr + tr > * { border-top: 1px solid var(--line); }
+    .field-table td input { background: var(--soft); color: var(--accent); }
     .field { display: grid; gap: 6px; font-size: 12px; font-weight: 650; overflow-wrap: anywhere; }
-    input {
+    input, select {
       width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--control);
       border-radius: 9px; background: var(--panel); color: var(--text);
       font: 400 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
     }
     input::placeholder { color: var(--muted); opacity: 1; }
-    input:hover:not(:disabled) { border-color: var(--accent); }
-    input:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
-    input:disabled { background: var(--surface); color: var(--muted); }
+    input:hover:not(:disabled), select:hover:not(:disabled) { border-color: var(--accent); }
+    input:focus, select:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
+    input:disabled, select:disabled { background: var(--surface); color: var(--muted); }
+    .pronouns { margin-bottom: 18px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .pronouns .hint, .message-hint, .no-fields { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+    .custom-pronouns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+    .inline-message { margin-top: 10px; padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 2.6; }
+    .inline-message input { display: inline-block; width: auto; min-width: 5ch; max-width: 100%; padding: 2px 7px; border-color: var(--accent); border-radius: 5px; background: var(--soft); color: var(--accent); font: inherit; line-height: 1.6; vertical-align: baseline; }
+    .inline-message input::placeholder { color: var(--accent); }
+    .field-table td input:disabled, .inline-message input:disabled { background: var(--surface); border-color: var(--line); color: var(--muted); }
+    .variable { padding: 2px 5px; border-radius: 4px; background: var(--soft); color: var(--accent); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
     .preview-wrap { margin-top: 22px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
     .preview-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 9px; }
     .preview-heading h3 { margin: 0; font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
@@ -71,6 +89,10 @@
       h2 { font-size: 21px; }
       .body { padding: 17px 18px; }
       .footer { padding: 14px 18px 16px; }
+      .field-table th, .field-table td { padding: 8px; }
+      .field-table td input { padding: 8px; }
+      .custom-pronouns { grid-template-columns: minmax(0, 1fr); }
+      .inline-message { padding: 12px; }
     }
     @media (prefers-color-scheme: dark) {
       :host { --panel: #151d2c; --surface: #101827; --text: #eef2f7; --muted: #a7b4c8;
@@ -79,9 +101,9 @@
       }
     }
     @media (forced-colors: active) {
-      .panel, input, button, .trigger, .preview-wrap { border-color: ButtonText; }
-      input:focus, button:focus-visible { outline-color: Highlight; }
-      .blank { outline: 1px solid Highlight; }
+      .panel, input, select, button, .trigger, .preview-wrap, .field-table { border-color: ButtonText; }
+      input:focus, select:focus, button:focus-visible { outline-color: Highlight; }
+      .blank, .variable { outline: 1px solid Highlight; }
     }
   `;
 
@@ -94,29 +116,98 @@
 
   function valuesFor(session, includeEmpty) {
     const values = Object.create(null);
-    for (const { name, input } of session.inputs) {
-      if (includeEmpty || input.value !== "") values[name] = input.value;
+    for (const { name } of session.inputs) {
+      if (includeEmpty || session.answers[name] !== "") values[name] = session.answers[name];
     }
     return values;
   }
 
+  function pronounsFor(session) {
+    if (!session.pronounSelect || !session.pronounSelect.value) return Object.create(null);
+    if (session.pronounSelect.value === "custom") {
+      const values = Object.create(null);
+      for (const { name, input } of session.customPronouns) {
+        if (input.value !== "") values[name] = input.value;
+      }
+      return values;
+    }
+    return root.ShorthandTemplate.pronounPresets[session.pronounSelect.value];
+  }
+
+  function variableText(session, part, pronouns) {
+    return root.ShorthandTemplate.render(part.raw, {}, session.now, pronouns).text;
+  }
+
   function preview(session) {
     const values = valuesFor(session, false);
-    const count = Object.keys(values).length;
-    session.count.textContent = count + " of " + session.inputs.length + " filled";
+    const pronouns = pronounsFor(session);
+    const pronounsReady = session.pronounNames.length && session.pronounNames.every((name) => Object.hasOwn(pronouns, name));
+    const count = Object.keys(values).length + (pronounsReady ? 1 : 0);
+    const total = session.inputs.length + (session.pronounNames.length ? 1 : 0);
+    session.count.textContent = count + " of " + total + " filled";
     session.preview.textContent = "";
     for (const part of root.ShorthandTemplate.parts(session.expansion)) {
       if (part.type === "field") {
         if (Object.prototype.hasOwnProperty.call(values, part.name)) {
-          session.preview.appendChild(document.createTextNode(values[part.name]));
+          session.preview.appendChild(element("span", "blank", values[part.name]));
         } else {
           session.preview.appendChild(element("span", "blank", part.label));
         }
+      } else if (part.type === "variable") {
+        session.preview.appendChild(element("span", "variable", variableText(session, part, pronouns)));
       } else {
         const text = root.ShorthandExpander.render(part.value, session.now).text;
         session.preview.appendChild(document.createTextNode(text));
       }
     }
+    for (const { part, el } of session.inlineVariables) el.textContent = variableText(session, part, pronouns);
+  }
+
+  function updateControls(session) {
+    for (const { input } of session.inputs) input.disabled = session.busy || session.view !== "fields";
+    for (const { input } of session.inlineInputs) input.disabled = session.busy || session.view !== "message";
+    if (session.pronounSelect) {
+      session.pronounSelect.disabled = session.busy;
+      const custom = session.pronounSelect.value === "custom";
+      session.customPronounGroup.hidden = !custom;
+      for (const { input } of session.customPronouns) input.disabled = session.busy || !custom;
+    }
+    for (const button of session.viewButtons) button.disabled = session.busy;
+    session.submit.disabled = session.busy;
+    session.cancel.disabled = session.busy;
+  }
+
+  function setView(session, view) {
+    session.view = view;
+    session.fieldsPanel.hidden = view !== "fields";
+    session.messagePanel.hidden = view !== "message";
+    session.previewWrap.hidden = view === "message";
+    for (const button of session.viewButtons) {
+      const selected = button.dataset.view === view;
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    }
+    updateControls(session);
+  }
+
+  function syncAnswer(session, name, input) {
+    session.answers[name] = input.value;
+    for (const control of session.answerControls.get(name)) {
+      if (control !== input) control.value = input.value;
+      if (control.classList.contains("inline-input")) {
+        control.size = Math.min(30, Math.max(6, input.value.length + 1, control.placeholder.length));
+      }
+    }
+    preview(session);
+  }
+
+  function focusableControls(session) {
+    const answers = session.view === "fields" ? session.inputs : session.inlineInputs.filter(({ first }) => first);
+    return [
+      ...session.viewButtons.filter((button) => button.tabIndex === 0),
+      session.pronounSelect, ...session.customPronouns.map(({ input }) => input),
+      ...answers.map(({ input }) => input), session.cancel, session.submit,
+    ].filter((el) => el && !el.disabled);
   }
 
   function restoreFocus(session) {
@@ -142,9 +233,7 @@
   function setBusy(session, busy) {
     session.busy = busy;
     session.form.setAttribute("aria-busy", String(busy));
-    for (const { input } of session.inputs) input.disabled = busy;
-    session.submit.disabled = busy;
-    session.cancel.disabled = busy;
+    updateControls(session);
     session.submit.textContent = busy ? "Working…" : session.actionLabel;
     if (busy) session.form.focus({ preventScroll: true });
   }
@@ -152,7 +241,7 @@
   async function submit(session) {
     if (current !== session || session.busy || !session.form.reportValidity()) return;
     const values = valuesFor(session, true);
-    const rendered = root.ShorthandTemplate.render(session.expansion, values, new Date());
+    const rendered = root.ShorthandTemplate.render(session.expansion, values, session.now, pronounsFor(session));
     session.status.hidden = true;
     setBusy(session, true);
     try {
@@ -180,7 +269,8 @@
     if (!options || typeof options.onSubmit !== "function" || !root.ShorthandTemplate) return false;
     const expansion = String(options.expansion == null ? "" : options.expansion);
     const fields = root.ShorthandTemplate.fields(expansion);
-    if (!fields.length || current) return false;
+    const pronounNames = root.ShorthandTemplate.variables(expansion).filter((name) => name !== "weekday");
+    if ((!fields.length && !pronounNames.length) || current) return false;
 
     const host = element("div");
     host.id = HOST_ID;
@@ -201,7 +291,7 @@
     const eyebrow = element("p", "eyebrow", "Make it yours");
     const title = element("h2", "", "Fill in your template");
     title.id = "template-title";
-    const description = element("p", "description", "Fill in each blank, then " + (/copy/i.test(options.actionLabel || "") ? "copy" : "insert") + ". Repeated blanks share one answer.");
+    const description = element("p", "description", "Fill in the blue blanks, then " + (/copy/i.test(options.actionLabel || "") ? "copy" : "insert") + ". Repeated blanks share one answer.");
     description.id = "template-description";
     const meta = element("div", "meta");
     const trigger = element("code", "trigger", String(options.trigger || "Template"));
@@ -210,28 +300,155 @@
     heading.append(eyebrow, title, description, meta);
 
     const body = element("div", "body");
-    const fieldList = element("div", "fields");
+    const viewTabs = element("div", "view-tabs");
+    viewTabs.setAttribute("role", "tablist");
+    viewTabs.setAttribute("aria-label", "Fill-in view");
+    const viewButtons = [["fields", "Fields table"], ["message", "In message"]].map(([view, label]) => {
+      const button = element("button", "", label);
+      button.type = "button";
+      button.id = "template-view-" + view;
+      button.dataset.view = view;
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-controls", "template-" + view + "-panel");
+      viewTabs.appendChild(button);
+      return button;
+    });
+    body.appendChild(viewTabs);
+
+    let pronounSelect = null;
+    let customPronounGroup = null;
+    const customPronouns = [];
+    if (pronounNames.length) {
+      const group = element("section", "pronouns");
+      const label = element("label", "field", "Pronouns for this message");
+      label.htmlFor = "template-pronouns";
+      pronounSelect = element("select");
+      pronounSelect.id = "template-pronouns";
+      pronounSelect.required = true;
+      pronounSelect.setAttribute("aria-describedby", "template-pronoun-hint");
+      for (const [value, text] of [["", "Choose pronouns…"], ["they/them", "they / them"], ["she/her", "she / her"], ["he/him", "he / him"], ["custom", "Custom forms…"]]) {
+        const option = element("option", "", text);
+        option.value = value;
+        pronounSelect.appendChild(option);
+      }
+      label.appendChild(pronounSelect);
+      const hint = element("p", "hint", "Use one set throughout this message, or enter custom forms.");
+      hint.id = "template-pronoun-hint";
+      customPronounGroup = element("div", "custom-pronouns");
+      const labels = {
+        subject: "Subject (she / he / they)", object: "Object (her / him / them)",
+        possessive: "Possessive (her / his / their)", possessivepronoun: "Possessive pronoun (hers / his / theirs)",
+        reflexive: "Reflexive (herself / himself / themself)",
+      };
+      for (const name of pronounNames) {
+        const customLabel = element("label", "field", labels[name]);
+        const input = element("input");
+        input.id = "template-pronoun-" + name;
+        input.type = "text";
+        input.required = true;
+        input.autocomplete = "off";
+        input.spellcheck = false;
+        customLabel.appendChild(input);
+        customPronounGroup.appendChild(customLabel);
+        customPronouns.push({ name, input });
+      }
+      group.append(label, hint, customPronounGroup);
+      body.appendChild(group);
+    }
+
+    const fieldsPanel = element("section");
+    fieldsPanel.id = "template-fields-panel";
+    fieldsPanel.setAttribute("role", "tabpanel");
+    fieldsPanel.setAttribute("aria-labelledby", "template-view-fields");
+    const fieldList = element("table", "field-table");
+    const caption = element("caption", "", "One answer for each named blank.");
+    const tableHead = element("thead");
+    const headerRow = element("tr");
+    for (const text of ["Blank", "Your answer"]) {
+      const header = element("th", "", text);
+      header.scope = "col";
+      headerRow.appendChild(header);
+    }
+    tableHead.appendChild(headerRow);
+    const tableBody = element("tbody");
+    fieldList.append(caption, tableHead, tableBody);
+    const answers = Object.create(null);
+    const answerControls = new Map();
     const inputs = fields.map((field, i) => {
-      const label = element("label", "field");
-      const labelText = element("span", "", field.label);
+      const row = element("tr");
+      const rowHeader = element("th");
+      rowHeader.scope = "row";
+      const label = element("label", "", field.label);
+      label.htmlFor = "template-field-" + i;
+      rowHeader.appendChild(label);
+      const cell = element("td");
       const input = element("input");
       input.id = "template-field-" + i;
       input.type = "text";
+      input.dataset.fieldName = field.name;
       input.required = true;
       input.autocomplete = "off";
       input.spellcheck = false;
       input.placeholder = "Enter " + field.label;
-      label.append(labelText, input);
-      fieldList.appendChild(label);
+      cell.appendChild(input);
+      row.append(rowHeader, cell);
+      tableBody.appendChild(row);
+      answers[field.name] = "";
+      answerControls.set(field.name, [input]);
       return { name: field.name, input };
     });
+    if (fields.length) fieldsPanel.appendChild(fieldList);
+    else fieldsPanel.appendChild(element("p", "no-fields", "This script only needs the pronouns selected above."));
+
+    const messagePanel = element("section");
+    messagePanel.id = "template-message-panel";
+    messagePanel.setAttribute("role", "tabpanel");
+    messagePanel.setAttribute("aria-labelledby", "template-view-message");
+    const messageHint = element("p", "message-hint", "Edit the blue blanks in context. Repeated blanks stay linked.");
+    messageHint.id = "template-message-hint";
+    const message = element("div", "inline-message");
+    message.setAttribute("aria-label", "Editable message");
+    message.setAttribute("aria-describedby", messageHint.id);
+    const inlineInputs = [];
+    const inlineVariables = [];
+    const seen = new Set();
+    const now = new Date();
+    for (const part of root.ShorthandTemplate.parts(expansion)) {
+      if (part.type === "field") {
+        const input = element("input", "inline-input");
+        input.id = "template-inline-" + inlineInputs.length;
+        input.dataset.fieldName = part.name;
+        input.type = "text";
+        input.autocomplete = "off";
+        input.spellcheck = false;
+        input.placeholder = part.label;
+        input.setAttribute("aria-label", part.label);
+        input.size = Math.min(30, Math.max(6, part.label.length));
+        const first = !seen.has(part.name);
+        input.required = first;
+        input.tabIndex = first ? 0 : -1;
+        if (!first) input.setAttribute("aria-description", "Linked to the other " + part.label + " blanks");
+        seen.add(part.name);
+        answerControls.get(part.name).push(input);
+        inlineInputs.push({ name: part.name, input, first });
+        message.appendChild(input);
+      } else if (part.type === "variable") {
+        const el = element("span", "variable");
+        inlineVariables.push({ part, el });
+        message.appendChild(el);
+      } else {
+        message.appendChild(document.createTextNode(root.ShorthandExpander.render(part.value, now).text));
+      }
+    }
+    messagePanel.append(messageHint, message);
     const previewWrap = element("section", "preview-wrap");
     previewWrap.setAttribute("aria-label", "Live preview");
     const previewHeading = element("div", "preview-heading");
     previewHeading.append(element("h3", "", "Your finished text"), element("span", "", "Live preview"));
     const previewEl = element("p", "preview");
+    previewEl.id = "template-preview";
     previewWrap.append(previewHeading, previewEl);
-    body.append(fieldList, previewWrap);
+    body.append(fieldsPanel, messagePanel, previewWrap);
 
     const footer = element("footer", "footer");
     const status = element("p", "status");
@@ -239,9 +456,11 @@
     status.hidden = true;
     const actions = element("div", "actions");
     const cancelButton = element("button", "cancel", "Cancel");
+    cancelButton.id = "template-cancel";
     cancelButton.type = "button";
     const actionLabel = options.actionLabel || "Insert text";
     const submitButton = element("button", "submit", actionLabel);
+    submitButton.id = "template-submit";
     submitButton.type = "submit";
     actions.append(cancelButton, submitButton);
     footer.append(status, actions, element("p", "privacy", "Your answers aren’t saved."));
@@ -250,9 +469,11 @@
 
     const session = {
       host, shadow, form, inputs, expansion, count, preview: previewEl, status,
+      answers, answerControls, inlineInputs, inlineVariables, fieldsPanel, messagePanel, previewWrap,
+      view: "fields", viewButtons, pronounSelect, customPronouns, customPronounGroup, pronounNames,
       submit: submitButton, cancel: cancelButton, actionLabel, busy: false,
       previous: document.activeElement, restoreFocus: options.restoreFocus === true,
-      onSubmit: options.onSubmit, onCancel: options.onCancel, now: new Date(),
+      onSubmit: options.onSubmit, onCancel: options.onCancel, now,
     };
 
     // Events stay inside this form instead of reaching the page's bubble handlers.
@@ -266,19 +487,39 @@
         if (event.key === "Enter") event.preventDefault();
         return;
       }
-      if (event.key === "Escape") {
+      if (event.target.getAttribute("role") === "tab" && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        const index = viewButtons.indexOf(event.target);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? viewButtons.length - 1
+          : (index + (event.key === "ArrowLeft" ? -1 : 1) + viewButtons.length) % viewButtons.length;
+        setView(session, viewButtons[next].dataset.view);
+        viewButtons[next].focus();
+      } else if (event.key === "Escape") {
         event.preventDefault();
         cancel(session);
       } else if (event.key === "Tab") {
-        const focusable = [...inputs.map(({ input }) => input), cancelButton, submitButton].filter((el) => !el.disabled);
+        const focusable = focusableControls(session);
         if (!focusable.length) { event.preventDefault(); return; }
-        const index = focusable.indexOf(shadow.activeElement);
+        let index = focusable.indexOf(shadow.activeElement);
+        if (index < 0 && shadow.activeElement && shadow.activeElement.dataset.fieldName) {
+          index = focusable.findIndex((el) => el.dataset.fieldName === shadow.activeElement.dataset.fieldName);
+        }
         const next = event.shiftKey ? (index <= 0 ? focusable.length - 1 : index - 1) : (index + 1) % focusable.length;
         event.preventDefault();
         focusable[next].focus();
       }
     });
-    fieldList.addEventListener("input", () => preview(session));
+    for (const [name, controls] of answerControls) {
+      for (const input of controls) input.addEventListener("input", () => syncAnswer(session, name, input));
+    }
+    for (const button of viewButtons) button.addEventListener("click", () => setView(session, button.dataset.view));
+    if (pronounSelect) {
+      pronounSelect.addEventListener("change", () => {
+        updateControls(session);
+        preview(session);
+      });
+      for (const { input } of customPronouns) input.addEventListener("input", () => preview(session));
+    }
     cancelButton.addEventListener("click", () => cancel(session));
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -292,9 +533,10 @@
     });
 
     current = session;
+    setView(session, "fields");
     preview(session);
     (document.body || document.documentElement).appendChild(host);
-    inputs[0].input.focus({ preventScroll: true });
+    (inputs.length ? inputs[0].input : pronounSelect).focus({ preventScroll: true });
     return true;
   }
 

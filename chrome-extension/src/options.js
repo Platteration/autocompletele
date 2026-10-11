@@ -38,8 +38,12 @@
     preview.replaceChildren();
     const text = expansionEl.value;
     const fields = template.fields(text);
-    $("templateFieldCount").textContent = fields.length
+    const pronouns = template.variables(text).some((name) => name !== "weekday");
+    const blankCount = fields.length
       ? `${fields.length} fill-in blank${fields.length === 1 ? "" : "s"}` : "No fill-in blanks";
+    $("templateFieldCount").textContent = pronouns
+      ? (fields.length ? `${blankCount} · pronouns` : "Choose pronouns") : blankCount;
+    renderRepeatFields(fields);
     preview.classList.toggle("is-empty", !text);
     if (!text) {
       preview.textContent = "Your script will appear here, with each fill-in blank highlighted.";
@@ -47,14 +51,50 @@
     }
     for (const part of template.parts(text)) {
       if (part.type === "text") preview.appendChild(document.createTextNode(part.value));
-      else {
+      else if (part.type === "field") {
         const field = document.createElement("span");
         field.className = "field-chip";
         field.textContent = part.label;
         field.setAttribute("aria-label", `Fill-in blank: ${part.label}`);
         preview.appendChild(field);
+      } else {
+        const variable = document.createElement("span");
+        variable.className = "field-chip variable-chip";
+        variable.textContent = part.name === "weekday"
+          ? template.render(part.raw, {}, new Date()).text : part.raw;
+        variable.title = `${part.label}: ${part.raw}`;
+        variable.setAttribute("aria-label", `${part.label}: ${variable.textContent}`);
+        preview.appendChild(variable);
       }
     }
+  }
+
+  function renderRepeatFields(fields) {
+    const buttons = $("repeatFieldButtons");
+    buttons.replaceChildren();
+    $("repeatFields").hidden = fields.length === 0;
+    for (const field of fields) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary small";
+      button.textContent = `[[${field.name}]]`;
+      button.setAttribute("aria-label", `Reuse blank: ${field.name}`);
+      button.title = "Insert again with the same answer";
+      button.addEventListener("click", () => {
+        insertAtSelection(`[[${field.name}]]`);
+        say($("fieldBuilderMsg"), `Reused “${field.name}”. Every occurrence shares one answer.`);
+      });
+      buttons.appendChild(button);
+    }
+  }
+
+  function insertAtSelection(text) {
+    const start = Math.min(expansionSelection.start, expansionEl.value.length);
+    const end = Math.min(expansionSelection.end, expansionEl.value.length);
+    expansionEl.setRangeText(text, start, end, "end");
+    rememberExpansionSelection();
+    expansionEl.focus();
+    renderPreview();
   }
 
   function matchesSearch(sh, query) {
@@ -77,6 +117,7 @@
     cancelBtn.hidden = true;
     $("editorTitle").textContent = "Create a shorthand";
     $("fieldName").value = "";
+    $("variableToken").value = "{weekday}";
     say($("fieldBuilderMsg"), "");
     expansionSelection = { start: 0, end: 0 };
     renderPreview();
@@ -114,10 +155,13 @@
       expansionText.textContent = sh.expansion;
       e.appendChild(expansionText);
       const fields = template.fields(sh.expansion);
-      if (fields.length) {
+      const pronouns = template.variables(sh.expansion).some((name) => name !== "weekday");
+      if (fields.length || pronouns) {
         const badge = document.createElement("span");
         badge.className = "template-badge";
-        badge.textContent = `${fields.length} fill-in blank${fields.length === 1 ? "" : "s"}`;
+        badge.textContent = fields.length
+          ? `${fields.length} fill-in blank${fields.length === 1 ? "" : "s"}${pronouns ? " · pronouns" : ""}`
+          : "Choose pronouns";
         e.appendChild(badge);
       }
 
@@ -275,24 +319,18 @@
   cancelBtn.addEventListener("click", resetForm);
   searchEl.addEventListener("input", renderList);
   expansionEl.addEventListener("input", renderPreview);
-  const rememberSelection = () => {
+  function rememberExpansionSelection() {
     expansionSelection = { start: expansionEl.selectionStart, end: expansionEl.selectionEnd };
-  };
+  }
   for (const event of ["select", "keyup", "click", "blur", "input"]) {
-    expansionEl.addEventListener(event, rememberSelection);
+    expansionEl.addEventListener(event, rememberExpansionSelection);
   }
   $("addFieldBtn").addEventListener("click", () => {
     const name = $("fieldName").value.trim();
     if (!name || /[\[\]\r\n]/.test(name)) {
       return say($("fieldBuilderMsg"), "Give this blank a name without brackets or line breaks.", true);
     }
-    const token = `[[${name}]]`;
-    const start = Math.min(expansionSelection.start, expansionEl.value.length);
-    const end = Math.min(expansionSelection.end, expansionEl.value.length);
-    expansionEl.setRangeText(token, start, end, "end");
-    expansionEl.focus();
-    rememberSelection();
-    renderPreview();
+    insertAtSelection(`[[${name}]]`);
     $("fieldName").value = "";
     say($("fieldBuilderMsg"), "Blank added. Fill it in when you use this script.");
   });
@@ -301,6 +339,11 @@
       event.preventDefault();
       $("addFieldBtn").click();
     }
+  });
+  $("addVariableBtn").addEventListener("click", () => {
+    const token = $("variableToken").value;
+    insertAtSelection(token);
+    say($("fieldBuilderMsg"), `${token} inserted at the script’s caret.`);
   });
   enabledEl.addEventListener("change", () => storage.saveSettings({ enabled: enabledEl.checked }));
 

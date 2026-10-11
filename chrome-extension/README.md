@@ -57,8 +57,10 @@ I’ll follow up on {date}. Thanks again, [[name]]!
 
 Give it a trigger such as `hello/`. Type that trigger, choose the script from
 the `;;` picker, or select **Fill in** in the toolbar. A form asks for `name`
-and `topic`, with a live preview of the finished text. Repeated `[[name]]`
-blanks share one answer. Fill every blank, then choose **Insert text** on a
+and `topic`, with a live preview of the finished text. Use the **Fields** table
+for one row per named blank, or switch to **In message** to fill blue blanks
+where they appear in the script. Repeated `[[name]]` blanks share one answer
+across both views. Fill every blank, then choose **Insert text** on a
 webpage or **Copy text** in the toolbar. Enter also submits a completed form;
 Escape or **Cancel** dismisses it without inserting or copying text. The page's
 trigger remains until you confirm. If the original field changes or becomes
@@ -66,21 +68,49 @@ unavailable while the form is open, insertion stops with a message and your
 answers remain in the form.
 
 In the editor, type `[[name]]` directly or enter a name under **Add a fill-in
-blank** and choose **Insert blank** to add it at the script's caret. The script
-preview highlights blanks before you save. Names are trimmed and case-sensitive:
+blank** and choose **Insert blank** to add it at the script's caret. To insert
+the same blank again, choose its blue button under **Reuse a blank**. Reusing
+it links another occurrence to the same answer. The script preview highlights
+blanks before you save. Names are trimmed and case-sensitive:
 `[[ name ]]` and `[[name]]` share an answer; `[[Name]]` is a separate blank.
 Names cannot be empty or contain brackets or line breaks. Write `\[[name]]`
 in the script to insert the literal text `[[name]]` without a prompt.
 
-The script can also use `{date}`, `{time}`, `{datetime}`, and `{cursor}`.
+The editor's **Insert variable** menu inserts `{date}`, `{time}`, `{datetime}`,
+`{cursor}`, `{weekday}`, or a pronoun variable at the script's caret. `{weekday}`
+uses the current local weekday in English, such as `Sunday`. A weekday-only
+script expands directly, without a fill-in form. In a form, the date, time,
+and weekday are fixed when it opens so the preview matches the inserted text.
+
+Add pronoun variables when a script refers to a person. Each use asks you to
+choose **she/her**, **he/him**, **they/them**, or **Custom**; that choice supplies
+all pronoun occurrences in the message. It is never inferred from a name.
+
+| Variable | she/her | he/him | they/them |
+| --- | --- | --- | --- |
+| `{subject}` | she | he | they |
+| `{object}` | her | him | them |
+| `{possessive}` (before a noun) | her | his | their |
+| `{possessivepronoun}` (on its own) | hers | his | theirs |
+| `{reflexive}` | herself | himself | themself |
+
+For example, `On {weekday}, [[name]] said {subject} would bring {possessive}
+notes. Thank [[name]] for helping.` combines the weekday, one linked name,
+and one pronoun choice. Use `{Subject}` for a capitalized first letter or
+`{SUBJECT}` for capitals throughout. Write `{{weekday}}` or `{{subject}}` to
+insert the literal token without evaluating it. A named blank such as
+`[[subject]]` remains a separate free-text answer.
+
 Answers are inserted literally: entering `{date}`, `{cursor}`, or `[[other]]`
 as an answer does not run another placeholder or create another blank. Answers
-are temporary; they are not saved to your library, synchronized, or included in
-JSON exports. Your saved script keeps its blanks for the next use.
+and chosen/custom pronouns are temporary; they are not saved to your library,
+synchronized, or included in JSON exports. Your saved script keeps its blanks
+and variables for the next use.
 
 Fill-in forms are available in the Chrome and Firefox extensions. JSON transfer
 preserves the script text in the Windows and Android apps, but those apps do not
-prompt for answers and leave `[[name]]` blanks in the expanded text.
+prompt for answers and leave `[[name]]`, `{weekday}`, and pronoun variables in
+the expanded text. The existing date/time/cursor placeholders still work there.
 
 ## Toolbar command palette
 
@@ -88,9 +118,11 @@ Open the extension from the browser's toolbar to get a compact searchable view o
 your shorthand library. Search matches triggers first and then expansion text;
 press Enter to copy the top result, or use the arrow keys to move through the
 results. A template opens its fill-in form first; **Copy text** copies the
-completed script with its built-in date/time placeholders rendered and its
-`{cursor}` marker removed. Ordinary snippets copy their saved text, including
-any built-in placeholders. The same popup also shows whether expansion is
+completed script with its date/time/weekday placeholders rendered and its
+`{cursor}` marker removed. A script using only `{weekday}` and automatic
+placeholders copies the rendered text directly. Ordinary snippets without
+named blanks or the new variables still copy their saved text, including
+built-in placeholders. The same popup also shows whether expansion is
 active globally and on the current site, with quick toggles for both.
 
 This makes the toolbar useful even when you only half remember a trigger, and

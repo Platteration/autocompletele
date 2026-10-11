@@ -25,7 +25,10 @@ webpage field to insert your saved text.
 - Build and search a personal library of text snippets.
 - Turn one script into a fill-in template with `[[name]]`, `[[company]]`, or
   other named blanks. Answer each blank, check the live preview, and confirm
-  insertion. Repeated names share one answer; answers are not saved.
+  insertion. Fill blue blanks directly in the message or use a table with one
+  row per name. Repeated names share one answer; answers are not saved.
+- Insert `{weekday}` for the current local weekday in English. Choose pronouns
+  for each use of a script: she/her, he/him, they/them, or custom forms.
 - Add `{date}`, `{time}`, and `{datetime}` placeholders, or use `{cursor}` to
   choose where typing continues after insertion.
 - Type `;;` to search snippets from the field and select one to insert or fill
@@ -39,7 +42,8 @@ webpage field to insert your saved text.
   transfer to another browser or the companion Windows and Android apps.
 
 Keep saved scripts and their editor side by side, with clear previews, a blank
-builder, and light and dark themes. Each template is one saved script with
+builder, a variable menu, and light and dark themes. Reuse a named blank with
+one click to link another occurrence to the same answer. Each template is one saved script with
 details you fill in each time. For example, `Hi [[name]], thanks for asking
 about [[topic]]!` asks for two answers before inserting your message. Cancel
 without changing the field if you are not ready to insert.
@@ -48,8 +52,9 @@ The logo completes actle into autocompletele once when you open the library or
 toolbar. Replay it by selecting the logo, with reduced-motion preferences
 respected.
 
-Fill-in templates work in the Chrome and Firefox extensions. Windows and
-Android preserve their text during JSON transfer but do not show fill-in forms.
+Fill-in templates, weekday variables, and chosen pronouns work in the Chrome
+and Firefox extensions. Windows and Android preserve their text during JSON
+transfer but do not fill in those tokens.
 
 In Chrome, snippets and settings use browser extension sync storage and can
 follow your Chrome profile when sync is enabled. In Firefox, they stay in your
@@ -71,8 +76,9 @@ depends on the browser's extension permissions.
 the library remains available between sessions. Chrome uses extension sync
 storage and can sync when the user's browser profile permits it. Firefox uses
 extension local storage without automatic synchronization.
-Template answers are used temporarily to preview and fill the chosen script;
-they are not saved to extension storage or included in library exports.
+Template answers and chosen/custom pronouns are used temporarily to preview
+and fill the script; they are not saved to extension storage or included in
+library exports.
 
 **Access to websites (`<all_urls>`):** Detects configured triggers and inserts
 snippets in editable fields on the websites the user chooses to use. The popup
@@ -189,8 +195,11 @@ Firefox stores the library locally.
    field to verify the result.
 5. Create `hello/` with expansion `Hi [[name]], thanks for asking about [[topic]].
    Thanks again, [[name]]!`, using **Insert blank** in the editor to add the
-   named blanks. Check the script preview. Type `hello/` in **Try it**: the fill-in
-   form should ask for only `name` and `topic`. Submit with a blank answer to
+   named blanks and **Reuse a blank** to add the repeated `name`. Check the
+   script preview. Type `hello/` in **Try it**: the **Fields** table should ask
+   for only `name` and `topic`. Switch to **In message**, edit either `name`
+   occurrence, and confirm both update. Switch back and confirm the answer is
+   preserved. Submit with a blank answer to
    check that it is required, then enter fictional answers and check the live
    preview. Choose **Insert text** and confirm both occurrences of `name`
    use the same answer. Immediately press Backspace to restore `hello/`.
@@ -202,21 +211,31 @@ Firefox stores the library locally.
    inserted literally. In the saved script, `[[ name ]]` shares the `name`
    answer, `[[Name]]` requests a separate answer, and `\[[name]]` inserts
    literal `[[name]]` without a prompt.
-7. Test on a normal webpage containing a text input, textarea, and rich editor.
+7. Use **Insert variable** to create `day/` with `{weekday}` and confirm it
+   expands to the current local weekday in English without opening a form.
+   Create `person/` with `[[name]] said {subject} brought {possessive} notes.`
+   Choose she/her, he/him, and they/them in separate uses, checking that each
+   choice updates both pronoun occurrences. Test Custom with fictional forms.
+   Check `{Subject}` and `{SUBJECT}` capitalization, and confirm
+   `{{weekday}}` / `{{subject}}` stay literal. Cancel and reopen to confirm
+   answers and pronouns are not remembered. Copy `day/` and `person/` from the
+   toolbar and verify their rendered text.
+8. Test on a normal webpage containing a text input, textarea, and rich editor.
    The repository includes a fixture: from `chrome-extension/`, run
    `python3 -m http.server 4173 --bind 127.0.0.1 --directory e2e/fixtures` and open
    `http://127.0.0.1:4173/page.html`. Verify expansion in all three editable types
    and no expansion in the password or opted-out fields.
-8. Pause expansion globally and confirm triggers stay unchanged. Re-enable it,
+9. Pause expansion globally and confirm triggers stay unchanged. Re-enable it,
    disable expansion for the fixture hostname in the popup, and confirm the
    same result. Re-enable the site afterward.
-9. Export JSON. Confirm the template's saved expansion still contains its
-   `[[name]]` blanks and none of the answers from the form. Import that file
+10. Export JSON. Confirm the template's saved expansion still contains its
+   `[[name]]` blanks and variable tokens, with none of the answers or chosen
+   pronouns from the form. Import that file
    and confirm the preview shows unchanged snippets. Add one synthetic snippet
    to a copy of the file, import with
    **Merge safely**, and check that the new entry appears while existing entries
    remain. Exercise **Replace everything** only with a disposable test library.
-10. Reload the browser and verify saved snippets and settings remain available.
+11. Reload the browser and verify saved snippets and settings remain available.
 
 ## Release checklist
 

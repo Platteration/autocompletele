@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { launch, By, Key, until } = require("../e2e-firefox/helper.js");
-const { SNIPPETS, demoHtml } = require("./store-assets.js");
+const { SNIPPETS, FILLED_HELLO, demoHtml } = require("./store-assets.js");
 
 async function main() {
   const app = await launch();
@@ -59,13 +59,14 @@ async function main() {
     await driver.findElement(By.css("#message")).sendKeys("hello/");
     await driver.wait(until.elementLocated(By.css("#shorthand-template-host")), 5000);
     await driver.actions().sendKeys("Morgan", Key.TAB, "design brief", Key.TAB, "Friday").perform();
+    await driver.actions().sendKeys(Key.TAB, Key.TAB, Key.TAB, Key.ARROW_RIGHT, Key.TAB).perform();
     const templatePng = Buffer.from(await driver.takeScreenshot(), "base64");
     assert.equal(templatePng.readUInt32BE(16), 1280);
     assert.equal(templatePng.readUInt32BE(20), 800);
     fs.writeFileSync(path.join(path.dirname(output), "firefox-template-1280x800.png"), templatePng);
     await driver.actions().sendKeys(Key.ENTER).perform();
     await driver.wait(async () => await driver.findElement(By.css("#message")).getAttribute("value") ===
-      "Hi Morgan,\n\nYour design brief is ready for Friday.\nThanks,\nAlex", 5000);
+      FILLED_HELLO, 5000);
     console.log("Firefox library and fill-in form screenshots written to store/images/");
   } finally {
     try { await app.close(); }

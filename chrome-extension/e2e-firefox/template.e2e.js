@@ -47,7 +47,8 @@ test("Firefox: fill-in templates in the real add-on", { timeout: 120000 }, async
   await t.test("repeated blanks share an answer, Tab stays in the form, and undo restores the trigger", async () => {
     await start("#inp", "hello/");
     assert.equal(await value("#inp"), "hello/");
-    for (let i = 0; i < 4; i++) await keys(Key.TAB);
+    // Two answers, two action buttons, and the selected view tab form one cycle.
+    for (let i = 0; i < 5; i++) await keys(Key.TAB);
     await insert(["Alex", "the launch"]);
     await waitValue("#inp", "Hello Alex, about the launch. Thanks, Alex!");
     await keys(Key.BACK_SPACE);

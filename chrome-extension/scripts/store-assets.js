@@ -11,11 +11,12 @@ const ROOT = path.resolve(__dirname, "..");
 const EXTENSION = path.join(ROOT, "dist", "chrome");
 const OUTPUT = path.join(ROOT, "store", "images");
 const SNIPPETS = [
-  { trigger: "hello/", expansion: "Hi [[name]],\n\nYour [[item]] is ready for [[day]].\nThanks,\nAlex" },
+  { trigger: "hello/", expansion: "Hi [[name]],\n\nYour [[item]] is ready for [[day]].\nLet me know what you think, [[name]].\nAlex" },
   { trigger: "followup/", expansion: "Thanks for the update. I will follow up soon." },
   { trigger: "next/", expansion: "Next step: {cursor} — {date}" },
   { trigger: "sig/", expansion: "Best regards,\nAlex" },
 ];
+const FILLED_HELLO = "Hi Morgan,\n\nYour design brief is ready for Friday.\nLet me know what you think, Morgan.\nAlex";
 
 // This is a local demonstration page, not a screenshot of a third-party service.
 function demoHtml(template = false) {
@@ -110,10 +111,15 @@ async function main() {
     await demo.keyboard.type("design brief");
     await demo.keyboard.press("Tab");
     await demo.keyboard.type("Friday");
+    // Move from the last answer through Cancel and Insert to the view tabs.
+    // Use the real keyboard controls to show linked blue blanks in the email.
+    for (let i = 0; i < 3; i++) await demo.keyboard.press("Tab");
+    await demo.keyboard.press("ArrowRight");
+    await demo.keyboard.press("Tab");
     await demo.screenshot({ path: path.join(OUTPUT, "chrome-template-1280x800.png") });
     await demo.keyboard.press("Enter");
     await demo.locator("#shorthand-template-host").waitFor({ state: "detached" });
-    assert.equal(await message.inputValue(), "Hi Morgan,\n\nYour design brief is ready for Friday.\nThanks,\nAlex");
+    assert.equal(await message.inputValue(), FILLED_HELLO);
 
     const promo = await context.newPage();
     await promo.setViewportSize({ width: 440, height: 280 });
@@ -127,7 +133,7 @@ async function main() {
   }
 }
 
-module.exports = { SNIPPETS, demoHtml };
+module.exports = { SNIPPETS, FILLED_HELLO, demoHtml };
 
 if (require.main === module) {
   main().catch((error) => {

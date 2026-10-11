@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { execFileSync } = require("node:child_process");
 const template = require("../src/template.js");
 const expander = require("../src/expander.js");
 const now = new Date(2026, 9, 10, 14, 5);
@@ -129,4 +130,135 @@ test("template helper loads in a browser global after the expander", () => {
   }
   assert.equal(context.self.ShorthandTemplate.fill("Hi [[name]]", { name: "Alex" }), "Hi Alex");
   assert.equal(context.self.ShorthandTemplate.render("[[name]]{cursor}!", { name: "Alex" }).cursorOffset, 4);
+});
+
+test("variable parts retain token spelling and expose meaningful labels", () => {
+  assert.deepEqual(template.parts("On {weekday}, {Subject} meets [[subject]]."), [
+    { type: "text", value: "On " },
+    { type: "variable", name: "weekday", label: "Weekday", raw: "{weekday}" },
+    { type: "text", value: ", " },
+    { type: "variable", name: "subject", label: "Subject pronoun", raw: "{Subject}" },
+    { type: "text", value: " meets " },
+    { type: "field", name: "subject", label: "subject", raw: "[[subject]]" },
+    { type: "text", value: "." },
+  ]);
+});
+
+test("variables list only active browser tokens in first appearance order", () => {
+  assert.deepEqual(template.variables(
+    "{Subject} {{object}} {WEEKDAY} {subject} [[{reflexive}]] {possessivepronoun} {object} {date} {unknown}"
+  ), ["subject", "weekday", "possessivepronoun", "object"]);
+  assert.deepEqual(template.variables(null), []);
+  assert.deepEqual(template.fields("{subject} [[subject]] [[subject]]"), [
+    { name: "subject", label: "subject" },
+  ]);
+});
+
+test("pronoun-only scripts require input while weekdays and escaped tokens do not", () => {
+  for (const text of ["{subject}", "{OBJECT}", "[[name]]", "{weekday} {Reflexive}"]) {
+    assert.equal(template.requiresInput(text), true, text);
+  }
+  for (const text of ["{weekday}", "{{subject}} {{object}}", "\\[[name]]", "{unknown}", "", null]) {
+    assert.equal(template.requiresInput(text), false, String(text));
+  }
+});
+
+test("weekday renders full English names for each local calendar day", () => {
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  days.forEach((day, index) => {
+    const date = new Date(2026, 9, 11 + index, 14, 5);
+    assert.deepEqual(template.render("{weekday} {Weekday} {WEEKDAY}", {}, date), {
+      text: `${day} ${day} ${day.toUpperCase()}`,
+      cursorOffset: day.length * 3 + 2,
+    });
+  });
+});
+
+test("weekday uses the local date when UTC is already the next day", () => {
+  const output = execFileSync(process.execPath, ["-e", `
+    const template = require(${JSON.stringify(path.resolve(__dirname, "../src/template.js"))});
+    process.stdout.write(template.render("{weekday}", {}, new Date("2026-10-11T01:00:00Z")).text);
+  `], { env: { ...process.env, TZ: "America/Los_Angeles" }, encoding: "utf8" });
+  assert.equal(output, "Saturday");
+});
+
+test("pronoun presets provide all five forms and are immutable", () => {
+  const source = "{subject}/{object}/{possessive}/{possessivepronoun}/{reflexive}";
+  const expected = {
+    "she/her": "she/her/her/hers/herself",
+    "he/him": "he/him/his/his/himself",
+    "they/them": "they/them/their/theirs/themself",
+  };
+  assert.deepEqual(Object.keys(template.pronounPresets), Object.keys(expected));
+  assert.equal(Object.isFrozen(template.pronounPresets), true);
+  for (const [name, text] of Object.entries(expected)) {
+    assert.equal(Object.isFrozen(template.pronounPresets[name]), true);
+    assert.deepEqual(template.render(source, {}, now, template.pronounPresets[name]), {
+      text, cursorOffset: text.length,
+    });
+  }
+});
+
+test("pronoun title and uppercase tokens apply case without reparsing values", () => {
+  const pronouns = { subject: "xe {date} [[name]]", object: "ßem", reflexive: "themself" };
+  const source = "{subject} | {Subject} | {SUBJECT} | {Object} | {OBJECT} | {rEfLeXiVe}";
+  const text = "xe {date} [[name]] | Xe {date} [[name]] | XE {DATE} [[NAME]] | SSem | SSEM | themself";
+  assert.deepEqual(template.render(source, { name: "ignored" }, now, pronouns), {
+    text, cursorOffset: text.length,
+  });
+});
+
+test("blank answers and custom pronouns cannot evaluate each other's tokens", () => {
+  const answers = { name: "{subject} {weekday} {cursor} [[again]]" };
+  const pronouns = { subject: "{date} {weekday} {cursor} [[name]] $&", object: "" };
+  const source = "[[name]] / {subject}{cursor} / {object} / [[name]]";
+  const beforeCursor = answers.name + " / " + pronouns.subject;
+  assert.deepEqual(template.render(source, answers, now, pronouns), {
+    text: beforeCursor + " /  / " + answers.name, cursorOffset: beforeCursor.length,
+  });
+});
+
+test("missing or inherited pronouns stay literal with no default selection", () => {
+  const source = "{Subject} {object} {possessive} {possessivepronoun} {reflexive}";
+  assert.deepEqual(template.render(source, {}, now), { text: source, cursorOffset: source.length });
+  const pronouns = Object.create({ subject: "she", object: "her" });
+  pronouns.reflexive = "themself";
+  assert.equal(template.render(source, {}, now, pronouns).text,
+    "{Subject} {object} {possessive} {possessivepronoun} themself");
+  assert.equal(template.render("{subject}", { subject: "blank answer" }, now).text, "{subject}");
+});
+
+test("escaped variables remain literal and blanks-only fill preserves variables", () => {
+  const source = "{{weekday}} {{Subject}} {{{object}}} {subject} [[subject]]";
+  assert.equal(template.render(source, { subject: "Alex" }, now, { subject: "they", object: "them" }).text,
+    "{weekday} {Subject} {{object}} they Alex");
+  assert.equal(template.fill(source, { subject: "Alex" }),
+    "{{weekday}} {{Subject}} {{{object}}} {subject} Alex");
+});
+
+test("new variables inside blank names and escaped blanks do not become separate prompts", () => {
+  const source = "\\[[{subject}]] \\[[{weekday}]] [[{object}]]";
+  assert.deepEqual(template.variables(source), []);
+  assert.deepEqual(template.fields(source), [{ name: "{object}", label: "{object}" }]);
+  assert.equal(template.requiresInput("\\[[{subject}]] \\[[{weekday}]]"), false);
+  assert.equal(template.render(source, { "{object}": "Alex" }, now, { subject: "they", object: "them" }).text,
+    "[[{subject}]] [[{weekday}]] Alex");
+});
+
+test("repeated pronouns share their answer and preserve UTF-16 cursor offsets", () => {
+  assert.deepEqual(template.render("{subject} [[name]]{cursor} {Subject} {SUBJECT}", { name: "😀" }, now,
+    { subject: "ßie" }), { text: "ßie 😀 SSie SSIE", cursorOffset: 6 });
+  assert.deepEqual(template.render("{cursor}{weekday}{subject}", {}, now, { subject: "they" }), {
+    text: "Saturdaythey", cursorOffset: 0,
+  });
+  assert.deepEqual(template.render("{subject}{cursor}[[name]]", { name: "Alex" }, now, { subject: "" }), {
+    text: "Alex", cursorOffset: 0,
+  });
+});
+
+test("variable replacements preserve marker-like literals and custom values", () => {
+  const pronouns = { subject: "\uE000\uE0001\uE001", unused: "\uE000".repeat(12) };
+  assert.deepEqual(template.render("\uE000{cursor}\uE0000\uE001 {subject} [[name]]", { name: "\uE0000\uE001" }, now, pronouns), {
+    text: "\uE000\uE0000\uE001 \uE000\uE0001\uE001 \uE0000\uE001", cursorOffset: 1,
+  });
 });

@@ -79,12 +79,41 @@
           <div><input type="text" id="fieldName" placeholder="e.g. name, company, date" autocomplete="off" data-shorthand-ignore><button type="button" id="addFieldBtn" class="secondary">Insert blank</button></div>
         </div>
         <span id="fieldBuilderMsg" class="msg" role="status"></span>
-        <p class="hint">Fill in each blank when you use the script. Repeated names share one answer.</p>
+        <p class="hint">Fill in each blank when you use the script. Repeated names stay linked to one answer.</p>
+        <div id="repeatFields" class="repeat-fields" hidden>
+          <span class="tool-label">Reuse a blank</span>
+          <div id="repeatFieldButtons" class="repeat-field-buttons" aria-label="Insert a linked blank again"></div>
+        </div>
+        <div class="variable-builder">
+          <label for="variableToken">Insert a variable</label>
+          <div>
+            <select id="variableToken" aria-describedby="variableHint" data-shorthand-ignore>
+              <optgroup label="Date and time">
+                <option value="{weekday}">Weekday · {weekday}</option>
+                <option value="{date}">Date · {date}</option>
+                <option value="{time}">Time · {time}</option>
+                <option value="{datetime}">Date and time · {datetime}</option>
+              </optgroup>
+              <optgroup label="Chosen pronouns">
+                <option value="{subject}">Subject · she / he / they</option>
+                <option value="{object}">Object · her / him / them</option>
+                <option value="{possessive}">Before a noun · her / his / their</option>
+                <option value="{possessivepronoun}">On its own · hers / his / theirs</option>
+                <option value="{reflexive}">Reflexive · herself / himself / themself</option>
+              </optgroup>
+              <optgroup label="Editing">
+                <option value="{cursor}">Cursor position · {cursor}</option>
+              </optgroup>
+            </select>
+            <button type="button" id="addVariableBtn" class="secondary">Insert variable</button>
+          </div>
+        </div>
+        <p id="variableHint" class="hint">Weekday uses your local day. Choose pronouns each time you use the script.</p>
       </div>
       <div class="template-preview">
         <div class="preview-title"><h4>Script preview</h4><span id="templateFieldCount">No fill-in blanks</span></div>
         <div id="templatePreview" class="preview-output"></div>
-        <p id="templateHint" class="hint">Plain text expands instantly. Blanks open a quick fill-in form.</p>
+        <p id="templateHint" class="hint">Blanks and pronouns open a fill-in form. Complete it in Fields or In message view.</p>
       </div>
       <div class="actions">
         <button type="submit" id="saveBtn">Add shorthand</button>
@@ -113,6 +142,12 @@
         <div><dt><code>{date}</code></dt><dd>Today's date</dd></div>
         <div><dt><code>{time}</code></dt><dd>The current time</dd></div>
         <div><dt><code>{datetime}</code></dt><dd>Date and time together</dd></div>
+        <div><dt><code>{weekday}</code></dt><dd>Your local weekday, in English</dd></div>
+        <div><dt><code>{subject}</code></dt><dd>Chosen pronouns: she, he, they, or custom</dd></div>
+        <div><dt><code>{object}</code></dt><dd>her, him, them, or custom</dd></div>
+        <div><dt><code>{possessive}</code></dt><dd>her, his, their, or custom</dd></div>
+        <div><dt><code>{possessivepronoun}</code></dt><dd>hers, his, theirs, or custom</dd></div>
+        <div><dt><code>{reflexive}</code></dt><dd>herself, himself, themself, or custom</dd></div>
         <div><dt><code>{cursor}</code></dt><dd>Where typing continues</dd></div>
       </dl>
     </div>
@@ -146,7 +181,7 @@
       <div>
         <p class="eyebrow">Portability</p>
         <h2 id="backupTitle">Import / export</h2>
-        <p class="hint">Back up every script and its fill-in blanks. Windows and Android preserve the text but do not show fill-in forms.</p>
+        <p class="hint">Back up every script and its variables. Windows and Android preserve the text; fill-in forms, weekday, and pronoun variables work in the browser extensions.</p>
       </div>
       <div class="actions compact">
         <button type="button" id="exportBtn" class="secondary">Export JSON</button>

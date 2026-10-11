@@ -45,8 +45,8 @@ test("templates in real Chrome fields", { timeout: 120000 }, async (t) => {
   await t.test("asks once for repeated blanks, traps Tab, and restores the trigger on undo", async () => {
     await start("#inp", "hello/");
     assert.equal(await page.inputValue("#inp"), "hello/");
-    // Two answers plus the two buttons form one complete focus cycle.
-    for (let i = 0; i < 4; i++) await page.keyboard.press("Tab");
+    // Two answers, two action buttons, and the selected view tab form one cycle.
+    for (let i = 0; i < 5; i++) await page.keyboard.press("Tab");
     await insert(page, ["Alex", "the launch"]);
     assert.equal(await page.inputValue("#inp"), "Hello Alex, about the launch. Thanks, Alex!");
     await page.keyboard.press("Backspace");

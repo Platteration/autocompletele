@@ -118,7 +118,12 @@ for (const theme of ["light", "dark"]) {
     await assertKeyboardFocus(options, "#search", "Tab", "#list tbody tr:first-child button.secondary");
     await assertKeyboardFocus(options, "#expansion", "Tab", "#fieldName");
     await assertKeyboardFocus(options, "#fieldName", "Tab", "#addFieldBtn");
-    await assertKeyboardFocus(options, "#addFieldBtn", "Tab", "#saveBtn");
+    await assertKeyboardFocus(options, "#addFieldBtn", "Tab", "#variableToken");
+    await assertKeyboardFocus(options, "#variableToken", "Tab", "#addVariableBtn");
+    await assertKeyboardFocus(options, "#addVariableBtn", "Tab", "#saveBtn");
+    await options.fill("#expansion", "Hello [[name]]");
+    await assertKeyboardFocus(options, "#addFieldBtn", "Tab", "#repeatFieldButtons button");
+    await assertKeyboardFocus(options, "#repeatFieldButtons button", "Tab", "#variableToken");
     const popup = await openPage(app, "popup", theme, 360);
     await assertKeyboardFocus(popup, "#search", "ArrowDown", ".result:first-child");
   });

@@ -112,7 +112,7 @@
   }
 
   function fillTemplate(shorthand, target) {
-    if (!template.fields(shorthand.expansion).length) return false;
+    if (!template.requiresInput(shorthand.expansion)) return false;
     if (templateTarget || templateForm.isOpen()) return true;
     templateTarget = target;
     lastExpansion = null;
@@ -220,8 +220,19 @@
         const root = node.parentElement && node.parentElement.closest("[contenteditable]");
         if (root) root.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
       }
-      // Move the caret back to the {cursor} position, if one was used.
-      for (let i = 0; i < caretBack; i++) sel.modify("move", "backward", "character");
+      // Rendered offsets and DOM text offsets both count UTF-16 code units.
+      // Selection.modify counts graphemes instead, so an emoji or combining
+      // sequence after {cursor} would otherwise move the caret too far back.
+      const inserted = sel.rangeCount ? sel.getRangeAt(0) : null;
+      if (caretBack && inserted && inserted.collapsed
+          && inserted.startContainer.nodeType === Node.TEXT_NODE
+          && inserted.startOffset >= text.length
+          && inserted.startContainer.textContent.slice(inserted.startOffset - text.length, inserted.startOffset) === text) {
+        sel.collapse(inserted.startContainer, inserted.startOffset - caretBack);
+      } else {
+        // Some rich editors split multiline insertions into separate nodes.
+        for (let i = 0; i < caretBack; i++) sel.modify("move", "backward", "character");
+      }
     } finally {
       suppress = false;
     }

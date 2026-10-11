@@ -34,7 +34,7 @@
 
   async function copy(shorthand) {
     if (!shorthand || templateForm.isOpen()) return;
-    if (template.fields(shorthand.expansion).length) {
+    if (template.requiresInput(shorthand.expansion)) {
       const previous = document.activeElement;
       templateForm.show({
         trigger: shorthand.trigger,
@@ -55,7 +55,10 @@
       return;
     }
     try {
-      await navigator.clipboard.writeText(template.fill(shorthand.expansion, {}));
+      const text = template.variables(shorthand.expansion).length
+        ? template.render(shorthand.expansion).text
+        : template.fill(shorthand.expansion, {});
+      await navigator.clipboard.writeText(text);
       say(`Copied ${shorthand.trigger}`);
     } catch (_) {
       say("Could not copy to clipboard.");
@@ -77,8 +80,8 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "result";
-      const fields = template.fields(shorthand.expansion);
-      button.title = fields.length
+      const needsInput = template.requiresInput(shorthand.expansion);
+      button.title = needsInput
         ? `Fill in and copy ${shorthand.trigger}`
         : `Copy expansion for ${shorthand.trigger}`;
 
@@ -89,7 +92,7 @@
       trigger.textContent = shorthand.trigger;
       const copyHint = document.createElement("span");
       copyHint.className = "copy";
-      copyHint.textContent = fields.length ? "Fill in" : "Copy";
+      copyHint.textContent = needsInput ? "Fill in" : "Copy";
       head.append(trigger, copyHint);
 
       const expansion = document.createElement("div");
