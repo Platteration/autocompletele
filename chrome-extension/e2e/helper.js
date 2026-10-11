@@ -8,7 +8,8 @@ const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
 
-const EXTENSION_DIR = path.join(__dirname, "..");
+// Also exercise the exact staged package before a store upload.
+const EXTENSION_DIR = path.resolve(process.env.EXTENSION_PATH || path.join(__dirname, ".."));
 const FIXTURE = "file://" + path.join(__dirname, "fixtures", "page.html");
 
 const DEFAULT_SHORTHANDS = [
@@ -43,32 +44,40 @@ async function launch(options = {}) {
 
   const context = await chromium.launchPersistentContext(userDataDir, launchOptions);
 
-  // The service worker owns storage; wait for it, then seed through it. If it
-  // never arrives the extension did not load, and failing fast beats hanging.
-  let [worker] = context.serviceWorkers();
-  if (!worker) worker = await context.waitForEvent("serviceworker", { timeout: 30000 });
-  await worker.evaluate(async (shorthands) => {
-    // Give the install handler time to seed its examples before replacing them.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    await self.ShorthandStorage.replaceAll(shorthands);
-  }, options.shorthands || DEFAULT_SHORTHANDS);
-  if (options.settings) {
-    await worker.evaluate((s) => self.ShorthandStorage.saveSettings(s), options.settings);
-  }
-
-  const errors = [];
-  const page = await context.newPage();
-  page.on("pageerror", (e) => errors.push(String(e)));
-  page.on("console", (m) => {
-    if (m.type() === "error") errors.push(m.text());
-  });
-  await page.goto(FIXTURE);
-  // Let the content script pick up the seeded list.
-  await page.waitForTimeout(400);
-
   async function close() {
     await context.close();
     fs.rmSync(userDataDir, { recursive: true, force: true });
+  }
+
+  // A browser left open after a failed launch keeps the test process alive, so
+  // the whole run hangs until CI's timeout instead of reporting the failure.
+  let worker, page;
+  const errors = [];
+  try {
+    // The service worker owns storage; wait for it, then seed through it. If it
+    // never arrives the extension did not load, and failing fast beats hanging.
+    [worker] = context.serviceWorkers();
+    if (!worker) worker = await context.waitForEvent("serviceworker", { timeout: 30000 });
+    await worker.evaluate(async (shorthands) => {
+      // Give the install handler time to seed its examples before replacing them.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await self.ShorthandStorage.replaceAll(shorthands);
+    }, options.shorthands || DEFAULT_SHORTHANDS);
+    if (options.settings) {
+      await worker.evaluate((s) => self.ShorthandStorage.saveSettings(s), options.settings);
+    }
+
+    page = await context.newPage();
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error") errors.push(m.text());
+    });
+    await page.goto(FIXTURE);
+    // Let the content script pick up the seeded list.
+    await page.waitForTimeout(400);
+  } catch (error) {
+    await close().catch(() => {});
+    throw error;
   }
 
   return { context, page, worker, errors, close, extensionId: new URL(worker.url()).host };

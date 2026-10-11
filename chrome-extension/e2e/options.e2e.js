@@ -61,6 +61,22 @@ test("managing shorthands", async (t) => {
     assert.deepEqual(settings.settings.excludedHosts, ["example.com", "mail.google.com"]);
   });
 
+  await t.test("keeps search-trigger validation beside its settings field", async () => {
+    await page.fill("#pickerTrigger", "has spaces");
+    await page.dispatchEvent("#pickerTrigger", "change");
+    const message = page.locator("#pickerMsg");
+    assert.equal(await message.textContent(), "The search trigger cannot contain spaces.");
+    assert.equal(await message.getAttribute("role"), "status");
+    assert.equal(await page.locator("#pickerTrigger").getAttribute("aria-describedby"), "pickerMsg");
+    assert.equal(await page.inputValue("#pickerTrigger"), ";;");
+    const bounds = await message.boundingBox();
+    assert.ok(bounds && bounds.y >= 0 && bounds.y + bounds.height <= page.viewportSize().height,
+      "The validation message should be visible alongside the field");
+    await page.fill("#pickerTrigger", ";;");
+    await page.dispatchEvent("#pickerTrigger", "change");
+    assert.equal(await message.textContent(), "");
+  });
+
   await t.test("reports no page errors", () => {
     assert.deepEqual(app.errors, []);
   });

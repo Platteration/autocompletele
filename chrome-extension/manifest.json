@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Shorthand Autofill",
+  "name": "actle",
   "version": "1.0.0",
-  "description": "Type a short trigger like cool/ and have it expand into a full sentence, anywhere on the web.",
+  "description": "Expand short triggers into reusable text and fill-in templates in supported webpage fields.",
   "permissions": ["storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/expander.js", "src/storage.js", "src/picker.js", "src/content.js"],
+      "js": ["src/expander.js", "src/template.js", "src/storage.js", "src/picker.js", "src/template-form.js", "src/animation-frames.js", "src/expansion-feedback.js", "src/content.js"],
       "run_at": "document_idle",
       "all_frames": true
     }
@@ -19,7 +19,7 @@
   "options_page": "src/options.html",
   "action": {
     "default_popup": "src/popup.html",
-    "default_title": "Shorthand Autofill",
+    "default_title": "actle",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
