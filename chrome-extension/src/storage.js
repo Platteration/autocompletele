@@ -1,6 +1,6 @@
 // Storage helper shared by the options page, popup, content script and worker.
-// Each shorthand is kept under its own key ("sh:<id>") in chrome.storage.sync so
-// the list syncs between Chrome profiles without hitting the 8 KB per-item limit.
+// Each shorthand is kept under its own key ("sh:<id>"). Chrome uses sync storage;
+// Firefox uses local storage. Separate keys avoid Chrome's 8 KB per-item limit.
 (function (root) {
   "use strict";
 
@@ -8,17 +8,23 @@
   const SETTINGS_KEY = "settings";
   const JOURNAL_KEY = "shorthand-import-journal";
   const BACKUP_KEY = "shorthand-import-backup";
+  const AREA = chrome.runtime.getManifest().browser_specific_settings?.gecko ? "local" : "sync";
+  const dataStore = chrome.storage[AREA];
   const encoder = new TextEncoder();
   let writes = Promise.resolve();
   // pickerTrigger opens the search overlay; an empty string turns it off.
-  const DEFAULT_SETTINGS = { enabled: true, excludedHosts: [], pickerTrigger: ";;" };
+  const DEFAULT_SETTINGS = { enabled: true, excludedHosts: [], pickerTrigger: ";;", animationMode: "expand" };
+
+  function animationMode(value) {
+    return ["expand", "casino", "off"].includes(value) ? value : DEFAULT_SETTINGS.animationMode;
+  }
 
   function newId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
   async function getAll() {
-    const items = await chrome.storage.sync.get(null);
+    const items = await dataStore.get(null);
     const shorthands = [];
     for (const [key, value] of Object.entries(items)) {
       if (!key.startsWith(PREFIX) || !value || typeof value !== "object") continue;
@@ -31,6 +37,7 @@
     }
     shorthands.sort((a, b) => a.order - b.order || a.trigger.localeCompare(b.trigger));
     const settings = Object.assign({}, DEFAULT_SETTINGS, items[SETTINGS_KEY] || {});
+    settings.animationMode = animationMode(settings.animationMode);
     return { shorthands, settings };
   }
 
@@ -39,7 +46,7 @@
       await recoverImport();
       const id = sh.id || newId();
       const order = typeof sh.order === "number" ? sh.order : Date.now();
-      await chrome.storage.sync.set({
+      await dataStore.set({
         [PREFIX + id]: { trigger: sh.trigger, expansion: sh.expansion, order },
       });
       return id;
@@ -49,7 +56,7 @@
   async function deleteShorthand(id) {
     return withWriteLock(async () => {
       await recoverImport();
-      await chrome.storage.sync.remove(PREFIX + id);
+      await dataStore.remove(PREFIX + id);
     });
   }
 
@@ -69,16 +76,20 @@
   }
 
   function quotaError(items) {
-    const sync = chrome.storage.sync;
+    // Chrome sync enforces item-count, per-item and total-byte quotas. storage.local
+    // has no item limits; Chrome caps its total bytes and Firefox does not.
+    const limits = AREA === "sync"
+      ? { items: dataStore.MAX_ITEMS || 512, perItem: dataStore.QUOTA_BYTES_PER_ITEM || 8192, total: dataStore.QUOTA_BYTES || 102400 }
+      : { items: Infinity, perItem: Infinity, total: dataStore.QUOTA_BYTES || Infinity };
     const entries = Object.entries(items);
-    if (entries.length > (sync.MAX_ITEMS || 512)) return "sync item-count limit";
+    if (entries.length > limits.items) return AREA + " item-count limit";
     let total = 0;
     for (const [key, value] of entries) {
       const bytes = encoder.encode(key).length + encoder.encode(JSON.stringify(value)).length;
-      if (bytes > (sync.QUOTA_BYTES_PER_ITEM || 8192)) return "sync per-item limit";
+      if (bytes > limits.perItem) return AREA + " per-item limit";
       total += bytes;
     }
-    return total > (sync.QUOTA_BYTES || 102400) ? "sync total-byte limit" : null;
+    return total > limits.total ? AREA + " total-byte limit" : null;
   }
 
   function sameRecord(a, b) {
@@ -87,12 +98,12 @@
   }
 
   async function requireUnchanged(keys, expected) {
-    const current = records(await chrome.storage.sync.get(null));
+    const current = records(await dataStore.get(null));
     if (keys.some((key) => !sameRecord(current[key], expected[key]))) throw new Error("Library changed during import; retry using the latest synced records");
   }
 
   async function restoreRecords(before, payload) {
-    const current = records(await chrome.storage.sync.get(null));
+    const current = records(await dataStore.get(null));
     const changes = {}, obsolete = [], conflicts = [];
     const attempted = payload || {};
     for (const key of new Set([...Object.keys(before), ...Object.keys(attempted)])) {
@@ -105,9 +116,9 @@
       if (before[key] === undefined) obsolete.push(key);
       else changes[key] = before[key];
     }
-    if (obsolete.length) await chrome.storage.sync.remove(obsolete);
-    if (Object.keys(changes).length) await chrome.storage.sync.set(changes);
-    const restored = records(await chrome.storage.sync.get(null));
+    if (obsolete.length) await dataStore.remove(obsolete);
+    if (Object.keys(changes).length) await dataStore.set(changes);
+    const restored = records(await dataStore.get(null));
     if (obsolete.some((key) => restored[key] !== undefined) || Object.keys(changes).some((key) => !sameRecord(restored[key], changes[key]))) throw new Error("Original library could not be restored; its local backup is retained");
     return { conflicts };
   }
@@ -134,7 +145,7 @@
   async function replaceAll(list, options = {}) {
     return withWriteLock(async () => {
       await recoverImport();
-      const existing = await chrome.storage.sync.get(null);
+      const existing = await dataStore.get(null);
       const before = records(existing);
       const other = Object.fromEntries(Object.entries(existing).filter(([key]) => !key.startsWith(PREFIX)));
       const byTrigger = new Map(Object.entries(before).map(([key, value]) => [value.trigger, key]));
@@ -142,6 +153,7 @@
       let nextOrder = Math.max(0, ...Object.values(before).map((value) => typeof value.order === "number" ? value.order : 0)) + 1;
       const skipped = [];
       list.forEach((sh, i) => {
+        // Updates reuse the trigger's existing key, so they need no second storage slot.
         const key = byTrigger.get(sh.trigger) || PREFIX + newId();
         const order = options.merge ? (before[key] ? before[key].order : nextOrder++) : i;
         const value = { trigger: sh.trigger, expansion: sh.expansion, order };
@@ -163,7 +175,7 @@
       const reason = quotaError({ ...other, ...payload });
       if (reason) throw new Error("Original library exceeds the " + reason + "; export it before importing");
       const toRemove = Object.keys(before).filter((key) => !Object.prototype.hasOwnProperty.call(payload, key));
-      // Both writes must succeed before sync storage is touched.
+      // Both writes must succeed before the library's storage is touched.
       await chrome.storage.local.set({ [BACKUP_KEY]: before, [JOURNAL_KEY]: { before, payload, committed: false } });
       try {
         // Prefer writing first. Only free obsolete keys first when the
@@ -171,16 +183,19 @@
         const removeFirst = !!quotaError({ ...existing, ...payload });
         if (removeFirst && toRemove.length) {
           await requireUnchanged(toRemove, before);
-          await chrome.storage.sync.remove(toRemove);
+          await dataStore.remove(toRemove);
         }
         await requireUnchanged(Object.keys(payload), before);
-        if (Object.keys(payload).length) await chrome.storage.sync.set(payload);
+        if (Object.keys(payload).length) await dataStore.set(payload);
         if (!removeFirst && toRemove.length) {
           await requireUnchanged(toRemove, before);
-          await chrome.storage.sync.remove(toRemove);
+          await dataStore.remove(toRemove);
         }
-        const actual = records(await chrome.storage.sync.get(null));
-        if (JSON.stringify(Object.entries(actual).sort()) !== JSON.stringify(Object.entries(payload).sort())) throw new Error("Imported library did not persist completely");
+        const actual = records(await dataStore.get(null));
+        // Compare record by record: the browser returns dictionaries with their
+        // keys alphabetised, so a serialised comparison rejects every write.
+        const persisted = new Set([...Object.keys(actual), ...Object.keys(payload)]);
+        if ([...persisted].some((key) => !sameRecord(actual[key], payload[key]))) throw new Error("Imported library did not persist completely");
         await chrome.storage.local.set({ [JOURNAL_KEY]: { before, payload, committed: true } });
       } catch (error) {
         let recovery;
@@ -204,7 +219,8 @@
       await recoverImport();
       const { settings } = await getAll();
       const next = Object.assign({}, settings, patch);
-      await chrome.storage.sync.set({ [SETTINGS_KEY]: next });
+      next.animationMode = animationMode(next.animationMode);
+      await dataStore.set({ [SETTINGS_KEY]: next });
       return next;
     });
   }
@@ -231,5 +247,6 @@
     saveSettings,
     toExportJson,
     DEFAULT_SETTINGS,
+    AREA,
   };
 })(typeof self !== "undefined" ? self : this);

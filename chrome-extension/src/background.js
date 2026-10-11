@@ -1,6 +1,7 @@
-// Service worker: seeds a couple of example shorthands on first install and
-// keeps the toolbar badge in sync with the enabled state.
-importScripts("storage.js");
+// Chrome service worker / Firefox background page: seed examples on first
+// install and keep the toolbar badge in sync with the enabled state.
+// Firefox loads storage.js first through the generated background.scripts list.
+if (typeof importScripts === "function") importScripts("storage.js");
 
 const storage = self.ShorthandStorage;
 
@@ -21,7 +22,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
 chrome.runtime.onStartup.addListener(updateBadge);
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && changes.settings) updateBadge();
+  if (area === storage.AREA && changes.settings) updateBadge();
 });
 
 async function updateBadge() {

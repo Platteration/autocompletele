@@ -1,15 +1,25 @@
-# Shorthand Autofill
+# actle
 
-Define shorthands once, type them anywhere. When you type a trigger such as
-`cool/`, it is instantly replaced by whatever you defined for it, for example
+actle is the Chrome and Firefox extension for reusable text and fill-in
+templates. Define shorthands once and use them in supported webpage fields.
+When you type a trigger such as
+`cool/`, it is replaced by whatever you defined for it, for example
 *"That is really cool, thanks for sharing!"*.
+
+Its logo completes `actle` into `autocompletele` once when you open the library
+or toolbar popup. Select the logo to replay it; reduced-motion preferences are
+respected. The companion Windows and Android apps retain their existing names.
+
+For shortcut text, choose Expand to fill letters around the shorthand, Casino
+to settle scrambling letters, or Off for instant replacement. Continuing to type
+finishes the visual effect immediately; reduced-motion preferences suppress it.
 
 Three apps share the same idea and the same JSON file format, so a list
 built on one device can be exported and imported on the others:
 
 | Folder              | Platform | How it works                                                     |
 | ------------------- | -------- | ---------------------------------------------------------------- |
-| `chrome-extension/` | Chrome   | Manifest V3 extension; watches inputs, textareas and rich editors |
+| `chrome-extension/` | Chrome, Firefox | Manifest V3 extension; watches supported inputs, textareas and rich editors |
 | `windows/`          | Windows  | .NET 8 tray app with a global keyboard hook; works in every program |
 | `android/`          | Android  | Accessibility service; works in other apps' text fields          |
 | `shared/`           | –        | Format specification and an example `shorthands.json`            |
@@ -28,10 +38,20 @@ Expansions may contain the placeholders `{date}`, `{time}`, `{datetime}` and
 `{cursor}` (where the caret should land afterwards). See
 [`shared/SPEC.md`](shared/SPEC.md) for the details.
 
+In Chrome and Firefox, add linked `[[name]]` blanks to a script and fill them
+in a table or directly in the message. The editor's **Insert variable** menu
+also offers the local `{weekday}` and pronouns chosen for each use. These
+browser features preserve their tokens during JSON transfer; Windows and
+Android do not fill them. See the [template guide](chrome-extension/README.md#fill-in-templates).
+
 ## Quick start
 
 * **Chrome:** `chrome://extensions` → Developer mode → *Load unpacked* →
   pick `chrome-extension/`. See [chrome-extension/README.md](chrome-extension/README.md).
+* **Firefox 142+:** run `cd chrome-extension && npm run build`, then load
+  `dist/firefox/manifest.json` using **Load Temporary Add-on** in
+  `about:debugging#/runtime/this-firefox`. Chrome uses browser sync storage;
+  Firefox stores the library locally. Use JSON export/import to transfer it.
 * **Windows:** `cd windows && dotnet run --project ShorthandExpander`
   (needs the .NET 8 SDK). See [windows/README.md](windows/README.md).
 * **Android:** open `android/` in Android Studio, run on your phone, then

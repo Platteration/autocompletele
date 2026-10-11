@@ -11,6 +11,7 @@ android/.idea/
 *.iml
 # misc
 node_modules/
+chrome-extension/dist/
 .DS_Store
 __pycache__/
 # Android release signing (never commit the upload key)
