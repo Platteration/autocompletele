@@ -27,8 +27,9 @@ your triggers through Android's accessibility service and does the replacement i
 • Placeholders: {date}, {time} and {datetime} insert the current date and time; {cursor}
   decides where the caret lands.
 • Pause expansion with one switch without turning the service off.
-• Import and export your list as a JSON file. The same file works with the Shorthand
-  Autofill Chrome extension and the Windows app, so one list can follow you across devices.
+• Import and export your list as a JSON file. The same file works with the actle browser
+  extension (Chrome and Firefox) and the Windows app, so one list can follow you across
+  devices.
 • Password fields are always ignored.
 
 Privacy: everything happens on your phone. The app has no network access, no analytics and
