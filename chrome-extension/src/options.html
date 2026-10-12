@@ -162,6 +162,14 @@
         <input type="checkbox" id="enabled" aria-label="Expansion enabled">
       </label>
       <div class="row column">
+        <label class="toggle-row">
+          <span><strong id="suggestionsLabel">Suggest saved shortcuts</strong><small id="suggestionsHint">Type at least two characters of a shortcut. Press ↓ then Enter to insert; Tab keeps moving through the page.</small></span>
+          <input type="checkbox" id="suggestionsEnabled" aria-labelledby="suggestionsLabel" aria-describedby="suggestionsHint suggestionsMsg">
+        </label>
+        <span id="suggestionsMsg" class="msg" role="status"></span>
+        <small>Username, password, sign-in code and payment fields are skipped when identified by the page.</small>
+      </div>
+      <div class="row column">
         <label for="animationMode"><strong>Text animation</strong></label>
         <select id="animationMode" aria-describedby="animationHint animationMsg" data-shorthand-ignore>
           <option value="expand">Expand</option>
@@ -236,8 +244,10 @@
   <script src="template.js"></script>
   <script src="conflicts.js"></script>
   <script src="storage.js"></script>
+  <script src="field-safety.js"></script>
   <script src="import-plan.js"></script>
   <script src="picker.js"></script>
+  <script src="suggestions.js"></script>
   <script src="template-form.js"></script>
   <script src="animation-frames.js"></script>
   <script src="expansion-feedback.js"></script>

@@ -162,7 +162,7 @@ test("Chrome animation modes preserve the real editing transaction", { timeout: 
     await page.waitForSelector(CUE, { state: "detached", timeout: 2000 });
     const trace = await page.evaluate(() => window.animationTrace);
     assertCommitted(trace, "you got it");
-    const frames = [...new Set(trace.samples.map((sample) => sample.text))];
+    const frames = trace.samples.map((sample) => sample.text);
     const final = "you got it";
     assert.equal(frames.at(-1), final);
     assert.ok(frames.some((text) => text.length === final.length && text !== final && !text.startsWith("you")), `Missing scrambled frame: ${JSON.stringify(frames)}`);
@@ -184,7 +184,7 @@ test("Chrome animation modes preserve the real editing transaction", { timeout: 
     await page.waitForSelector(CUE, { state: "detached", timeout: 2000 });
     const trace = await page.evaluate(() => window.animationTrace);
     assertCommitted(trace, "you got it");
-    const frames = [...new Set(trace.samples.map((sample) => sample.text))];
+    const frames = trace.samples.map((sample) => sample.text);
     assert.equal(frames.at(-1), "you got it", `The mirror must show the finished phrase before it is removed: ${JSON.stringify(frames)}`);
     assert.ok(frames.some((text) => text !== "yg" && text !== "you got it"), `A starved frame must still have been scrambled: ${JSON.stringify(frames)}`);
     assert.equal(trace.added, 1);

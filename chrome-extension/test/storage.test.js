@@ -187,7 +187,7 @@ test("unknown saved animation modes normalize on read without changing other set
     };
     const app = storageWith(saved);
     assert.deepEqual(plain((await app.storage.getAll()).settings), {
-      enabled: false, excludedHosts: ["example.com"], pickerTrigger: "//", animationMode: "expand",
+      enabled: false, excludedHosts: ["example.com"], pickerTrigger: "//", animationMode: "expand", suggestionsEnabled: true,
     });
     assert.deepEqual(app.items, saved);
     assert.deepEqual(app.calls, []);
@@ -205,10 +205,10 @@ test("all animation modes round-trip in Chrome and Firefox without changing libr
       const next = await app.storage.saveSettings({ animationMode });
       assert.equal(next.animationMode, animationMode);
       assert.equal((await app.storage.getAll()).settings.animationMode, animationMode);
-      assert.deepEqual(app.items, { ...saved, settings: { ...saved.settings, animationMode } });
+      assert.deepEqual(app.items, { ...saved, settings: { ...saved.settings, animationMode, suggestionsEnabled: true } });
     }
     await app.storage.saveSettings({ enabled: true });
-    assert.deepEqual(app.items.settings, { ...saved.settings, animationMode: "expand", enabled: true });
+    assert.deepEqual(app.items.settings, { ...saved.settings, animationMode: "expand", enabled: true, suggestionsEnabled: true });
   }
 });
 
@@ -230,4 +230,86 @@ test("a failed animation preference save reports failure and retains the saved s
   await assert.rejects(app.storage.saveSettings({ animationMode: "off" }), /Storage write rejected/);
   assert.deepEqual(app.items, saved);
   assert.equal((await app.storage.getAll()).settings.animationMode, "casino");
+});
+
+test("new and existing libraries suggest saved shortcuts by default without rewriting data", async () => {
+  for (const existing of [{}, initial]) {
+    const app = storageWith(existing);
+    assert.equal(app.storage.DEFAULT_SETTINGS.suggestionsEnabled, true);
+    assert.equal((await app.storage.getAll()).settings.suggestionsEnabled, true);
+    assert.deepEqual(app.items, existing);
+    assert.deepEqual(app.calls, []);
+  }
+});
+
+test("nonboolean suggestion preferences normalize on read without changing saved data", async () => {
+  for (const suggestionsEnabled of [null, 0, 1, "true", "false", "", {}, []]) {
+    const saved = {
+      ...initial,
+      settings: { enabled: false, excludedHosts: ["example.com"], pickerTrigger: "//", animationMode: "casino", suggestionsEnabled },
+    };
+    const app = storageWith(saved);
+    assert.deepEqual(plain((await app.storage.getAll()).settings), {
+      ...saved.settings, suggestionsEnabled: true,
+    });
+    assert.deepEqual(app.items, saved);
+    assert.deepEqual(app.calls, []);
+  }
+});
+
+test("suggestion choices round-trip in Chrome and Firefox while retaining other preferences and snippets", async () => {
+  for (const firefox of [false, true]) {
+    const saved = {
+      ...initial,
+      settings: { enabled: false, excludedHosts: ["example.com"], pickerTrigger: "//", animationMode: "casino", retained: "keep" },
+    };
+    const app = storageWith(saved, { firefox });
+    for (const suggestionsEnabled of [false, true, false]) {
+      assert.equal((await app.storage.saveSettings({ suggestionsEnabled })).suggestionsEnabled, suggestionsEnabled);
+      assert.equal((await app.storage.getAll()).settings.suggestionsEnabled, suggestionsEnabled);
+      assert.deepEqual(app.items, { ...saved, settings: { ...saved.settings, suggestionsEnabled } });
+    }
+    await Promise.all([
+      app.storage.saveSettings({ enabled: true }),
+      app.storage.saveSettings({ animationMode: "off" }),
+    ]);
+    assert.deepEqual(app.items, {
+      ...saved, settings: { ...saved.settings, suggestionsEnabled: false, enabled: true, animationMode: "off" },
+    });
+  }
+});
+
+test("nonboolean suggestion writes normalize to enabled while keeping the rest of the patch", async () => {
+  for (const suggestionsEnabled of [undefined, null, 0, 1, "false", {}, []]) {
+    const app = storageWith({ ...initial, settings: { enabled: true, suggestionsEnabled: false } });
+    const settings = await app.storage.saveSettings({ suggestionsEnabled, enabled: false });
+    assert.equal(settings.suggestionsEnabled, true);
+    assert.equal(settings.enabled, false);
+    assert.equal(app.items.settings.suggestionsEnabled, true);
+    assert.deepEqual(app.items["sh:local"], initial["sh:local"]);
+    assert.deepEqual(app.items["sh:sig"], initial["sh:sig"]);
+  }
+});
+
+test("a rejected suggestion save retains the saved preference and whole library", async () => {
+  const saved = { ...initial, settings: { enabled: false, suggestionsEnabled: false } };
+  const app = storageWith(saved, {
+    rejectSet() { throw new Error("Storage write rejected"); },
+  });
+  await assert.rejects(app.storage.saveSettings({ suggestionsEnabled: true }), /Storage write rejected/);
+  assert.deepEqual(app.items, saved);
+  assert.equal((await app.storage.getAll()).settings.suggestionsEnabled, false);
+});
+
+test("suggestion settings stay out of the cross-platform snippet export", async () => {
+  const app = storageWith(initial);
+  await app.storage.saveSettings({ suggestionsEnabled: false });
+  const { shorthands } = await app.storage.getAll();
+  assert.deepEqual(JSON.parse(app.storage.toExportJson(shorthands)), {
+    version: 1,
+    shorthands: [
+      { trigger: "local/", expansion: "Keep me" },
+      { trigger: "sig/", expansion: "Original signature" },
+    ],
+  });
 });

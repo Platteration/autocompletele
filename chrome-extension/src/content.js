@@ -7,12 +7,18 @@
   const storage = self.ShorthandStorage;
   const template = self.ShorthandTemplate;
   const templateForm = self.ShorthandTemplateForm;
+  const fieldSafety = self.ShorthandFieldSafety;
+  const suggestions = self.ShorthandSuggestions;
 
   let shorthands = [];
   let enabled = true;
   let hostExcluded = false;
   let pickerTrigger = storage.DEFAULT_SETTINGS.pickerTrigger;
   let animationMode = storage.DEFAULT_SETTINGS.animationMode;
+  let suggestionsEnabled = storage.DEFAULT_SETTINGS.suggestionsEnabled;
+  let suggestionTarget = null;
+  let dismissedSuggestion = null;
+  let suggestionFrame = 0;
   let suppress = false; // true while we are inserting text ourselves
   let lastExpansion = null; // details of the most recent expansion, for undo
   let templateTarget = null; // original insertion point while a fill-in form has focus
@@ -34,7 +40,7 @@
   }
 
   function isIgnored(el) {
-    return !!(el && el.closest && el.closest("[" + IGNORE_ATTR + "]"));
+    return !!(el && el.closest && el.closest("[" + IGNORE_ATTR + "]")) || fieldSafety.isProtected(el);
   }
 
   function isFocused(el) {
@@ -55,6 +61,7 @@
     const range = sel.getRangeAt(0);
     const node = range.startContainer;
     if (node !== range.endContainer || !el.contains(node)) return null;
+    if (isIgnored(node.nodeType === Node.TEXT_NODE ? node.parentElement : node)) return null;
     if (node.nodeType !== Node.TEXT_NODE) {
       return el.textContent === "" && sel.isCollapsed ? { value: "", start: 0, end: 0, node: null, rootValue: "", offset: 0 } : null;
     }
@@ -134,6 +141,8 @@
         : storage.DEFAULT_SETTINGS.pickerTrigger;
       const previousMode = animationMode;
       animationMode = data.settings.animationMode;
+      suggestionsEnabled = data.settings.suggestionsEnabled;
+      closeSuggestions();
       if (previousMode !== animationMode || !enabled || hostExcluded) {
         self.ShorthandExpansionFeedback.clear();
       }
@@ -361,6 +370,7 @@
     const range = sel.getRangeAt(0);
     const node = range.startContainer;
     if (node.nodeType !== Node.TEXT_NODE || !root.contains(node)) return false;
+    if (isIgnored(node.parentElement)) return false;
 
     const before = node.textContent.slice(0, range.startOffset);
     const match = findMatch(before, shorthands);
@@ -383,6 +393,7 @@
     const range = sel.getRangeAt(0);
     const node = range.startContainer;
     if (node.nodeType !== Node.TEXT_NODE || !u.el.contains(node)) return false;
+    if (isIgnored(node.parentElement)) return false;
     // Only undo when the inserted text still sits, unchanged, around the caret in one text node.
     const head = u.text.slice(0, u.cursorOffset);
     const tail = u.text.slice(u.cursorOffset);
@@ -438,6 +449,7 @@
     const range = sel.getRangeAt(0);
     const node = range.startContainer;
     if (node.nodeType !== Node.TEXT_NODE || !root.contains(node)) return false;
+    if (isIgnored(node.parentElement)) return false;
     const end = range.startOffset;
     if (!node.textContent.slice(0, end).endsWith(pickerTrigger)) return false;
     const start = end - pickerTrigger.length;
@@ -448,7 +460,7 @@
       shorthands,
       anchorEl: root,
       onPick(sh) {
-        if (!isFocused(root) || isIgnored(root) || root.textContent !== target.rootText || !node.isConnected || !root.contains(node) || node.textContent.slice(start, end) !== target.trigger) return;
+        if (!isFocused(root) || isIgnored(root) || isIgnored(node.parentElement) || root.textContent !== target.rootText || !node.isConnected || !root.contains(node) || node.textContent.slice(start, end) !== target.trigger) return;
         const liveSel = window.getSelection();
         if (!liveSel || !liveSel.isCollapsed || !liveSel.rangeCount) return;
         const liveRange = liveSel.getRangeAt(0);
@@ -463,6 +475,80 @@
     });
   }
 
+  // ---- suggestions ----------------------------------------------------------
+
+  function closeSuggestions() {
+    suggestionTarget = null;
+    if (suggestionFrame) window.cancelAnimationFrame(suggestionFrame);
+    suggestionFrame = 0;
+    suggestions.close();
+  }
+
+  function activeSuggestion(target) {
+    if (!enabled || hostExcluded || !suggestionsEnabled || !isFocused(target.el) || !targetUnchanged(target)) return false;
+    if (!target.node) return true;
+    const sel = window.getSelection();
+    if (!sel || !sel.isCollapsed || !sel.rangeCount) return false;
+    const range = sel.getRangeAt(0);
+    return range.startContainer === target.node && range.startOffset === target.end;
+  }
+
+  function acceptSuggestion(sh, target) {
+    closeSuggestions();
+    if (!activeSuggestion(target) || !shorthands.some((saved) => saved.id === sh.id
+        && saved.trigger === sh.trigger && saved.expansion === sh.expansion)) return;
+    if (fillTemplate(sh, target)) return;
+    const { text, cursorOffset } = template.render(sh.expansion);
+    const feedback = target.node
+      ? nodeFeedback(target.el, target.node, target.start, text, target.trigger)
+      : { mode: animationMode, start: target.start, text, trigger: target.trigger };
+    if (target.node) {
+      replaceInNode(window.getSelection(), target.node, target.start, target.end, text, text.length - cursorOffset);
+      lastExpansion = { el: target.el, text, cursorOffset, trigger: target.trigger };
+    } else {
+      replaceInField(target.el, target.start, target.end, text, cursorOffset);
+      lastExpansion = { el: target.el, start: target.start, text, cursorOffset, trigger: target.trigger };
+    }
+    showExpansionFeedback(target.el, feedback);
+  }
+
+  function offerSuggestions(el) {
+    if (!suggestionsEnabled || templateTarget || templateForm.isOpen()) return;
+    const snapshot = editSnapshot(el);
+    if (!snapshot || snapshot.start == null || snapshot.start !== snapshot.end) return;
+    const match = suggestions.find(snapshot.value.slice(0, snapshot.end), shorthands);
+    if (!match || !typedTrigger(el, match.start, snapshot.end, snapshot.node)) {
+      dismissedSuggestion = null;
+      return;
+    }
+    if (dismissedSuggestion && dismissedSuggestion.el === el
+        && dismissedSuggestion.node === snapshot.node && dismissedSuggestion.start === match.start) return;
+    const target = snapshot.node
+      ? nodeTarget(el, snapshot.node, match.start, snapshot.end, match.query)
+      : fieldTarget(el, match.start, snapshot.end, match.query);
+    if (!activeSuggestion(target)) return;
+    suggestionTarget = target;
+    const shown = suggestions.show({
+      query: match.query, items: match.items, anchorEl: el,
+      onPick(sh) { acceptSuggestion(sh, target); },
+      onDismiss() {
+        dismissedSuggestion = { el, node: snapshot.node, start: match.start };
+        closeSuggestions();
+      },
+    });
+    if (!shown) { closeSuggestions(); return; }
+    function watch() {
+      suggestionFrame = 0;
+      if (suggestionTarget !== target) return;
+      if (!activeSuggestion(target) || templateForm.isOpen() || self.ShorthandPicker.isOpen()) {
+        closeSuggestions();
+        return;
+      }
+      suggestionFrame = window.requestAnimationFrame(watch);
+    }
+    suggestionFrame = window.requestAnimationFrame(watch);
+  }
+
   // ---- wiring ---------------------------------------------------------------
 
   function onInput(ev) {
@@ -472,6 +558,7 @@
     // edit. Require, and consume, a recent exact trusted typing/paste/drop edit.
     const grant = inputGrant;
     inputGrant = null;
+    closeSuggestions();
     // While a fill-in form has focus, its own typing is not page editing.
     if (templateTarget || templateForm.isOpen()) return;
     lastExpansion = null;
@@ -487,14 +574,26 @@
     if (t && !t.startsWith("insert")) return; // only react to typing/pasting
     // A user's own shorthand always wins over the picker trigger.
     if (isTextInput(el)) {
-      if (!expandInField(el)) tryOpenPickerInField(el);
+      if (!expandInField(el) && !tryOpenPickerInField(el)) offerSuggestions(el);
     } else if (isEditable(el)) {
-      if (!expandInContentEditable(el)) tryOpenPickerInContentEditable(el);
+      if (!expandInContentEditable(el) && !tryOpenPickerInContentEditable(el)) offerSuggestions(el);
     }
   }
 
   function onKeyDown(ev) {
     if (!ev.isTrusted || !isFocused(ev.target)) return;
+    if (isIgnored(ev.target)) {
+      inputGrant = null;
+      lastExpansion = null;
+      trustedEdits.delete(editableTarget(ev.target));
+      closeSuggestions();
+      self.ShorthandPicker.close();
+      return;
+    }
+    if (suggestionTarget) {
+      if (!activeSuggestion(suggestionTarget) || ev.isComposing) closeSuggestions();
+      else if (suggestions.handleKeyDown(ev)) { inputGrant = null; return; }
+    }
     // The picker registers its own capture handler later, so this one runs
     // first; while it is open every key belongs to it.
     if (templateTarget || templateForm.isOpen()
@@ -522,8 +621,28 @@
   document.addEventListener("keydown", onKeyDown, true);
   for (const event of ["paste", "drop"]) document.addEventListener(event, grantUserInput, true);
   // Composition changes and rich/automatic edits cannot be tied to an exact physical insertion.
-  for (const event of ["compositionstart", "compositionupdate", "compositionend"]) document.addEventListener(event, () => { inputGrant = null; }, true);
-  document.addEventListener("mousedown", () => { lastExpansion = null; }, true);
+  for (const event of ["compositionstart", "compositionupdate", "compositionend"]) document.addEventListener(event, () => {
+    inputGrant = null;
+    closeSuggestions();
+  }, true);
+  document.addEventListener("mousedown", (ev) => {
+    lastExpansion = null;
+    if (!suggestions.isHost(ev.target)) {
+      dismissedSuggestion = null;
+      closeSuggestions();
+    }
+  }, true);
+  document.addEventListener("focusout", () => {
+    dismissedSuggestion = null;
+    closeSuggestions();
+  }, true);
+  document.addEventListener("selectionchange", () => {
+    if (suggestionTarget && !activeSuggestion(suggestionTarget)) closeSuggestions();
+  });
+  document.addEventListener("scroll", (ev) => {
+    if (!suggestions.isHost(ev.target)) closeSuggestions();
+  }, true);
+  for (const event of ["resize", "blur", "pagehide"]) window.addEventListener(event, closeSuggestions);
 
   chrome.storage.onChanged.addListener((_changes, area) => {
     if (area === storage.AREA) reload();

@@ -150,7 +150,7 @@ test("Firefox: glyph animation modes preserve the real editing transaction", { t
     await gone();
     const result = await trace();
     assertCommitted(result, "you got it");
-    const frames = [...new Set(result.samples.map((sample) => sample.text))];
+    const frames = result.samples.map((sample) => sample.text);
     const final = "you got it";
     assert.equal(frames.at(-1), final);
     assert.ok(frames.some((text) => text.length === final.length && text !== final && !text.startsWith("you")), `Missing scrambled frame: ${JSON.stringify(frames)}`);

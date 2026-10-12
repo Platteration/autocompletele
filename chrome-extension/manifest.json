@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/expander.js", "src/template.js", "src/storage.js", "src/picker.js", "src/template-form.js", "src/animation-frames.js", "src/expansion-feedback.js", "src/content.js"],
+      "js": ["src/expander.js", "src/template.js", "src/storage.js", "src/field-safety.js", "src/picker.js", "src/suggestions.js", "src/template-form.js", "src/animation-frames.js", "src/expansion-feedback.js", "src/content.js"],
       "run_at": "document_idle",
       "all_frames": true
     }

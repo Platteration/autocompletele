@@ -10,13 +10,15 @@ async function content() {
   const sandbox = {
     self: {
       ShorthandExpander: require("../src/expander.js"),
+      ShorthandFieldSafety: require("../src/field-safety.js"),
+      ShorthandSuggestions: require("../src/suggestions.js"),
       ShorthandStorage: { DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" }, async getAll() { return { shorthands: [{ trigger: "secret/", expansion: "private snippet" }], settings: {} }; } },
       ShorthandPicker: { isOpen() { return false; }, show(opts) { opened.push(opts); return true; } },
       ShorthandTemplate: require("../src/template.js"),
       ShorthandTemplateForm: { isOpen() { return false; }, show() { return false; } },
       ShorthandExpansionFeedback: { show() {}, clear() {} },
     },
-    document, window: {}, location: { hostname: "page.example" }, chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {},
+    document, window: { addEventListener() {} }, location: { hostname: "page.example" }, chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {},
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/content.js"), "utf8"), sandbox);
@@ -133,13 +135,15 @@ async function richContent() {
   const sandbox = {
     self: {
       ShorthandExpander: require("../src/expander.js"),
+      ShorthandFieldSafety: require("../src/field-safety.js"),
+      ShorthandSuggestions: require("../src/suggestions.js"),
       ShorthandStorage: { DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" }, async getAll() { return { shorthands: [{ trigger: "cool/", expansion: "That is really cool!" }], settings: {} }; } },
       ShorthandPicker: { isOpen() { return false; }, show() { return true; } },
       ShorthandTemplate: require("../src/template.js"),
       ShorthandTemplateForm: { isOpen() { return false; }, show() { return false; } },
       ShorthandExpansionFeedback: { show() {}, clear() {} },
     },
-    document, window: { getSelection() { return selection; } }, location: { hostname: "page.example" },
+    document, window: { getSelection() { return selection; }, addEventListener() {} }, location: { hostname: "page.example" },
     chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {}, InputEvent: class {}, Node: { TEXT_NODE: 3 },
   };
   vm.createContext(sandbox);

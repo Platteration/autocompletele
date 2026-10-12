@@ -10,6 +10,7 @@
   const excludedEl = $("excluded");
   const pickerTriggerEl = $("pickerTrigger");
   const animationModeEl = $("animationMode");
+  const suggestionsEnabledEl = $("suggestionsEnabled");
   const form = $("editor");
   const editId = $("editId");
   const triggerEl = $("trigger");
@@ -36,6 +37,8 @@
   let expansionSelection = { start: 0, end: 0 };
   let savedAnimationMode = storage.DEFAULT_SETTINGS.animationMode;
   let savingAnimationMode = false;
+  let savedSuggestionsEnabled = storage.DEFAULT_SETTINGS.suggestionsEnabled;
+  let savingSuggestionsEnabled = false;
 
   function renderPreview() {
     const preview = $("templatePreview");
@@ -226,6 +229,10 @@
       savedAnimationMode = data.settings.animationMode;
       animationModeEl.value = savedAnimationMode;
     }
+    if (!savingSuggestionsEnabled) {
+      savedSuggestionsEnabled = data.settings.suggestionsEnabled;
+      suggestionsEnabledEl.checked = savedSuggestionsEnabled;
+    }
     if (document.activeElement !== pickerTriggerEl) {
       pickerTriggerEl.value = typeof data.settings.pickerTrigger === "string"
         ? data.settings.pickerTrigger
@@ -354,6 +361,32 @@
   });
   enabledEl.addEventListener("change", () => storage.saveSettings({ enabled: enabledEl.checked }));
 
+  suggestionsEnabledEl.addEventListener("change", async () => {
+    if (savingSuggestionsEnabled) return;
+    const previous = savedSuggestionsEnabled;
+    const restoreFocus = document.activeElement === suggestionsEnabledEl;
+    savingSuggestionsEnabled = true;
+    suggestionsEnabledEl.disabled = true;
+    say($("suggestionsMsg"), "Saving suggestions…", false, true);
+    try {
+      const settings = await storage.saveSettings({ suggestionsEnabled: suggestionsEnabledEl.checked });
+      savedSuggestionsEnabled = settings.suggestionsEnabled;
+      suggestionsEnabledEl.checked = savedSuggestionsEnabled;
+      say($("suggestionsMsg"), `Suggestions saved: ${savedSuggestionsEnabled ? "on" : "off"}.`);
+    } catch (error) {
+      suggestionsEnabledEl.checked = previous;
+      say($("suggestionsMsg"), "Could not save suggestions: "
+        + (error && error.message ? error.message : error) + ". Previous preference kept.", true, true);
+    } finally {
+      savingSuggestionsEnabled = false;
+      suggestionsEnabledEl.disabled = !writable;
+      if (restoreFocus && document.hasFocus()
+          && (document.activeElement === document.body || document.activeElement === suggestionsEnabledEl)) {
+        suggestionsEnabledEl.focus({ preventScroll: true });
+      }
+    }
+  });
+
   animationModeEl.addEventListener("change", async () => {
     if (savingAnimationMode) return;
     const previous = savedAnimationMode;
@@ -455,7 +488,7 @@
     }
     say(ioMsg, "Library recovery needs attention: " + e.message + ". Export the pre-import backup before editing." + readError, true);
     form.querySelectorAll("input, textarea, select, button").forEach((el) => { el.disabled = true; });
-    [enabledEl, excludedEl, pickerTriggerEl, animationModeEl, $("importBtn"), $("importFile")].forEach((el) => { el.disabled = true; });
+    [enabledEl, excludedEl, pickerTriggerEl, animationModeEl, suggestionsEnabledEl, $("importBtn"), $("importFile")].forEach((el) => { el.disabled = true; });
     $("mergeBtn").disabled = $("replaceBtn").disabled = true;
   });
 })();
