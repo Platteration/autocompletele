@@ -42,12 +42,20 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.ok(files.includes("src/brand.css"));
     assert.ok(files.includes("src/animation-frames.js"));
     assert.ok(files.includes("src/expansion-feedback.js"));
+    assert.ok(files.includes("src/field-safety.js"));
+    assert.ok(files.includes("src/suggestions.js"));
     for (const content of manifest.content_scripts) {
       if (!content.js.includes("src/content.js")) continue;
       const feedbackIndex = content.js.indexOf("src/expansion-feedback.js");
       assert.ok(feedbackIndex >= 0 && feedbackIndex < content.js.indexOf("src/content.js"), "Feedback must load before the content script that uses it");
       const framesIndex = content.js.indexOf("src/animation-frames.js");
       assert.ok(framesIndex >= 0 && framesIndex < feedbackIndex, "Glyph frame generation must load before the feedback renderer");
+      for (const name of ["field-safety", "suggestions"]) {
+        const index = content.js.indexOf(`src/${name}.js`);
+        assert.ok(index >= 0 && index < content.js.indexOf("src/content.js"), `${name} must load before the content script`);
+      }
+      const expanderIndex = content.js.indexOf("src/expander.js");
+      assert.ok(expanderIndex >= 0 && expanderIndex < content.js.indexOf("src/suggestions.js"), "Suggestions depend on the expander boundary rules");
     }
     const options = fs.readFileSync(path.join(directory, manifest.options_page), "utf8");
     const optionScripts = [...options.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
@@ -55,6 +63,12 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.ok(feedbackIndex >= 0 && feedbackIndex < optionScripts.indexOf("content.js"), "The playground must load feedback before its content script");
     const framesIndex = optionScripts.indexOf("animation-frames.js");
     assert.ok(framesIndex >= 0 && framesIndex < feedbackIndex, "The playground must load glyph frame generation before feedback");
+    for (const name of ["field-safety", "suggestions"]) {
+      const index = optionScripts.indexOf(`${name}.js`);
+      assert.ok(index >= 0 && index < optionScripts.indexOf("content.js"), `The playground must load ${name} before content`);
+    }
+    const expanderIndex = optionScripts.indexOf("expander.js");
+    assert.ok(expanderIndex >= 0 && expanderIndex < optionScripts.indexOf("suggestions.js"));
 
     const archivePath = path.join(output, `actle-${browser}-${manifest.version}.zip`);
     const archive = fs.readFileSync(archivePath);

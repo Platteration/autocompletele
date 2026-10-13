@@ -165,7 +165,11 @@ dd { margin: 0; color: var(--muted); font-size: 12px; }
 .toggle-row input::before { content: ""; position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #fff; top: 3px; left: 3px; }
 .toggle-row input:checked { background: var(--button); border-color: var(--button); }
 .toggle-row input:checked::before { left: 19px; }
-.toggle-row input:hover { outline: 1px solid var(--accent); outline-offset: 2px; }
+.toggle-row input:hover:not(:disabled) { outline: 1px solid var(--accent); outline-offset: 2px; }
+.toggle-row input:disabled { cursor: wait; }
+@media (prefers-color-scheme: dark) and (forced-colors: none) {
+  .toggle-row input:not(:checked)::before { background: var(--card); }
+}
 .import-preview { margin-top: 20px; padding: 18px; border: 1px solid var(--accent); border-radius: 12px; background: var(--accent-soft); }
 .preview-heading { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
 .preview-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }

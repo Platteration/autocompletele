@@ -4,7 +4,7 @@
 
 **Privacy contact:** https://github.com/Platteration/autocompletele/issues
 
-**Effective date:** October 10, 2026
+**Effective date:** October 12, 2026
 
 This policy covers the actle browser extension. The contact page is
 public; do not include snippets, credentials, or other private information when
@@ -15,11 +15,18 @@ opening an issue.
 actle reads text in supported editable webpage fields to find your
 configured triggers and insert their expansions. This processing happens in your
 browser. The extension does not record a history of the text you type and does
-not expand triggers in password input fields.
+not expand triggers in password input fields. It also skips fields identified
+as usernames, sign-in codes, or payment details using field types, autocomplete
+attributes, labels, and related form metadata. A page that does not identify
+these fields may not be recognized; you can exclude its hostname.
+
+Optional suggestions match the prefix you type against your saved shortcuts
+locally. They do not learn from your typing history or request suggestions from
+a remote service. Suggestions are enabled by default and can be turned off.
 
 The extension saves the triggers and expansion text you create, their ordering,
 and your settings. Settings include whether expansion is enabled, the search
-overlay trigger, and the hostnames you exclude. When you open the toolbar popup,
+overlay trigger, suggestions, text animation, and the hostnames you exclude. When you open the toolbar popup,
 the extension reads the active tab's URL to identify its hostname for the site
 toggle. It does not keep a browsing-history log.
 
@@ -52,7 +59,9 @@ When you insert a snippet into a webpage, the site can access that text just as
 it can access text you enter yourself. That site's own data practices apply.
 
 Choosing a snippet's copy action writes its expansion to your clipboard. The
-extension does not read the clipboard. Export creates a JSON file containing
+extension does not read the clipboard in the background; when you paste into a
+supported field, it uses the pasted text supplied by the browser's paste event
+to verify that the edit came from you. Export creates a JSON file containing
 your snippets; the extension does not encrypt that file. Import reads the JSON
 file you select to preview and import its snippets. Exported files may contain
 information you saved in your snippets. Text you copy or insert may also contain
