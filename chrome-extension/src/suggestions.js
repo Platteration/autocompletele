@@ -224,9 +224,13 @@
 
   function handleKeyDown(ev) {
     if (!open || !ev.isTrusted) return false;
-    if (!anchorFocused()) { close(); return false; }
+    if (!anchorFocused() || !host.isConnected) { close(); return false; }
+    // A modifier pressed on its own changes no text, so the list stays. A chord
+    // closes it without hiding the rest of the word: only Escape does that, and
+    // the next typed character offers the longer prefix again.
+    if (["Shift", "Control", "Alt", "Meta"].includes(ev.key)) return false;
     if (ev.isComposing || ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) {
-      dismiss();
+      close();
       return false;
     }
     const stop = () => {

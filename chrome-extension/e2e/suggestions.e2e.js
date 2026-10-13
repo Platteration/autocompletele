@@ -46,5 +46,49 @@ test("saved shortcut suggestions and protected fields in Chrome", { timeout: 180
       for (const type of ["mousedown", "click"]) row.dispatchEvent(new MouseEvent(type, { bubbles: true, composed: true, button: 0 }));
     }),
   });
+
+  // Playwright can tap a modifier alone and hold Shift for one key; the Firefox
+  // adapter has no such chord, so these two cases run in Chrome only.
+  const visible = () => page.evaluate((selector) => !!document.querySelector(selector), HOST);
+  const opened = () => page.waitForFunction((selector) => !!document.querySelector(selector), HOST, { timeout: 3000 });
+  async function fresh() {
+    await app.worker.evaluate(() => self.ShorthandStorage.saveSettings({ suggestionsEnabled: true }));
+    await page.goto(FIXTURE);
+    await page.waitForTimeout(300);
+    await page.click("#inp");
+  }
+
+  await t.test("a modifier tapped alone keeps the list, and a shifted letter keeps suggesting the word", async () => {
+    await app.worker.evaluate(() => self.ShorthandStorage.saveShorthand({ trigger: "yoLo/", expansion: "Capital inside." }));
+    await fresh();
+    await page.keyboard.type("yo");
+    await opened();
+    await page.keyboard.press("Shift");
+    await page.waitForTimeout(100);
+    assert.equal(await visible(), true, "A modifier key on its own changes no text");
+    await page.keyboard.press("Shift+L");
+    await opened();
+    assert.equal(await page.inputValue("#inp"), "yoL");
+    assert.deepEqual((await inMenu(inspectMenu)).items.map((item) => item.trigger), ["yoLo/"]);
+    await page.keyboard.press("Escape");
+    await page.keyboard.type("o");
+    await page.waitForTimeout(100);
+    assert.equal(await visible(), false, "Escape still hides the rest of the word");
+  });
+
+  await t.test("a page removing the list's host stops keyboard acceptance until it is shown again", async () => {
+    await fresh();
+    await page.keyboard.type("co");
+    await opened();
+    await page.evaluate((selector) => document.querySelector(selector).remove(), HOST);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(150);
+    assert.equal(await page.inputValue("#inp"), "co", "An invisible list must not insert");
+    await page.keyboard.type("f");
+    await opened();
+    assert.equal(await page.inputValue("#inp"), "cof");
+    assert.deepEqual((await inMenu(inspectMenu)).items.map((item) => item.trigger), ["coffee/"]);
+  });
   assert.deepEqual(app.errors, []);
 });
