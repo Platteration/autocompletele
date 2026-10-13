@@ -2,8 +2,9 @@
 
 Expands shorthands such as `cool/` into full text in supported webpage text
 fields, textareas, and rich-text editors (contenteditable), as you type.
-Password fields are excluded. Browser-protected pages and some custom editors
-do not allow expansion.
+Password inputs and other credential or payment fields identified by page
+metadata are excluded. Browser-protected pages and some custom editors do not
+allow expansion.
 
 ![The actle logo autocompletes to autocompletele](store/images/actle-autocomplete.gif)
 
@@ -179,10 +180,54 @@ are previewed before applying: the manager shows how many triggers are new,
 updated, or unchanged, and **Merge safely** preserves local-only shorthands.
 A full replacement is still available when that is what you intend.
 
+## Suggested shortcuts
+
+Suggestions are on by default. Type at least two characters of a saved trigger
+at the start of a field or after a space or punctuation, such as `th` for
+`thanks/`. A combined emoji or a letter with combining marks counts as one
+character. Up to five matching partial triggers appear beside the field, with
+their saved text previews. Matching is case-sensitive; shorter completions
+appear first, with your library order breaking ties.
+
+Press ↑ or ↓ to select a result, then Enter to insert it, or click a result.
+Focus stays in the page's field while browsing suggestions. Enter before you
+select a result keeps its normal behavior; Tab always keeps its normal behavior.
+Escape hides suggestions for the current shortcut while you keep typing it.
+Fully typed triggers still expand immediately, including after suggestions are
+dismissed. Backspace immediately after accepting a suggestion restores the
+partial trigger you actually typed.
+
+Choosing a template opens the same fill-in form as its complete trigger.
+Cancel leaves the typed prefix in place. Suggestions use your selected text
+animation and respect global pause, site exclusions and protected fields.
+Turn off **Settings → Suggest saved shortcuts** to hide them while keeping
+complete-trigger expansion and the `;;` search overlay available. The setting
+saves immediately; a failed save restores the previous choice and shows an error.
+
+Suggestions only match snippets already in your library. The extension does
+not learn new snippets from typing history, save the text you are composing,
+or send it to a prediction service.
+
+![Saved-shortcut suggestions in the light theme](store/images/chrome-suggestions-1280x800.png)
+
+## Protected fields
+
+Expansion, suggestions and the `;;` picker skip password inputs and fields
+marked with credential or payment `autocomplete` values: `username`,
+`current-password`, `new-password`, `one-time-code` and `cc-*`. English username or
+password field names and labels are also recognized, along with email/login
+inputs in identifiable sign-in or registration forms. Ordinary contact and
+message fields remain eligible.
+
+These checks use field metadata, not entered text. A page that does not identify
+its fields may not be recognized. You can pause actle on that site from the
+toolbar or add its hostname under **Never expand on these sites**.
+
 ## For site authors
 
-Add `data-shorthand-ignore` to any element to stop the extension expanding
-inside it (the attribute also applies to all descendants).
+Add `data-shorthand-ignore` to any element to stop expansion, suggestions and
+the search picker inside it (the attribute also applies to all descendants).
+Use the appropriate `autocomplete` tokens on credential and payment controls.
 
 ## Files
 
@@ -194,6 +239,8 @@ inside it (the attribute also applies to all descendants).
 | `src/template-form.js` | Temporary fill-in form and live preview                       |
 | `src/storage.js`      | Chrome sync / Firefox local storage (one key per shorthand)    |
 | `src/content.js`      | Watches editable fields and performs the replacement           |
+| `src/suggestions.js`  | Saved-trigger prefix matching and the in-field suggestion list |
+| `src/field-safety.js` | Identifies credential and payment fields from page metadata    |
 | `src/animation-frames.js` | Grapheme-aware Expand and Casino animation frames             |
 | `src/expansion-feedback.js` | Temporary in-field animation, respecting reduced motion    |
 | `src/picker.js`       | The `;;` search overlay (closed shadow root, key capture)       |

@@ -40,7 +40,7 @@ test("Firefox animation preferences save visibly and retain local data", async (
       assert.equal(await (await app.element("#animationMode")).isEnabled(), true);
       assert.equal(await driver.executeScript("return document.activeElement.id"), "animationMode");
       assert.deepEqual(await driver.executeScript("return chrome.storage.local.get(null)"), {
-        ...original, settings: { ...legacySettings, animationMode: mode },
+        ...original, settings: { ...legacySettings, animationMode: mode, suggestionsEnabled: true },
       });
       await driver.navigate().refresh();
       await app.waitValue("#animationMode", mode);

@@ -14,6 +14,13 @@ For shortcut text, choose Expand to fill letters around the shorthand, Casino
 to settle scrambling letters, or Off for instant replacement. Continuing to type
 finishes the visual effect immediately; reduced-motion preferences suppress it.
 
+Chrome and Firefox also suggest saved shortcuts after you type at least two
+characters. Choose with ↑ or ↓, then Enter; Tab keeps its normal behavior.
+Suggestions are on by default and can be turned off in Settings. They come
+only from your saved library, without learning from typing history or sending
+field text to a service. Identified username, password, sign-in code and payment
+fields are skipped; detection depends on the page's field metadata.
+
 Three apps share the same idea and the same JSON file format, so a list
 built on one device can be exported and imported on the others:
 

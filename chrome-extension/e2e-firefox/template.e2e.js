@@ -220,9 +220,20 @@ test("Firefox: fill-in templates in the real add-on", { timeout: 120000 }, async
     assert.match(await text("#templateFieldCount"), /2/);
     await click("#saveBtn");
     const row = () => driver.findElement(By.xpath("//table[@id='list']//tr[td[@class='trigger' and text()='draft/']]"));
+    // Initial loading, storage notifications and completed imports can each
+    // refresh the table. Reacquire this exact row until WebDriver can click it.
+    const editRow = () => driver.wait(async () => {
+      try {
+        await (await (await row()).findElement(By.css("button.secondary"))).click();
+        return true;
+      } catch (error) {
+        if (error.name === "StaleElementReferenceError" || error.name === "NoSuchElementError") return false;
+        throw error;
+      }
+    }, 5000, "The saved draft/ row must be ready to edit");
     await driver.wait(async () => (await driver.findElements(By.css("#list tbody tr"))).length === 5, 5000);
     await driver.navigate().refresh();
-    await (await (await row()).findElement(By.css("button.secondary"))).click();
+    await editRow();
     assert.equal(await value("#expansion"), expansion);
     await click("#exportBtn");
     const exportedPath = path.join(app.downloads, "shorthands.json");
@@ -236,7 +247,7 @@ test("Firefox: fill-in templates in the real add-on", { timeout: 120000 }, async
     await driver.wait(until.elementIsVisible(await element("#importPreview")), 5000);
     await click("#mergeBtn");
     await driver.wait(async () => (await driver.findElements(By.css("#list tbody tr"))).length === 5, 5000);
-    await (await (await row()).findElement(By.css("button.secondary"))).click();
+    await editRow();
     assert.equal(await value("#expansion"), expansion);
   });
 });

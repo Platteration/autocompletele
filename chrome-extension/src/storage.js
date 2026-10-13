@@ -13,10 +13,14 @@
   const encoder = new TextEncoder();
   let writes = Promise.resolve();
   // pickerTrigger opens the search overlay; an empty string turns it off.
-  const DEFAULT_SETTINGS = { enabled: true, excludedHosts: [], pickerTrigger: ";;", animationMode: "expand" };
+  const DEFAULT_SETTINGS = { enabled: true, excludedHosts: [], pickerTrigger: ";;", animationMode: "expand", suggestionsEnabled: true };
 
   function animationMode(value) {
     return ["expand", "casino", "off"].includes(value) ? value : DEFAULT_SETTINGS.animationMode;
+  }
+
+  function suggestionsEnabled(value) {
+    return typeof value === "boolean" ? value : DEFAULT_SETTINGS.suggestionsEnabled;
   }
 
   function newId() {
@@ -38,6 +42,7 @@
     shorthands.sort((a, b) => a.order - b.order || a.trigger.localeCompare(b.trigger));
     const settings = Object.assign({}, DEFAULT_SETTINGS, items[SETTINGS_KEY] || {});
     settings.animationMode = animationMode(settings.animationMode);
+    settings.suggestionsEnabled = suggestionsEnabled(settings.suggestionsEnabled);
     return { shorthands, settings };
   }
 
@@ -220,6 +225,7 @@
       const { settings } = await getAll();
       const next = Object.assign({}, settings, patch);
       next.animationMode = animationMode(next.animationMode);
+      next.suggestionsEnabled = suggestionsEnabled(next.suggestionsEnabled);
       await dataStore.set({ [SETTINGS_KEY]: next });
       return next;
     });

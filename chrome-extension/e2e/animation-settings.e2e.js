@@ -38,7 +38,7 @@ test("animation preferences save visibly and retain the library", async (t) => {
       assert.equal(await page.locator("#animationMode").isEnabled(), true);
       assert.equal(await page.evaluate(() => document.activeElement.id), "animationMode");
       assert.deepEqual(await app.worker.evaluate(() => chrome.storage.sync.get(null)), {
-        ...original, settings: { ...legacySettings, animationMode: mode },
+        ...original, settings: { ...legacySettings, animationMode: mode, suggestionsEnabled: true },
       });
       await page.reload();
       await page.waitForFunction((mode) => document.getElementById("animationMode").value === mode, mode);

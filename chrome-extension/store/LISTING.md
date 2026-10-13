@@ -23,6 +23,10 @@ trigger such as `cool/`, give it an expansion, and type the trigger in a support
 webpage field to insert your saved text.
 
 - Build and search a personal library of text snippets.
+- See up to five saved shortcuts as you type at least two characters of a
+  trigger. Choose with ↑ or ↓, then Enter, or click a result. Suggestions are
+  on by default and can be turned off in settings. Enter before selection and
+  Tab keep their normal behavior.
 - Turn one script into a fill-in template with `[[name]]`, `[[company]]`, or
   other named blanks. Answer each blank, check the live preview, and confirm
   insertion. Fill blue blanks directly in the message or use a table with one
@@ -66,14 +70,20 @@ follow your Chrome profile when sync is enabled. In Firefox, they stay in your
 local Firefox profile and do not automatically sync. Move your library between
 browsers or devices using JSON export and import.
 
-Text matching happens in your browser. The extension has no publisher-operated
-data server, analytics, or advertising. Chrome's browser sync may transfer your
-snippets and settings through Google's sync service.
+Text matching happens in your browser. Suggestions match your saved library;
+they do not learn from typing history or send field text to a prediction
+service. The extension has no publisher-operated data server, analytics, or
+advertising. Chrome's browser sync may transfer your snippets and settings
+through Google's sync service.
 
 Expansion works in supported text inputs, textareas, and rich-text fields.
-Password fields are excluded. Browser-protected pages and some custom editors
-do not support extensions or text expansion. File-page access, where supported,
-depends on the browser's extension permissions.
+Password inputs are excluded. Expansion, suggestions and the search picker
+also skip username, sign-in code and payment fields identified by page metadata,
+including credential/payment `autocomplete` values. Detection depends on how
+the page describes its fields; unmarked fields may not be recognized. Ordinary
+contact and message fields remain eligible. Browser-protected pages and some
+custom editors do not support extensions or text expansion. File-page access,
+where supported, depends on the browser's extension permissions.
 
 ## Permission and privacy answers
 
@@ -86,7 +96,10 @@ and fill the script; they are not saved to extension storage or included in
 library exports.
 
 **Access to websites (`<all_urls>`):** Detects configured triggers and inserts
-snippets in editable fields on the websites the user chooses to use. The popup
+snippets in editable fields on the websites the user chooses to use. Partial
+triggers can show matching saved snippets locally, without retaining typing
+history or sending field text to a prediction service. Field metadata identifies
+credential and payment controls to skip. The popup
 uses the active tab's hostname for the per-site expansion toggle. Restricting
 browser-granted site access limits where expansion can run. An exclusion in the
 extension's own settings pauses expansion but does not revoke that permission.
@@ -113,7 +126,7 @@ the library. Clipboard copies and webpage insertion happen at the user's directi
 | --- | --- |
 | Publisher name | Platteration |
 | Privacy/support contact | https://github.com/Platteration/autocompletele/issues |
-| Public privacy-policy URL | https://raw.githubusercontent.com/Platteration/autocompletele/0d2eeef50822e7374347ccd3dce4850a180b16eb/chrome-extension/store/PRIVACY.md |
+| Public privacy-policy URL | https://raw.githubusercontent.com/Platteration/autocompletele/2a97039b7e1b1ad719c99997480023ba6ec08269/chrome-extension/store/PRIVACY.md |
 | Support website | https://github.com/Platteration/autocompletele/issues |
 | Firefox license selection | All rights reserved; this repository does not grant an open-source license |
 | Developer accounts | Registered Chrome Web Store and Firefox Add-ons publisher accounts must be connected before submission |
@@ -157,14 +170,17 @@ Prepared assets:
 | Chrome library manager, 1280×800 | [chrome-library-1280x800.png](images/chrome-library-1280x800.png) |
 | Chrome library manager, dark theme, 1280×800 | [chrome-library-dark-1280x800.png](images/chrome-library-dark-1280x800.png) |
 | Chrome picker on a local demo page, 1280×800 | [chrome-picker-1280x800.png](images/chrome-picker-1280x800.png) |
+| Chrome saved-shortcut suggestions, 1280×800 | [chrome-suggestions-1280x800.png](images/chrome-suggestions-1280x800.png) |
 | Chrome fill-in template form, 1280×800 | [chrome-template-1280x800.png](images/chrome-template-1280x800.png) |
 | Firefox library manager, 1280×800 | [firefox-library-1280x800.png](images/firefox-library-1280x800.png) |
 | Firefox library manager, dark theme, 1280×800 | [firefox-library-dark-1280x800.png](images/firefox-library-dark-1280x800.png) |
+| Firefox saved-shortcut suggestions, dark theme, 1280×800 | [firefox-suggestions-dark-1280x800.png](images/firefox-suggestions-dark-1280x800.png) |
 | Firefox fill-in template form, 1280×800 | [firefox-template-1280x800.png](images/firefox-template-1280x800.png) |
 | Small promotional image, 440×280 | [promo-440x280.png](images/promo-440x280.png) |
 
 The Chrome screenshots show the actual running extension in Chromium; the demo
-page uses fictional text. Refresh these assets with `npm run build` followed by
+page uses fictional text. Refresh the library, picker, template and promotional
+assets with `npm run build` followed by
 `node scripts/store-assets.js` from `chrome-extension/`, after installing the
 development dependencies and Chromium. The script renders the promotional tile
 using the actle icon and creates a fresh temporary profile for UI captures.
@@ -172,6 +188,11 @@ Library captures wait until the logo animation finishes. The demo page and
 promotional tile show a static `actle → autocompletele` completion motif.
 Refresh the Firefox images with `node scripts/store-assets-firefox.js` and the
 Firefox driver environment described in the extension README.
+
+The suggestion screenshots show the running extension after physically typing
+`co` and pressing Down once, with four fictional saved shortcuts. To recreate
+that state, use the suggestion checks in the reviewer walkthrough below and
+capture the page at 1280×800 in the appropriate browser theme.
 
 Capture the actual extension using synthetic snippets such as `thanks/` →
 `Thanks for your help!` and `followup/` → `I will follow up on {date}.` Avoid
@@ -205,6 +226,14 @@ Firefox stores the library locally.
    absent with reduced motion enabled. Some complex editors use a blue outline.
 3. Type `;;`, search for `thanks`, select the result with the arrow keys, and
    press Enter. Repeat and press Escape to dismiss the picker.
+   With **Suggest saved shortcuts** enabled, type `th` in an empty field and
+   check that `thanks/` appears. Press ↓ then Enter to insert it; immediately
+   press Backspace and confirm `th` returns. Repeat using ↑ or a mouse click.
+   Before choosing a result, Enter should keep its normal field behavior;
+   Tab should always move normally. Escape should hide the list as you keep
+   typing that shortcut, and finishing `thanks/` should still expand it.
+   Disable suggestions and confirm only the list disappears, with complete
+   triggers and `;;` still working. Re-enable suggestions afterward.
 4. Open the toolbar popup, search for `thanks`, and copy it. Paste into a test
    field to verify the result.
 5. Create `hello/` with expansion `Hi [[name]], thanks for asking about [[topic]].
@@ -225,6 +254,9 @@ Firefox stores the library locally.
    inserted literally. In the saved script, `[[ name ]]` shares the `name`
    answer, `[[Name]]` requests a separate answer, and `\[[name]]` inserts
    literal `[[name]]` without a prompt.
+   Type `he`, select the suggested `hello/`, and confirm the same form opens.
+   Cancel and confirm `he` remains; reopen, complete the form, and immediately
+   press Backspace after insertion to restore `he`.
 7. Use **Insert variable** to create `day/` with `{weekday}` and confirm it
    expands to the current local weekday in English without opening a form.
    Create `person/` with `[[name]] said {subject} brought {possessive} notes.`
@@ -238,13 +270,20 @@ Firefox stores the library locally.
    The repository includes a fixture: from `chrome-extension/`, run
    `python3 -m http.server 4173 --bind 127.0.0.1 --directory e2e/fixtures` and open
    `http://127.0.0.1:4173/page.html`. Verify expansion in all three editable types
-   and no expansion in the password or opted-out fields.
+   and no expansion or suggestions in the password or opted-out fields.
+   On a disposable test page, also check fields with `autocomplete="username"`,
+   `"one-time-code"` and `"cc-number"`, a text field named `username`, and an
+   email field in a sign-in form containing a password input. Type a full
+   trigger, a partial trigger and `;;`; none should expand or open a list.
+   Check that an ordinary contact/message field remains usable. Unmarked
+   credential fields are not guaranteed to be recognized.
 9. Pause expansion globally and confirm triggers stay unchanged. Re-enable it,
    disable expansion for the fixture hostname in the popup, and confirm the
    same result. Re-enable the site afterward.
 10. Export JSON. Confirm the template's saved expansion still contains its
    `[[name]]` blanks and variable tokens, with none of the answers or chosen
-   pronouns from the form. Import that file
+   pronouns from the form, and no suggestion preference or typing history.
+   Import that file
    and confirm the preview shows unchanged snippets. Add one synthetic snippet
    to a copy of the file, import with
    **Merge safely**, and check that the new entry appears while existing entries
