@@ -21,6 +21,12 @@ only from your saved library, without learning from typing history or sending
 field text to a service. Identified username, password, sign-in code and payment
 fields are skipped; detection depends on the page's field metadata.
 
+The browser extensions currently offer an unlimited free preview. **Plans &
+support** shows local daily usage and prepares a future free allowance of 100
+auto completes per browser profile per day, with a one-time Forever license for
+unlimited use. Purchases are not open yet; no price or payment provider is
+configured. See [plans and support](chrome-extension/README.md#plans-and-support).
+
 Three apps share the same idea and the same JSON file format, so a list
 built on one device can be exported and imported on the others:
 

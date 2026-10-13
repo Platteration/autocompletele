@@ -4,7 +4,7 @@
 
 **Privacy contact:** https://github.com/Platteration/autocompletele/issues
 
-**Effective date:** October 12, 2026
+**Effective date:** October 13, 2026
 
 This policy covers the actle browser extension. The contact page is
 public; do not include snippets, credentials, or other private information when
@@ -49,9 +49,38 @@ In Firefox, snippets and settings use extension `storage.local` and remain in
 that Firefox profile. The extension does not transmit them to a sync service.
 Moving your library between browsers or devices requires JSON export and import.
 
+In both browsers, daily autocomplete usage and license data use extension
+`storage.local`. They do not sync through Chrome or appear in snippet exports.
+Accounting saves the most recent local calendar day, its insertion count, and
+any unfinished insertion receipts. These random receipts are associated with
+browser tab/frame identifiers and, where available, a document identifier;
+completed receipts are removed. Old daily accounting is replaced when the next
+day's usage is saved. No field text, snippet content, template answers, webpage
+URLs, or payment details are included in these accounting messages or records.
+
+If you activate a Forever license, the extension saves its signed token in
+this browser profile and verifies it locally. A token contains a license
+identifier, issue time, product, and plan. Activation does not ask for your
+name or email address; the issuer uses an opaque license identifier.
+Removing the license from **Plans & support** deletes that saved token while
+preserving daily usage. There is no activation server or remote license check.
+
 The extension has no publisher-operated data server, analytics, or advertising.
 It does not send your snippets, typed field text, or browsing activity to the
 publisher. The publisher does not sell extension data or use it for advertising.
+
+## Purchases
+
+Purchasing is unavailable in this release, which is an unlimited free preview.
+No payment provider, checkout address, or production verification key is
+configured, and the extension does not collect payments.
+
+The prepared checkout action opens a configured HTTPS page in a new browser
+tab only when you choose it. It does not append your snippets, usage, or license
+token to that address. Before enabling purchases, the publisher must identify
+the payment provider and its privacy terms. Information you submit on that
+external checkout page will be governed by that provider's and the publisher's
+published purchase terms; the extension itself does not process payment details.
 
 ## Webpages, clipboard, and files
 

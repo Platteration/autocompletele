@@ -155,6 +155,17 @@ test("Firefox: template variables, synchronized views, and editor tools", { time
   }
 
   await t.test("cancel preserves the draft and each new session starts with no answers or pronoun choice", async () => {
+    await app.openOptions();
+    // Earlier subtests inserted seven completions. Firefox now stores that
+    // separate usage record locally alongside its unchanged snippet library.
+    const usageBefore = await driver.executeScript(async () => {
+      await self.ActlePremium.status();
+      const date = new Date();
+      return { version: 1, day: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
+        used: 7, pending: {}, licenseToken: "" };
+    });
+    const expectedStorage = { ...originalStorage, "actle-premium": usageBefore };
+    assert.deepEqual(await driver.executeScript("return chrome.storage.local.get(null)"), expectedStorage);
     await start("Before pron/");
     await formFill("#template-field-0", "Private answer");
     await formSelect("he/him");
@@ -166,7 +177,7 @@ test("Firefox: template variables, synchronized views, and editor tools", { time
     assert.deepEqual(await formRead((form) => [form.querySelector("#template-field-0").value, form.querySelector("#template-pronouns").value]), ["", ""]);
     await keys(Key.ESCAPE);
     await app.openOptions();
-    assert.deepEqual(await driver.executeScript("return chrome.storage.local.get(null)"), originalStorage);
+    assert.deepEqual(await driver.executeScript("return chrome.storage.local.get(null)"), expectedStorage);
     assert.deepEqual(await driver.executeScript("return chrome.storage.sync.get(null)"), {});
   });
 

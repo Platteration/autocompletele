@@ -24,13 +24,14 @@ const DEFAULT_SHORTHANDS = [
 
 /**
  * Start a browser with the extension loaded.
- * @param {{shorthands?: Array, settings?: object}} [options]
+ * @param {{shorthands?: Array, settings?: object, extensionPath?: string}} [options]
  */
 async function launch(options = {}) {
+  const extensionDir = options.extensionPath ? path.resolve(options.extensionPath) : EXTENSION_DIR;
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "shorthand-e2e-"));
   const args = [
-    `--disable-extensions-except=${EXTENSION_DIR}`,
-    `--load-extension=${EXTENSION_DIR}`,
+    `--disable-extensions-except=${extensionDir}`,
+    `--load-extension=${extensionDir}`,
     "--headless=new",
     "--no-sandbox",
   ];

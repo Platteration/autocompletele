@@ -9,6 +9,7 @@
   const templateForm = self.ShorthandTemplateForm;
   const fieldSafety = self.ShorthandFieldSafety;
   const suggestions = self.ShorthandSuggestions;
+  const premium = self.ActlePremium;
 
   let shorthands = [];
   let enabled = true;
@@ -232,6 +233,50 @@
     return true;
   }
 
+  function insertionReady(target, needsFocus = true) {
+    if (!enabled || hostExcluded || !targetUnchanged(target)) return false;
+    if (!needsFocus) return true; // The fill-in form owns focus until confirmation.
+    if (!isFocused(target.el)) return false;
+    if (!target.node) return true;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+    const range = sel.getRangeAt(0);
+    return range.startContainer === target.node && range.startOffset === target.end;
+  }
+
+  // Reserve usage only for an actual insertion. Undo uses the low-level edit
+  // helpers directly. Recheck the target after any asynchronous quota decision.
+  function insertExpansion(target, result, fromForm = false, mode = animationMode) {
+    const { text, cursorOffset } = result;
+    return premium.execute(() => {
+      if (!insertionReady(target, !fromForm)) return false;
+      if (fromForm && !restoreTarget(target)) return false;
+      const feedback = target.node
+        ? nodeFeedback(target.el, target.node, target.start, text, target.trigger, mode)
+        : { mode, start: target.start, text, trigger: target.trigger };
+      if (target.node) {
+        replaceInNode(window.getSelection(), target.node, target.start, target.end, text, text.length - cursorOffset);
+        if (target.el.textContent === target.rootText && text !== target.trigger) return false;
+        lastExpansion = { el: target.el, text, cursorOffset, trigger: target.trigger };
+      } else {
+        replaceInField(target.el, target.start, target.end, text, cursorOffset);
+        const expected = target.value.slice(0, target.start) + text + target.value.slice(target.end);
+        if (target.el.value !== expected) return false;
+        lastExpansion = { el: target.el, start: target.start, text, cursorOffset, trigger: target.trigger };
+      }
+      showExpansionFeedback(target.el, feedback);
+      return true;
+    }, () => {
+      if (!insertionReady(target, !fromForm)) return false;
+      if (!self.ActlePremiumConfig.enforceDailyLimit) return true;
+      // A quota request yields to other tabs. Read pause/site settings again,
+      // then validate the original target once more immediately before editing.
+      return storage.getAll().then(({ settings }) => settings.enabled !== false
+        && !(settings.excludedHosts || []).includes(location.hostname)
+        && insertionReady(target, !fromForm));
+    }, { notice: !fromForm });
+  }
+
   function fillTemplate(shorthand, target) {
     if (!template.requiresInput(shorthand.expansion)) return false;
     if (templateTarget || templateForm.isOpen()) return true;
@@ -252,23 +297,12 @@
         if (settings.enabled === false || (settings.excludedHosts || []).includes(location.hostname)) {
           return "Shorthand expansion is paused. Cancel this form and enable expansion before trying again.";
         }
-        if (!restoreTarget(target)) {
+        if (!insertionReady(target, false)) {
           return "The original field changed while this form was open. Cancel and try the shorthand again.";
         }
-        const { text, cursorOffset } = result;
-        const feedback = target.node
-          ? nodeFeedback(target.el, target.node, target.start, text, target.trigger, settings.animationMode)
-          : { mode: settings.animationMode, start: target.start, text, trigger: target.trigger };
-        if (target.node) {
-          replaceInNode(window.getSelection(), target.node, target.start, target.end,
-            text, text.length - cursorOffset);
-          lastExpansion = { el: target.el, text, cursorOffset, trigger: target.trigger };
-        } else {
-          replaceInField(target.el, target.start, target.end, text, cursorOffset);
-          lastExpansion = { el: target.el, start: target.start, text, cursorOffset, trigger: target.trigger };
-        }
+        if (!await insertExpansion(target, result, true, settings.animationMode)) return premium.lastError()
+          || "The original field changed while this form was open. Cancel and try the shorthand again.";
         templateTarget = null;
-        showExpansionFeedback(target.el, feedback);
         return true;
       },
       onCancel() {
@@ -307,10 +341,7 @@
 
     if (fillTemplate(match.shorthand, fieldTarget(el, match.start, caret, match.shorthand.trigger))) return true;
 
-    const { text, cursorOffset } = template.render(match.shorthand.expansion);
-    replaceInField(el, match.start, caret, text, cursorOffset);
-    lastExpansion = { el, start: match.start, text, cursorOffset, trigger: match.shorthand.trigger };
-    showExpansionFeedback(el, { mode: animationMode, start: match.start, text, trigger: match.shorthand.trigger });
+    insertExpansion(fieldTarget(el, match.start, caret, match.shorthand.trigger), template.render(match.shorthand.expansion));
     return true;
   }
 
@@ -379,11 +410,7 @@
     if (fillTemplate(match.shorthand,
       nodeTarget(root, node, match.start, range.startOffset, match.shorthand.trigger))) return true;
 
-    const { text, cursorOffset } = template.render(match.shorthand.expansion);
-    const feedback = nodeFeedback(root, node, match.start, text, match.shorthand.trigger);
-    replaceInNode(sel, node, match.start, range.startOffset, text, text.length - cursorOffset);
-    lastExpansion = { el: root, text, cursorOffset, trigger: match.shorthand.trigger };
-    showExpansionFeedback(root, feedback);
+    insertExpansion(nodeTarget(root, node, match.start, range.startOffset, match.shorthand.trigger), template.render(match.shorthand.expansion));
     return true;
   }
 
@@ -434,10 +461,7 @@
         // A page may change the field or move focus while the panel is open.
         if (!isFocused(el) || isIgnored(el) || !isTextInput(el) || el.value !== target.value || el.selectionStart !== caret || el.selectionEnd !== caret || el.value.slice(start, caret) !== target.trigger) return;
         if (fillTemplate(sh, target)) return;
-        const { text, cursorOffset } = template.render(sh.expansion);
-        replaceInField(el, start, caret, text, cursorOffset);
-        lastExpansion = { el, start, text, cursorOffset, trigger: target.trigger };
-        showExpansionFeedback(el, { mode: animationMode, start, text, trigger: target.trigger });
+        insertExpansion(target, template.render(sh.expansion));
       },
     });
   }
@@ -466,11 +490,7 @@
         const liveRange = liveSel.getRangeAt(0);
         if (liveRange.startContainer !== node || liveRange.startOffset !== end) return;
         if (fillTemplate(sh, target)) return;
-        const { text, cursorOffset } = template.render(sh.expansion);
-        const feedback = nodeFeedback(root, node, start, text, target.trigger);
-        replaceInNode(liveSel, node, start, end, text, text.length - cursorOffset);
-        lastExpansion = { el: root, text, cursorOffset, trigger: target.trigger };
-        showExpansionFeedback(root, feedback);
+        insertExpansion(target, template.render(sh.expansion));
       },
     });
   }
@@ -498,18 +518,7 @@
     if (!activeSuggestion(target) || !shorthands.some((saved) => saved.id === sh.id
         && saved.trigger === sh.trigger && saved.expansion === sh.expansion)) return;
     if (fillTemplate(sh, target)) return;
-    const { text, cursorOffset } = template.render(sh.expansion);
-    const feedback = target.node
-      ? nodeFeedback(target.el, target.node, target.start, text, target.trigger)
-      : { mode: animationMode, start: target.start, text, trigger: target.trigger };
-    if (target.node) {
-      replaceInNode(window.getSelection(), target.node, target.start, target.end, text, text.length - cursorOffset);
-      lastExpansion = { el: target.el, text, cursorOffset, trigger: target.trigger };
-    } else {
-      replaceInField(target.el, target.start, target.end, text, cursorOffset);
-      lastExpansion = { el: target.el, start: target.start, text, cursorOffset, trigger: target.trigger };
-    }
-    showExpansionFeedback(target.el, feedback);
+    insertExpansion(target, template.render(sh.expansion));
   }
 
   function offerSuggestions(el) {
@@ -645,7 +654,7 @@
   for (const event of ["resize", "blur", "pagehide"]) window.addEventListener(event, closeSuggestions);
 
   chrome.storage.onChanged.addListener((_changes, area) => {
-    if (area === storage.AREA) reload();
+    if (area === storage.AREA && Object.keys(_changes).some((key) => key !== "actle-premium")) reload();
   });
 
   reload();
