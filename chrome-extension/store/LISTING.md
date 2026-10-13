@@ -144,7 +144,7 @@ declarations for the final release; see [PREMIUM.md](PREMIUM.md).
 | --- | --- |
 | Publisher name | Platteration |
 | Privacy/support contact | https://github.com/Platteration/autocompletele/issues |
-| Public privacy-policy URL | https://raw.githubusercontent.com/Platteration/autocompletele/2a97039b7e1b1ad719c99997480023ba6ec08269/chrome-extension/store/PRIVACY.md |
+| Public privacy-policy URL | https://raw.githubusercontent.com/Platteration/autocompletele/9a3bb1a98a6e0d7cca94dd3d94a9f5fc8aa40b2e/chrome-extension/store/PRIVACY.md |
 | Support website | https://github.com/Platteration/autocompletele/issues |
 | Firefox license selection | All rights reserved; this repository does not grant an open-source license |
 | Developer accounts | Registered Chrome Web Store and Firefox Add-ons publisher accounts must be connected before submission |
