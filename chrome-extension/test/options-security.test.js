@@ -40,7 +40,7 @@ test("failed writer recovery still exports the readable library and disables all
   page.get("exportBtn").handlers.click();
   const exported = JSON.parse(await page.downloads[0].text());
   assert.deepEqual(exported.shorthands, library, "recovery failure must not export an empty library");
-  for (const id of ["enabled", "excluded", "pickerTrigger", "animationMode", "trigger", "expansion", "fieldName", "addFieldBtn", "variableToken", "addVariableBtn", "saveBtn", "importBtn", "importFile", "mergeBtn", "replaceBtn"]) {
+  for (const id of ["enabled", "excluded", "pickerTrigger", "animationMode", "suggestionsEnabled", "trigger", "expansion", "fieldName", "addFieldBtn", "variableToken", "addVariableBtn", "saveBtn", "importBtn", "importFile", "mergeBtn", "replaceBtn"]) {
     assert.equal(page.get(id).disabled, true, id + " must not accept edits after failed recovery");
   }
   const libraryButtons = page.created.filter((node) => node.tag === "button");
