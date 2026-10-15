@@ -32,77 +32,6 @@
   let shorthands = [];
   let pendingImport = null;
   let writable = true;
-  let skippedImportItems = 0;
-  let importing = false;
-  let expansionSelection = { start: 0, end: 0 };
-  let savedAnimationMode = storage.DEFAULT_SETTINGS.animationMode;
-  let savingAnimationMode = false;
-  let savedSuggestionsEnabled = storage.DEFAULT_SETTINGS.suggestionsEnabled;
-  let savingSuggestionsEnabled = false;
-
-  function renderPreview() {
-    const preview = $("templatePreview");
-    preview.replaceChildren();
-    const text = expansionEl.value;
-    const fields = template.fields(text);
-    const pronouns = template.variables(text).some((name) => name !== "weekday");
-    const blankCount = fields.length
-      ? `${fields.length} fill-in blank${fields.length === 1 ? "" : "s"}` : "No fill-in blanks";
-    $("templateFieldCount").textContent = pronouns
-      ? (fields.length ? `${blankCount} · pronouns` : "Choose pronouns") : blankCount;
-    renderRepeatFields(fields);
-    preview.classList.toggle("is-empty", !text);
-    if (!text) {
-      preview.textContent = "Your script will appear here, with each fill-in blank highlighted.";
-      return;
-    }
-    for (const part of template.parts(text)) {
-      if (part.type === "text") preview.appendChild(document.createTextNode(part.value));
-      else if (part.type === "field") {
-        const field = document.createElement("span");
-        field.className = "field-chip";
-        field.textContent = part.label;
-        field.setAttribute("aria-label", `Fill-in blank: ${part.label}`);
-        preview.appendChild(field);
-      } else {
-        const variable = document.createElement("span");
-        variable.className = "field-chip variable-chip";
-        variable.textContent = part.name === "weekday"
-          ? template.render(part.raw, {}, new Date()).text : part.raw;
-        variable.title = `${part.label}: ${part.raw}`;
-        variable.setAttribute("aria-label", `${part.label}: ${variable.textContent}`);
-        preview.appendChild(variable);
-      }
-    }
-  }
-
-  function renderRepeatFields(fields) {
-    const buttons = $("repeatFieldButtons");
-    buttons.replaceChildren();
-    $("repeatFields").hidden = fields.length === 0;
-    for (const field of fields) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "secondary small";
-      button.textContent = `[[${field.name}]]`;
-      button.setAttribute("aria-label", `Reuse blank: ${field.name}`);
-      button.title = "Insert again with the same answer";
-      button.addEventListener("click", () => {
-        insertAtSelection(`[[${field.name}]]`);
-        say($("fieldBuilderMsg"), `Reused “${field.name}”. Every occurrence shares one answer.`);
-      });
-      buttons.appendChild(button);
-    }
-  }
-
-  function insertAtSelection(text) {
-    const start = Math.min(expansionSelection.start, expansionEl.value.length);
-    const end = Math.min(expansionSelection.end, expansionEl.value.length);
-    expansionEl.setRangeText(text, start, end, "end");
-    rememberExpansionSelection();
-    expansionEl.focus();
-    renderPreview();
-  }
 
   function matchesSearch(sh, query) {
     if (!query) return true;
@@ -273,8 +202,15 @@
   }
 
   async function applyImport(mode) {
-    if (!pendingImport || importing) return;
-    importing = true;
+    if (!pendingImport) return;
+    let outcome;
+    try {
+      // Merge against the current persisted library inside the writer lock,
+      // not a stale preview from another options tab.
+      outcome = await storage.replaceAll(pendingImport, { merge: mode === "merge" });
+    } catch (e) {
+      return say(ioMsg, "Import failed: " + (e && e.message ? e.message : e), true);
+    }
     const importedCount = pendingImport.length;
     const skipped = skippedImportItems;
     let outcome;
@@ -291,18 +227,11 @@
       importControls.forEach((button) => { button.disabled = false; });
     }
     clearImportPreview();
-    if (outcome.skipped.length) {
-      say(ioMsg,
-        `Skipped ${outcome.skipped.length} shorthand(s) that exceed Chrome sync limits. Entries that fit were merged; existing snippets were retained. ` +
-        outcome.skipped.map((s) => s.trigger + ": " + s.reason).join("; ") +
-        (skipped ? ` ${skipped} invalid or duplicate item(s) were also skipped.` : ""), true, true);
-    } else if (skipped) {
-      say(ioMsg, `Imported ${importedCount} shorthand(s); skipped ${skipped} invalid or duplicate item(s).`, true, true);
-    } else {
-      say(ioMsg, mode === "merge"
-        ? `Merged ${importedCount} shorthand(s) into your library.`
-        : `Replaced your library with ${importedCount} shorthand(s).`);
-    }
+    say(ioMsg, outcome.skipped.length
+      ? `Skipped ${outcome.skipped.length} shorthand(s) that exceed Chrome sync limits. Entries that fit were merged; existing snippets were retained. ${outcome.skipped.map((s) => s.trigger + ": " + s.reason).join("; ")}`
+      : mode === "merge"
+      ? `Merged ${importedCount} shorthand(s) into your library.`
+      : `Replaced your library with ${importedCount} shorthand(s).`, outcome.skipped.length > 0);
     await load();
   }
 
@@ -473,10 +402,7 @@
     showImportPreview(list, rawList.length - list.length);
   });
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === storage.AREA && Object.keys(changes).some((key) => key !== "actle-premium")) load();
-  });
-  renderPreview();
+  chrome.storage.onChanged.addListener((_c, area) => { if (area === "sync") load(); });
   storage.recoverPendingImport().then(async (recovery) => {
     await load();
     if (recovery.conflicts.length) say(ioMsg, "Import recovery preserved newer edits to " + recovery.conflicts.length + " snippet(s). Export the pre-import backup to review originals.", true);
@@ -489,8 +415,8 @@
       readError = " Current library could not be read: " + failure.message + ".";
     }
     say(ioMsg, "Library recovery needs attention: " + e.message + ". Export the pre-import backup before editing." + readError, true);
-    form.querySelectorAll("input, textarea, select, button").forEach((el) => { el.disabled = true; });
-    [enabledEl, excludedEl, pickerTriggerEl, animationModeEl, suggestionsEnabledEl, $("importBtn"), $("importFile")].forEach((el) => { el.disabled = true; });
+    form.querySelectorAll("input, textarea, button").forEach((el) => { el.disabled = true; });
+    [enabledEl, excludedEl, pickerTriggerEl, $("importBtn"), $("importFile")].forEach((el) => { el.disabled = true; });
     $("mergeBtn").disabled = $("replaceBtn").disabled = true;
   });
 })();

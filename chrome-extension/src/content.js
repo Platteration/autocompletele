@@ -22,7 +22,6 @@
   let suggestionFrame = 0;
   let suppress = false; // true while we are inserting text ourselves
   let lastExpansion = null; // details of the most recent expansion, for undo
-  let templateTarget = null; // original insertion point while a fill-in form has focus
   let inputGrant = null;
   const trustedEdits = new WeakMap();
 
@@ -174,6 +173,85 @@
   function onTrustedPaste(ev) {
     if (!ev.isTrusted) return;
     noteTyped(ev.target, (ev.clipboardData && ev.clipboardData.getData("text/plain")) || "");
+  }
+
+  function isFocused(el) {
+    const tree = el && el.getRootNode ? el.getRootNode() : document;
+    const active = tree.activeElement;
+    return !!el && (active === el || (isEditable(el) && el.contains(active)));
+  }
+
+  function editableTarget(el) {
+    if (isEditable(el)) while (isEditable(el.parentElement)) el = el.parentElement;
+    return el;
+  }
+
+  function editSnapshot(el) {
+    if (isTextInput(el)) return { value: el.value, start: el.selectionStart, end: el.selectionEnd, node: null };
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    if (node !== range.endContainer || !el.contains(node)) return null;
+    if (node.nodeType !== Node.TEXT_NODE) {
+      return el.textContent === "" && sel.isCollapsed ? { value: "", start: 0, end: 0, node: null, rootValue: "", offset: 0 } : null;
+    }
+    const before = document.createRange();
+    before.selectNodeContents(el);
+    before.setEnd(node, range.startOffset);
+    return { value: node.textContent, start: range.startOffset, end: range.endOffset,
+      node, rootValue: el.textContent, offset: before.toString().length - range.startOffset };
+  }
+
+  function grantUserInput(ev) {
+    inputGrant = null;
+    if (!ev.isTrusted || ev.isComposing) return;
+    const el = editableTarget(ev.target);
+    if ((!isTextInput(el) && !isEditable(el)) || !isFocused(el) || isIgnored(el)) return;
+    let data, inputType;
+    if (ev.type === "paste" || ev.type === "drop") {
+      const transfer = ev.clipboardData || ev.dataTransfer;
+      if (!transfer) return;
+      data = transfer.getData("text/plain");
+      if (!data) return;
+      if (isTextInput(el)) data = data.replace(/\r\n?/g, "\n");
+      inputType = ev.type === "paste" ? "insertFromPaste" : "insertFromDrop";
+    } else {
+      if (!ev.key || Array.from(ev.key).length !== 1) return;
+      data = ev.key;
+      inputType = "insertText";
+    }
+    const before = editSnapshot(el);
+    if (!before || before.start == null || before.end == null) return;
+    inputGrant = { el, before, data, inputType, until: Date.now() + 1000 };
+  }
+
+  function consumeEdit(grant, ev, el) {
+    if (!grant || grant.el !== el || grant.until < Date.now() || ev.isComposing || ev.inputType !== grant.inputType) return false;
+    // Browser-trusted execCommand input must not substitute another edit for a physical key,
+    // paste or drop. Text, original selection and the resulting value must all agree.
+    if (grant.inputType === "insertText" && ev.data !== grant.data) return false;
+    const before = grant.before;
+    const expected = before.value.slice(0, before.start) + grant.data + before.value.slice(before.end);
+    const live = editSnapshot(el);
+    if (!live || live.value !== expected || live.start !== before.start + grant.data.length || live.end !== live.start) return false;
+    if (isEditable(el)) {
+      if (before.node && live.node !== before.node) return false;
+      const rootExpected = before.rootValue.slice(0, before.offset + before.start) + grant.data + before.rootValue.slice(before.offset + before.end);
+      if (el.textContent !== rootExpected) return false;
+    }
+    const previous = trustedEdits.get(el);
+    const continuing = previous && previous.value === before.value && previous.node === before.node &&
+      before.start >= previous.start && before.end <= previous.end;
+    const start = continuing ? previous.start : before.start;
+    const end = continuing ? previous.end + grant.data.length - (before.end - before.start) : live.start;
+    trustedEdits.set(el, { value: live.value, node: live.node, start, end });
+    return true;
+  }
+
+  function typedTrigger(el, start, end, node = null) {
+    const edit = trustedEdits.get(el);
+    return !!edit && edit.node === node && start >= edit.start && end <= edit.end;
   }
 
   async function reload() {
@@ -382,7 +460,7 @@
     if (caret == null || caret !== el.selectionEnd) return false;
     const before = el.value.slice(0, caret);
     const match = findMatch(before, shorthands);
-    if (!match || !personTyped(el, match.shorthand.trigger)) return false;
+    if (!match || !typedTrigger(el, match.start, caret)) return false;
 
     if (fillTemplate(match.shorthand, fieldTarget(el, match.start, caret, match.shorthand.trigger))) return true;
 
@@ -450,7 +528,7 @@
 
     const before = node.textContent.slice(0, range.startOffset);
     const match = findMatch(before, shorthands);
-    if (!match || !personTyped(root, match.shorthand.trigger)) return false;
+    if (!match || !typedTrigger(root, match.start, range.startOffset, node)) return false;
 
     if (fillTemplate(match.shorthand,
       nodeTarget(root, node, match.start, range.startOffset, match.shorthand.trigger))) return true;
@@ -495,7 +573,7 @@
     if (!el.value.slice(0, caret).endsWith(pickerTrigger) || !personTyped(el, pickerTrigger)) return false;
     const start = caret - pickerTrigger.length;
     if (!typedTrigger(el, start, caret)) return false;
-    const target = fieldTarget(el, start, caret, pickerTrigger);
+    const originalValue = el.value;
 
     // The trigger text stays in the field while the picker is open; choosing a
     // shorthand replaces it in one step, and cancelling leaves what was typed.
@@ -504,9 +582,10 @@
       anchorEl: el,
       onPick(sh) {
         // A page may change the field or move focus while the panel is open.
-        if (!isFocused(el) || isIgnored(el) || !isTextInput(el) || el.value !== target.value || el.selectionStart !== caret || el.selectionEnd !== caret || el.value.slice(start, caret) !== target.trigger) return;
-        if (fillTemplate(sh, target)) return;
-        insertExpansion(target, template.render(sh.expansion));
+        if (!isFocused(el) || isIgnored(el) || !isTextInput(el) || el.value !== originalValue || el.selectionStart !== caret || el.selectionEnd !== caret || el.value.slice(start, caret) !== pickerTrigger) return;
+        const { text, cursorOffset } = render(sh.expansion);
+        replaceInField(el, start, caret, text, cursorOffset);
+        lastExpansion = { el, start, text, cursorOffset, trigger: pickerTrigger };
       },
     });
   }
@@ -523,19 +602,20 @@
     if (!node.textContent.slice(0, end).endsWith(pickerTrigger) || !personTyped(root, pickerTrigger)) return false;
     const start = end - pickerTrigger.length;
     if (!typedTrigger(root, start, end, node)) return false;
-    const target = nodeTarget(root, node, start, end, pickerTrigger);
+    const originalValue = root.textContent;
 
     return self.ShorthandPicker.show({
       shorthands,
       anchorEl: root,
       onPick(sh) {
-        if (!isFocused(root) || isIgnored(root) || isIgnored(node.parentElement) || root.textContent !== target.rootText || !node.isConnected || !root.contains(node) || node.textContent.slice(start, end) !== target.trigger) return;
+        if (!isFocused(root) || isIgnored(root) || root.textContent !== originalValue || !node.isConnected || !root.contains(node) || node.textContent.slice(start, end) !== pickerTrigger) return;
+        const { text, cursorOffset } = render(sh.expansion);
         const liveSel = window.getSelection();
         if (!liveSel || !liveSel.isCollapsed || !liveSel.rangeCount) return;
         const liveRange = liveSel.getRangeAt(0);
         if (liveRange.startContainer !== node || liveRange.startOffset !== end) return;
-        if (fillTemplate(sh, target)) return;
-        insertExpansion(target, template.render(sh.expansion));
+        replaceInNode(liveSel, node, start, end, text, text.length - cursorOffset);
+        lastExpansion = { el: root, text, cursorOffset, trigger: pickerTrigger };
       },
     });
   }
@@ -612,11 +692,13 @@
     // edit. Require, and consume, a recent exact trusted typing/paste/drop edit.
     const grant = inputGrant;
     inputGrant = null;
-    closeSuggestions();
-    // While a fill-in form has focus, its own typing is not page editing.
-    if (templateTarget || templateForm.isOpen()) return;
     lastExpansion = null;
-    if (!ev.isTrusted) return; // dispatched by a page script, not typed
+    const el = editableTarget(ev.target);
+    if (!isFocused(el) || isIgnored(el) || !consumeEdit(grant, ev, el)) {
+      if (el) trustedEdits.delete(el);
+      return;
+    }
+    if (self.ShorthandPicker && self.ShorthandPicker.isOpen()) return;
     if (!enabled || hostExcluded || shorthands.length === 0) return;
     if (ev.isComposing) return; // IME composition in progress
     const t = ev.inputType;
@@ -630,11 +712,10 @@
   }
 
   function onKeyDown(ev) {
-    if (!ev.isTrusted) return;
+    if (!ev.isTrusted || !isFocused(ev.target)) return;
     // The picker registers its own capture handler later, so this one runs
     // first; while it is open every key belongs to it.
-    if (templateTarget || templateForm.isOpen()
-        || (self.ShorthandPicker && self.ShorthandPicker.isOpen())) return;
+    if (self.ShorthandPicker && self.ShorthandPicker.isOpen()) return;
     const altGraph = ev.getModifierState && ev.getModifierState("AltGraph");
     inputGrant = null;
     if ((!ev.ctrlKey && !ev.metaKey && !ev.altKey || altGraph) && !ev.isComposing && Array.from(ev.key).length === 1) grantUserInput(ev);
@@ -660,28 +741,8 @@
   document.addEventListener("keydown", onKeyDown, true);
   for (const event of ["paste", "drop"]) document.addEventListener(event, grantUserInput, true);
   // Composition changes and rich/automatic edits cannot be tied to an exact physical insertion.
-  for (const event of ["compositionstart", "compositionupdate", "compositionend"]) document.addEventListener(event, () => {
-    inputGrant = null;
-    closeSuggestions();
-  }, true);
-  document.addEventListener("mousedown", (ev) => {
-    lastExpansion = null;
-    if (!suggestions.isHost(ev.target)) {
-      dismissedSuggestion = null;
-      closeSuggestions();
-    }
-  }, true);
-  document.addEventListener("focusout", () => {
-    dismissedSuggestion = null;
-    closeSuggestions();
-  }, true);
-  document.addEventListener("selectionchange", () => {
-    if (suggestionTarget && !activeSuggestion(suggestionTarget)) closeSuggestions();
-  });
-  document.addEventListener("scroll", (ev) => {
-    if (!suggestions.isHost(ev.target)) closeSuggestions();
-  }, true);
-  for (const event of ["resize", "blur", "pagehide"]) window.addEventListener(event, closeSuggestions);
+  for (const event of ["compositionstart", "compositionupdate", "compositionend"]) document.addEventListener(event, () => { inputGrant = null; }, true);
+  document.addEventListener("mousedown", () => { lastExpansion = null; }, true);
 
   chrome.storage.onChanged.addListener((_changes, area) => {
     if (area === storage.AREA && Object.keys(_changes).some((key) => key !== "actle-premium")) reload();

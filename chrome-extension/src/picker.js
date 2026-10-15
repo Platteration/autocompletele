@@ -251,7 +251,8 @@
   }
 
   function onKeyDown(ev) {
-    if (!open || !ev.isTrusted) return; // a page script's key press does not choose for the person
+    if (!open || !ev.isTrusted) return;
+    if (!anchorFocused()) { close(); return; }
     const stop = () => {
       ev.preventDefault();
       ev.stopPropagation();
