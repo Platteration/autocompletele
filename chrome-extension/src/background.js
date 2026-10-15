@@ -1,9 +1,10 @@
 // Chrome service worker / Firefox background page: seed examples on first
 // install and keep the toolbar badge in sync with the enabled state.
-// Firefox loads storage.js first through the generated background.scripts list.
-if (typeof importScripts === "function") importScripts("storage.js");
+// Firefox loads these dependencies through the generated background.scripts list.
+if (typeof importScripts === "function") importScripts("storage.js", "premium-config.js", "license.js", "premium-service.js");
 
 const storage = self.ShorthandStorage;
+self.ActlePremiumService.create({ chrome, config: self.ActlePremiumConfig, license: self.ActleLicense }).install();
 
 const EXAMPLES = [
   { trigger: "cool/", expansion: "That is really cool, thanks for sharing!" },

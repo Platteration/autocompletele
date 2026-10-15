@@ -473,7 +473,9 @@
     showImportPreview(list, rawList.length - list.length);
   });
 
-  chrome.storage.onChanged.addListener((_c, area) => { if (area === storage.AREA) load(); });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === storage.AREA && Object.keys(changes).some((key) => key !== "actle-premium")) load();
+  });
   renderPreview();
   storage.recoverPendingImport().then(async (recovery) => {
     await load();

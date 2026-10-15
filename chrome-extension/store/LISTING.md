@@ -76,6 +76,13 @@ service. The extension has no publisher-operated data server, analytics, or
 advertising. Chrome's browser sync may transfer your snippets and settings
 through Google's sync service.
 
+This release offers an unlimited free preview. Plans & support shows a local
+daily autocomplete count. A future free plan is prepared for 100 auto completes
+per browser profile per day, with a one-time Forever license for unlimited use
+and no subscription. Purchases and activation are not available yet. Your
+library, backups, and toolbar copying remain available at the future limit.
+Usage and any activated license stay in this browser profile and do not sync.
+
 Expansion works in supported text inputs, textareas, and rich-text fields.
 Password inputs are excluded. Expansion, suggestions and the search picker
 also skip username, sign-in code and payment fields identified by page metadata,
@@ -94,6 +101,13 @@ extension local storage without automatic synchronization.
 Template answers and chosen/custom pronouns are used temporarily to preview
 and fill the script; they are not saved to extension storage or included in
 library exports.
+
+Daily usage and any signed Forever license use local storage in both browsers,
+separate from Chrome snippet sync. Accounting contains a day, count, and
+unfinished insertion receipts associated with browser tab/frame/document
+identifiers; it contains no field text, snippets, webpage URLs, or payment
+details. License verification is offline. Usage and licenses are excluded from
+snippet exports.
 
 **Access to websites (`<all_urls>`):** Detects configured triggers and inserts
 snippets in editable fields on the websites the user chooses to use. Partial
@@ -119,6 +133,10 @@ hostnames in browser sync. Firefox's manifest declares no data collection: that
 package stores snippets and settings locally and does not transmit them to a
 service. Template answers are processed in the browser without being saved to
 the library. Clipboard copies and webpage insertion happen at the user's direction.
+Local accounting and offline license verification add no data transmission.
+Purchasing is disabled in the shipping preview. Before enabling checkout,
+update purchase disclosures, payment-provider privacy information, and store
+declarations for the final release; see [PREMIUM.md](PREMIUM.md).
 
 ## Publisher details
 
@@ -126,7 +144,7 @@ the library. Clipboard copies and webpage insertion happen at the user's directi
 | --- | --- |
 | Publisher name | Platteration |
 | Privacy/support contact | https://github.com/Platteration/autocompletele/issues |
-| Public privacy-policy URL | https://raw.githubusercontent.com/Platteration/autocompletele/2a97039b7e1b1ad719c99997480023ba6ec08269/chrome-extension/store/PRIVACY.md |
+| Public privacy-policy URL | https://raw.githubusercontent.com/Platteration/autocompletele/9a3bb1a98a6e0d7cca94dd3d94a9f5fc8aa40b2e/chrome-extension/store/PRIVACY.md |
 | Support website | https://github.com/Platteration/autocompletele/issues |
 | Firefox license selection | All rights reserved; this repository does not grant an open-source license |
 | Developer accounts | Registered Chrome Web Store and Firefox Add-ons publisher accounts must be connected before submission |
@@ -289,6 +307,12 @@ Firefox stores the library locally.
    **Merge safely**, and check that the new entry appears while existing entries
    remain. Exercise **Replace everything** only with a disposable test library.
 11. Reload the browser and verify saved snippets and settings remain available.
+12. Open **Plans & support** and verify **Free preview**, today's usage, and
+    disabled checkout/activation controls. Insert an ordinary snippet and a
+    completed template: each increases usage once. Cancel a template, undo an
+    insertion, and copy from the toolbar: none adds a use; undo does not refund
+    its original use. Verify no daily cap applies in this preview. Usage and
+    license data must not appear in an exported snippet JSON file.
 
 ## Release checklist
 

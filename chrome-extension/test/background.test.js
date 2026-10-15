@@ -17,13 +17,17 @@ for (const browser of ["chrome", "firefox"]) {
       replaceAll: async (items) => { shorthands = items; },
     };
     const context = {
+      URL,
       chrome: {
         runtime: {
+          id: "actle-test",
+          getURL: (path) => `chrome-extension://actle-test/${path}`,
+          onMessage: { addListener: (fn) => { listeners.message = fn; } },
           onInstalled: { addListener: (fn) => { listeners.install = fn; } },
           onStartup: { addListener: (fn) => { listeners.start = fn; } },
           openOptionsPage: () => { calls.push("options"); },
         },
-        storage: { onChanged: { addListener: (fn) => { listeners.change = fn; } } },
+        storage: { local: { get: async () => ({}) }, onChanged: { addListener: (fn) => { listeners.change = fn; } } },
         action: {
           setBadgeText: async ({ text }) => { calls.push(text); },
           setBadgeBackgroundColor: async () => {},
@@ -31,16 +35,28 @@ for (const browser of ["chrome", "firefox"]) {
       },
     };
     context.self = context;
+    vm.createContext(context);
+    const dependencies = ["storage.js", "premium-config.js", "license.js", "premium-service.js"];
+    const loadDependency = (file) => {
+      if (file === "storage.js") context.ShorthandStorage = storage;
+      else vm.runInContext(fs.readFileSync(require.resolve(`../src/${file}`), "utf8"), context);
+    };
     if (browser === "chrome") {
-      context.importScripts = (file) => {
-        assert.equal(file, "storage.js");
-        context.ShorthandStorage = storage;
+      context.importScripts = (...files) => {
+        assert.deepEqual(files, dependencies);
+        files.forEach(loadDependency);
       };
     } else {
-      // Firefox's background.scripts loads storage first in a window, not a worker.
-      context.ShorthandStorage = storage;
+      // Firefox's background.scripts loads dependencies in a window, not a worker.
+      dependencies.forEach(loadDependency);
     }
-    vm.runInNewContext(source, context);
+    vm.runInContext(source, context);
+    const premiumStatus = await new Promise((resolve) => {
+      assert.equal(listeners.message({ type: "actle-premium", action: "status" }, { id: "actle-test" }, resolve), true);
+    });
+    assert.equal(premiumStatus.ok, true);
+    assert.equal(premiumStatus.result.enforced, false);
+    assert.equal(premiumStatus.result.usedToday, 0);
     await listeners.install({ reason: "install" });
     await new Promise(setImmediate);
     assert.equal(shorthands.length, 3);

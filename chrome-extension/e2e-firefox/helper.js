@@ -18,8 +18,9 @@ const DEFAULT_SHORTHANDS = [
   { trigger: "td/", expansion: "{date}" },
 ];
 
-async function launch() {
-  const manifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_DIR, "manifest.json"), "utf8"));
+async function launch(options = {}) {
+  const extensionDir = options.extensionPath ? path.resolve(options.extensionPath) : EXTENSION_DIR;
+  const manifest = JSON.parse(fs.readFileSync(path.join(extensionDir, "manifest.json"), "utf8"));
   const id = manifest.browser_specific_settings.gecko.id;
   const uuid = randomUUID();
   const temporaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "shorthand-firefox-"));
@@ -46,7 +47,7 @@ async function launch() {
       server.once("error", reject);
       server.listen(0, "127.0.0.1", resolve);
     });
-    const options = new firefox.Options()
+    const browserOptions = new firefox.Options()
       .addArguments("-headless")
       .setBinary(process.env.FIREFOX_PATH || playwrightFirefox.executablePath())
       .setPreference("extensions.webextensions.uuids", JSON.stringify({ [id]: uuid }))
@@ -64,9 +65,9 @@ async function launch() {
         XDG_CACHE_HOME: path.join(temporaryDir, "cache"),
       });
     driver = await new Builder().forBrowser("firefox")
-      .setFirefoxOptions(options).setFirefoxService(service).build();
+      .setFirefoxOptions(browserOptions).setFirefoxService(service).build();
     await driver.manage().setTimeouts({ pageLoad: 15000, script: 10000 });
-    const installed = await driver.installWebExtension(EXTENSION_DIR, { permanent: false });
+    const installed = await driver.installWebExtension(extensionDir, { permanent: false });
     const extensionURL = `moz-extension://${uuid}`;
     await driver.get(`${extensionURL}/src/options.html`);
     const optionsHandle = await driver.getWindowHandle();

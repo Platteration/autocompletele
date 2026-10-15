@@ -22,7 +22,7 @@ test("browser packages contain only runtime files and installable manifests", as
       assert.deepEqual(manifest.background, { service_worker: "src/background.js" });
       assert.equal(manifest.browser_specific_settings, undefined);
     } else {
-      assert.deepEqual(manifest.background, { scripts: ["src/storage.js", "src/background.js"] });
+      assert.deepEqual(manifest.background, { scripts: ["src/storage.js", "src/premium-config.js", "src/license.js", "src/premium-service.js", "src/background.js"] });
       assert.deepEqual(manifest.browser_specific_settings.gecko, {
         id: "{54b890b4-5bb5-4f1f-a949-2d595afe249c}",
         strict_min_version: "142.0",
@@ -44,6 +44,10 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.ok(files.includes("src/expansion-feedback.js"));
     assert.ok(files.includes("src/field-safety.js"));
     assert.ok(files.includes("src/suggestions.js"));
+    for (const name of ["premium-config", "license", "premium-service", "premium-client", "premium-ui"]) {
+      assert.ok(files.includes(`src/${name}.js`), `${name} must ship in both browser packages`);
+    }
+    assert.ok(manifest.content_scripts.some((entry) => entry.js.includes("src/content.js")), "Manifest must load insertion handlers");
     for (const content of manifest.content_scripts) {
       if (!content.js.includes("src/content.js")) continue;
       const feedbackIndex = content.js.indexOf("src/expansion-feedback.js");
@@ -56,6 +60,9 @@ test("browser packages contain only runtime files and installable manifests", as
       }
       const expanderIndex = content.js.indexOf("src/expander.js");
       assert.ok(expanderIndex >= 0 && expanderIndex < content.js.indexOf("src/suggestions.js"), "Suggestions depend on the expander boundary rules");
+      const premiumIndex = content.js.indexOf("src/premium-client.js");
+      assert.ok(content.js.indexOf("src/premium-config.js") >= 0 && content.js.indexOf("src/premium-config.js") < premiumIndex);
+      assert.ok(premiumIndex >= 0 && premiumIndex < content.js.indexOf("src/content.js"), "Premium client must load before insertion handlers");
     }
     const options = fs.readFileSync(path.join(directory, manifest.options_page), "utf8");
     const optionScripts = [...options.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
@@ -69,6 +76,15 @@ test("browser packages contain only runtime files and installable manifests", as
     }
     const expanderIndex = optionScripts.indexOf("expander.js");
     assert.ok(expanderIndex >= 0 && expanderIndex < optionScripts.indexOf("suggestions.js"));
+    assert.ok(optionScripts.indexOf("premium-client.js") < optionScripts.indexOf("content.js"));
+    const popup = fs.readFileSync(path.join(directory, manifest.action.default_popup), "utf8");
+    const popupScripts = [...popup.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
+    for (const scripts of [optionScripts, popupScripts]) {
+      const configIndex = scripts.indexOf("premium-config.js"), clientIndex = scripts.indexOf("premium-client.js"), uiIndex = scripts.indexOf("premium-ui.js");
+      assert.ok(configIndex >= 0 && configIndex < clientIndex && clientIndex < uiIndex, "Plan UI must load after its config and client");
+    }
+    const background = fs.readFileSync(path.join(directory, "src/background.js"), "utf8");
+    if (browser === "chrome") assert.match(background, /importScripts\("storage\.js", "premium-config\.js", "license\.js", "premium-service\.js"\)/);
 
     const archivePath = path.join(output, `actle-${browser}-${manifest.version}.zip`);
     const archive = fs.readFileSync(archivePath);

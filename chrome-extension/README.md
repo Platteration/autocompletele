@@ -223,6 +223,40 @@ These checks use field metadata, not entered text. A page that does not identify
 its fields may not be recognized. You can pause actle on that site from the
 toolbar or add its hostname under **Never expand on these sites**.
 
+## Plans and support
+
+This release is an **unlimited free preview**. The library's **Plans & support**
+section and toolbar show today's local usage. Purchasing and license activation
+are not configured yet; no price or payment provider has been selected.
+
+The prepared free plan allows **100 auto completes per browser profile per
+day**, resetting at local midnight. Complete triggers, accepted suggestions,
+picker selections, and confirmed templates each count as one successful
+insertion, including the library playground. Opening or cancelling a template
+does not count. Undo remains available and does not refund the original use.
+Your library, editing, import/export, and toolbar copying remain free at the
+limit. A denied insertion leaves the trigger in place; a denied template keeps
+its answers for you to edit or cancel.
+
+The future **Forever** license is a small, one-time way to support actle, with
+unlimited auto completes, no recurring charge, and no expiry in the license.
+Activation verifies a signed key locally, without an account or activation
+server. Keep that key to reactivate it in your own browser installations.
+Removing it from one browser returns that installation to its free allowance;
+it does not cancel or refund a purchase. Usage and activation do not sync or
+appear in snippet exports.
+
+The daily allowance is local to each browser profile and uses the device's
+clock. It is a courtesy limit, not an account-wide or tamper-proof quota. When
+enabled, concurrent tabs share it. An interrupted insertion after an allowance
+is reserved can retain one use until midnight even if no text was inserted.
+The cap stays off unless release configuration explicitly enables it and
+provides both a usable public verification key and an HTTPS checkout.
+
+Publisher setup, manual fulfillment, and remaining launch work are documented
+in [PREMIUM.md](store/PREMIUM.md). This plan applies to the browser extensions;
+the companion Windows and Android apps are unchanged.
+
 ## For site authors
 
 Add `data-shorthand-ignore` to any element to stop expansion, suggestions and
@@ -247,10 +281,16 @@ Use the appropriate `autocomplete` tokens on credential and payment controls.
 | `src/palette.js`      | Pure ranking logic for the toolbar command palette             |
 | `src/import-plan.js`  | Pure import preview and safe-merge planning                    |
 | `src/background.js`   | Background initialization: seeds examples, updates the badge  |
+| `src/premium-config.js` | Release-only allowance, public verification key, and checkout settings |
+| `src/license.js`      | Offline verification of signed Forever licenses                |
+| `src/premium-service.js` | Background-owned local usage and license storage             |
+| `src/premium-client.js` | Insertion allowance, accounting, and limit notices            |
+| `src/premium-ui.js`   | Plan, usage, and license controls in the library and toolbar     |
 | `src/options.*`       | Library manager, previewed imports, export, excluded sites     |
 | `src/popup.*`         | Toolbar search/copy palette plus global and per-site controls  |
 | `test/`               | Unit tests (`npm test` in `chrome-extension/`)                 |
 | `scripts/build.js`    | Browser-specific manifests and reproducible release ZIPs      |
+| `scripts/issue-license.js` | Publisher's offline license issuer; excluded from packages |
 
 ## Build release packages
 

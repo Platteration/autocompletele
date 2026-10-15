@@ -9,7 +9,7 @@ const FIREFOX_ID = "{54b890b4-5bb5-4f1f-a949-2d595afe249c}";
 function browserManifest(browser) {
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
   if (browser === "firefox") {
-    manifest.background = { scripts: ["src/storage.js", "src/background.js"] };
+    manifest.background = { scripts: ["src/storage.js", "src/premium-config.js", "src/license.js", "src/premium-service.js", "src/background.js"] };
     manifest.browser_specific_settings = {
       gecko: {
         // Keep this ID stable across releases: Firefox uses it for updates/storage.

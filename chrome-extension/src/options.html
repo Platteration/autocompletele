@@ -20,6 +20,7 @@
       <a href="#playground"><span aria-hidden="true">02</span> Playground</a>
       <a href="#settings"><span aria-hidden="true">03</span> Settings</a>
       <a href="#backup"><span aria-hidden="true">04</span> Import / export</a>
+      <a href="#premium"><span aria-hidden="true">05</span> Plans & support</a>
     </nav>
     <div class="sidebar-note"><span class="sidebar-note-label">A little shortcut</span><p>Type <kbd>;;</kbd> to find the right words without leaving your page.</p></div>
   </aside>
@@ -234,6 +235,42 @@
       </div>
     </div>
   </section>
+  <section class="card premium-card" id="premium" aria-labelledby="premiumTitle">
+    <p class="eyebrow">A little thank-you</p>
+    <h2 id="premiumTitle" tabindex="-1">Your actle plan</h2>
+    <div class="premium-layout">
+      <div class="premium-summary">
+        <span class="premium-plan" id="premiumPlan">Checking your plan…</span>
+        <p class="premium-usage" id="premiumUsage">—</p>
+        <progress id="premiumProgress" max="100" value="0" aria-label="Daily auto completes used" hidden></progress>
+        <p class="premium-hint" id="premiumHint">Loading today's usage.</p>
+        <p class="premium-reset" id="premiumReset">Daily count resets at local midnight.</p>
+        <p class="premium-scope">Usage stays in this browser profile. Your library, backups and toolbar copying stay available.</p>
+      </div>
+      <div class="premium-upgrade" id="premiumUpgrade">
+        <h3>Make it forever</h3>
+        <p class="hint">A little thank-you for the words you use every day. One payment. Unlimited auto completes. No subscription.</p>
+        <button type="button" id="premiumCheckout" aria-describedby="premiumCheckoutHint" disabled>Forever license — coming soon</button>
+        <p class="premium-hint" id="premiumCheckoutHint">Purchases aren't available yet. The price and checkout will appear here when ready.</p>
+        <details id="premiumLicenseDetails">
+          <summary>Already have a license?</summary>
+          <form id="premiumLicenseForm">
+            <label for="premiumLicense">Forever license key</label>
+            <textarea id="premiumLicense" rows="3" maxlength="8192" spellcheck="false" autocomplete="off" data-shorthand-ignore aria-describedby="premiumActivationHint premiumMsg" disabled></textarea>
+            <p class="premium-hint" id="premiumActivationHint">License activation will be available when purchases launch.</p>
+            <button type="submit" id="premiumActivate" class="secondary" disabled>Activate license</button>
+          </form>
+        </details>
+      </div>
+      <div class="premium-thanks" id="premiumThanks" hidden>
+        <h3>Thanks for keeping actle going.</h3>
+        <p class="hint">Your Forever license unlocks unlimited auto completes. There are no recurring charges.</p>
+        <button type="button" id="premiumDeactivate" class="secondary" aria-describedby="premiumRemovalHint">Remove license from this browser</button>
+        <p class="premium-hint" id="premiumRemovalHint">Keep your license key to activate it again. Removing it here does not cancel or refund a purchase.</p>
+      </div>
+    </div>
+    <p class="premium-message" id="premiumMsg" role="status"></p>
+  </section>
   </main>
   <footer class="page-footer">Made for the words you use every day.</footer>
   </div>
@@ -251,6 +288,9 @@
   <script src="template-form.js"></script>
   <script src="animation-frames.js"></script>
   <script src="expansion-feedback.js"></script>
+  <script src="premium-config.js"></script>
+  <script src="premium-client.js"></script>
+  <script src="premium-ui.js"></script>
   <script src="content.js"></script>
   <script src="options.js"></script>
 </body>
