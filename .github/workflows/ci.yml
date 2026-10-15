@@ -5,8 +5,14 @@ on:
     branches: ["**"]
   pull_request:
 
+# Nothing here writes to the repository.
 permissions:
   contents: read
+
+# A newer push to the same ref supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   chrome-extension:
@@ -76,8 +82,6 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
-        with:
-          packages: platform-tools
       - name: Unit tests
         run: cd android && ./gradlew --no-daemon testDebugUnitTest
       - name: Build debug APK

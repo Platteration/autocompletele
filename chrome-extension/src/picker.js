@@ -130,6 +130,7 @@
       if (!ev.isTrusted || !anchorFocused()) return;
       // mousedown, not click: clicking must not blur the page's field.
       ev.preventDefault();
+      if (!ev.isTrusted) return; // the page cannot pick for the person
       const item = ev.target.closest(".item");
       if (!item) return;
       selected = Number(item.dataset.index);
@@ -250,8 +251,7 @@
   }
 
   function onKeyDown(ev) {
-    if (!open || !ev.isTrusted) return;
-    if (!anchorFocused()) { close(); return; }
+    if (!open || !ev.isTrusted) return; // a page script's key press does not choose for the person
     const stop = () => {
       ev.preventDefault();
       ev.stopPropagation();
