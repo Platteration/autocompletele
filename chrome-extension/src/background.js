@@ -37,6 +37,10 @@ if (chrome.contextMenus) {
   });
 }
 
+// Re-assert on every background start: a dev-mode reload may not fire
+// onInstalled, and the duplicate-id report is already swallowed above.
+createSelectionMenu();
+
 chrome.runtime.onInstalled.addListener(async (details) => {
   createSelectionMenu();
   if (details.reason === "install") {
