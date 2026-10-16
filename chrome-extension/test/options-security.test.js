@@ -9,22 +9,22 @@ const library = [{ id: "one", trigger: "old/", expansion: "keep me", order: 0 }]
 async function options(recoveryError = null, conflicts = [], readError = null) {
   const nodes = new Map(), created = [], downloads = [];
   function element(tag = "div") {
-    const node = { tag, value: "", textContent: "", disabled: false, classList: { toggle() {} }, handlers: {}, children: [],
+    const node = { tag, value: "", textContent: "", disabled: false, hidden: false, classList: { toggle() {}, add() {}, remove() {} }, handlers: {}, children: [],
       addEventListener(event, fn) { this.handlers[event] = fn; }, append(...children) { this.children.push(...children); },
-      appendChild(child) { this.children.push(child); }, click() {}, remove() {}, focus() {},
-      querySelectorAll() { return ["editId", "trigger", "expansion", "saveBtn", "cancelBtn"].map(get); },
+      appendChild(child) { this.children.push(child); }, replaceChildren() { this.children = []; }, setAttribute() {}, click() {}, remove() {}, focus() {},
+      querySelectorAll() { return ["editId", "trigger", "expansion", "fieldName", "addFieldBtn", "variableToken", "addVariableBtn", "saveBtn", "cancelBtn"].map(get); },
     };
     created.push(node); return node;
   }
   function get(id) { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); }
-  const document = { activeElement: null, getElementById: get, querySelector() { return get("tbody"); }, createElement: element, body: element() };
+  const document = { activeElement: null, getElementById: get, querySelector() { return get("tbody"); }, createElement: element, createTextNode: (text) => ({ textContent: text }), body: element() };
   const storage = {
-    DEFAULT_SETTINGS: { pickerTrigger: ";;" },
+    DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" },
     async recoverPendingImport() { if (recoveryError) throw new Error(recoveryError); return { conflicts }; },
     async getAll() { if (readError) throw new Error(readError); return { shorthands: library, settings: { enabled: true, excludedHosts: [] } }; },
     toExportJson(shorthands) { return JSON.stringify({ shorthands }); },
   };
-  const sandbox = { self: { ShorthandStorage: storage, ShorthandExpander: require("../src/expander.js"),
+  const sandbox = { self: { ShorthandStorage: storage, ShorthandExpander: require("../src/expander.js"), ShorthandTemplate: require("../src/template.js"),
     ShorthandImportPlan: {}, ShorthandConflicts: { byTrigger() { return new Map(); } } }, document, Blob,
     URL: { createObjectURL(blob) { downloads.push(blob); return "blob:test"; }, revokeObjectURL() {} },
     chrome: { storage: { onChanged: { addListener() {} } } }, setTimeout() {},
@@ -40,7 +40,7 @@ test("failed writer recovery still exports the readable library and disables all
   page.get("exportBtn").handlers.click();
   const exported = JSON.parse(await page.downloads[0].text());
   assert.deepEqual(exported.shorthands, library, "recovery failure must not export an empty library");
-  for (const id of ["enabled", "excluded", "pickerTrigger", "trigger", "expansion", "saveBtn", "importBtn", "importFile", "mergeBtn", "replaceBtn"]) {
+  for (const id of ["enabled", "excluded", "pickerTrigger", "animationMode", "suggestionsEnabled", "trigger", "expansion", "fieldName", "addFieldBtn", "variableToken", "addVariableBtn", "saveBtn", "importBtn", "importFile", "mergeBtn", "replaceBtn"]) {
     assert.equal(page.get(id).disabled, true, id + " must not accept edits after failed recovery");
   }
   const libraryButtons = page.created.filter((node) => node.tag === "button");

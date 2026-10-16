@@ -3,24 +3,39 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const premiumConfig = { enforceDailyLimit: false };
+function previewClient() {
+  return require("../src/premium-client.js").createClient({
+    config: premiumConfig,
+    chrome: { runtime: { async sendMessage() { return { ok: true, result: {} }; } } },
+    notice() {},
+  });
+}
 
-async function content() {
+async function content({ premium = previewClient(), config = premiumConfig, storage, form, feedback } = {}) {
   const listeners = {}, opened = [];
   const document = { activeElement: null, addEventListener(name, fn) { listeners[name] = fn; }, execCommand() { return false; } };
   const sandbox = {
     self: {
+      ActlePremium: premium, ActlePremiumConfig: config,
       ShorthandExpander: require("../src/expander.js"),
-      ShorthandStorage: { DEFAULT_SETTINGS: { pickerTrigger: ";;" }, async getAll() { return { shorthands: [{ trigger: "secret/", expansion: "private snippet" }], settings: {} }; } },
+      ShorthandFieldSafety: require("../src/field-safety.js"),
+      ShorthandSuggestions: require("../src/suggestions.js"),
+      ShorthandStorage: storage || { DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" }, async getAll() { return { shorthands: [{ trigger: "secret/", expansion: "private snippet" }], settings: {} }; } },
       ShorthandPicker: { isOpen() { return false; }, show(opts) { opened.push(opts); return true; } },
+      ShorthandTemplate: require("../src/template.js"),
+      ShorthandTemplateForm: form || { isOpen() { return false; }, show() { return false; } },
+      ShorthandExpansionFeedback: feedback || { show() {}, clear() {} },
     },
-    document, window: {}, location: { hostname: "page.example" }, chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {},
+    document, window: { addEventListener() {} }, location: { hostname: "page.example" }, chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {},
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/content.js"), "utf8"), sandbox);
   await new Promise((resolve) => setImmediate(resolve));
   const field = {
-    tagName: "TEXTAREA", value: "", selectionStart: 0, selectionEnd: 0,
+    tagName: "TEXTAREA", value: "", selectionStart: 0, selectionEnd: 0, isConnected: true,
     closest() { return null; }, getRootNode() { return document; },
+    focus() { document.activeElement = this; },
     setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
     setRangeText(text, start, end) { this.value = this.value.slice(0, start) + text + this.value.slice(end); }, dispatchEvent() {},
   };
@@ -71,6 +86,103 @@ test("trusted input only expands the actively focused editable field", async () 
   assert.equal(c.field.value, "private snippet");
 });
 
+test("the final DOM check stops changes queued after asynchronous quota validation", async (t) => {
+  const scenarios = [
+    { name: "the page replaces the draft", change(field) {
+      field.value = "Updated page draft";
+      field.selectionStart = field.selectionEnd = field.value.length;
+    }, expected: "Updated page draft" },
+    { name: "the page identifies a credential field", change(field) {
+      field.getAttribute = (name) => name === "autocomplete" ? "username" : "";
+    }, expected: "secret/" },
+  ];
+  for (const scenario of scenarios) await t.test(scenario.name, async () => {
+    const config = { enforceDailyLimit: true };
+    const messages = [];
+    const client = require("../src/premium-client.js").createClient({
+      config,
+      chrome: { runtime: { async sendMessage(message) {
+        messages.push(message);
+        return { ok: true, result: message.action === "claim"
+          ? { approved: true, id: "reserved-use" } : { finished: true } };
+      } } },
+      notice() {},
+    });
+    let c, completion, validations = 0, lastValidation;
+    const premium = { execute(action, validate, options) {
+      completion = client.execute(action, async () => {
+        const valid = await validate();
+        if (++validations === 2) {
+          lastValidation = valid;
+          // The original validation already read the live settings, metadata
+          // and selection. A page microtask runs before insertion resumes.
+          queueMicrotask(() => scenario.change(c.field));
+        }
+        return valid;
+      }, options);
+      return completion;
+    } };
+    c = await content({ premium, config });
+    let writes = 0;
+    const setRangeText = c.field.setRangeText;
+    c.field.setRangeText = function (...args) { writes++; return setRangeText.apply(this, args); };
+    c.input("secret/", true);
+    const inserted = await completion;
+    assert.equal(validations, 2);
+    assert.equal(lastValidation, true, "the asynchronous validation accepted the original target");
+    assert.equal(writes, 0, "the final synchronous guard must prevent the editor mutation");
+    assert.equal(c.field.value, scenario.expected);
+    assert.equal(inserted, false);
+    assert.deepEqual(messages, [
+      { type: "actle-premium", action: "claim" },
+      { type: "actle-premium", action: "finish", id: "reserved-use", success: false },
+    ]);
+  });
+});
+
+test("template confirmation uses freshly saved animation settings without a storage event", async (t) => {
+  for (const [cachedMode, savedMode] of [["casino", "off"], ["off", "casino"]]) {
+    await t.test(`${cachedMode} changes to ${savedMode} while the form is open`, async () => {
+      let animationMode = cachedMode, reads = 0, formOptions;
+      const snippet = { trigger: "hello/", expansion: "Hi [[name]]!" };
+      const shown = [];
+      const c = await content({
+        storage: {
+          DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" },
+          async getAll() {
+            reads++;
+            return { shorthands: [snippet], settings: { animationMode } };
+          },
+        },
+        form: {
+          isOpen() { return !!formOptions; },
+          show(options) { formOptions = options; return true; },
+        },
+        feedback: { show(element, details) { shown.push({ element, details }); }, clear() {} },
+      });
+      c.input("hello/", true);
+      assert.equal(reads, 1, "the content script cached the original animation setting");
+      assert.equal(c.field.value, "hello/");
+      assert.equal(shown.length, 0);
+      assert.equal(formOptions.expansion, snippet.expansion);
+      c.document.activeElement = { tagName: "INPUT" }; // The template form owns focus.
+      animationMode = savedMode; // No storage.onChanged event updates the cached mode.
+      const result = require("../src/template.js").render(snippet.expansion, { name: "Maya" });
+      assert.equal(await formOptions.onSubmit(result), true);
+      assert.equal(reads, 2, "confirmation reads the newly saved settings");
+      assert.equal(c.field.value, "Hi Maya!");
+      assert.equal(c.field.selectionStart, 8);
+      assert.equal(c.field.selectionEnd, 8);
+      assert.equal(c.document.activeElement, c.field);
+      assert.equal(shown.length, 1);
+      assert.equal(shown[0].element, c.field);
+      assert.equal(shown[0].details.mode, savedMode);
+      assert.equal(shown[0].details.text, "Hi Maya!");
+      assert.equal(shown[0].details.trigger, "hello/");
+    });
+  }
+});
+
 test("picker insertion rechecks focus, caret and the original trigger", async () => {
   const c = await content();
   c.input(";;", true);
@@ -94,6 +206,85 @@ test("fabricated Backspace cannot undo a trusted expansion", async () => {
   assert.equal(c.field.value, "private snippet");
 });
 
+// A rich editor with one text node, the way Chrome edits a plain contenteditable:
+// a trailing space is stored as U+00A0 and becomes U+0020 once more text follows.
+async function richContent() {
+  const listeners = {};
+  const textNode = { nodeType: 3, textContent: "", isConnected: true };
+  const root = { nodeType: 1, tagName: "DIV", isContentEditable: true, parentElement: null, isConnected: true,
+    get textContent() { return textNode.textContent; }, contains(node) { return node === textNode || node === root; },
+    closest() { return null; }, getRootNode() { return document; }, dispatchEvent() {}, focus() {} };
+  textNode.parentElement = textNode.parentNode = root;
+  let selStart = 0, selEnd = 0;
+  const selection = {
+    rangeCount: 1, get isCollapsed() { return selStart === selEnd; },
+    getRangeAt() { return { startContainer: textNode, endContainer: textNode, startOffset: selStart, endOffset: selEnd, collapsed: selStart === selEnd }; },
+    removeAllRanges() {}, addRange(range) { selStart = range.start; selEnd = range.end; },
+    collapse(_node, offset) { selStart = selEnd = offset; }, modify() {},
+  };
+  const document = {
+    activeElement: root, addEventListener(name, fn) { listeners[name] = fn; },
+    createRange() {
+      const range = { start: 0, end: 0,
+        setStart(_node, offset) { range.start = offset; }, setEnd(_node, offset) { range.end = offset; },
+        selectNodeContents() { range.start = 0; range.end = textNode.textContent.length; },
+        collapse(toStart) { if (toStart) range.end = range.start; else range.start = range.end; },
+        toString() { return textNode.textContent.slice(range.start, range.end); } };
+      return range;
+    },
+    execCommand(name, _ui, text) {
+      if (name !== "insertText") return false;
+      textNode.textContent = textNode.textContent.slice(0, selStart) + text + textNode.textContent.slice(selEnd);
+      selStart = selEnd = selStart + text.length;
+      return true;
+    },
+  };
+  const sandbox = {
+    self: {
+      ActlePremium: previewClient(), ActlePremiumConfig: premiumConfig,
+      ShorthandExpander: require("../src/expander.js"),
+      ShorthandFieldSafety: require("../src/field-safety.js"),
+      ShorthandSuggestions: require("../src/suggestions.js"),
+      ShorthandStorage: { DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" }, async getAll() { return { shorthands: [{ trigger: "cool/", expansion: "That is really cool!" }], settings: {} }; } },
+      ShorthandPicker: { isOpen() { return false; }, show() { return true; } },
+      ShorthandTemplate: require("../src/template.js"),
+      ShorthandTemplateForm: { isOpen() { return false; }, show() { return false; } },
+      ShorthandExpansionFeedback: { show() {}, clear() {} },
+    },
+    document, window: { getSelection() { return selection; }, addEventListener() {} }, location: { hostname: "page.example" },
+    chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {}, InputEvent: class {}, Node: { TEXT_NODE: 3 },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/content.js"), "utf8"), sandbox);
+  await new Promise((resolve) => setImmediate(resolve));
+  // One physical key: the browser then rewrites the text node to `resulting`.
+  function type(key, resulting) {
+    listeners.keydown({ target: root, type: "keydown", isTrusted: true, key });
+    textNode.textContent = resulting;
+    selStart = selEnd = selStart + 1;
+    listeners.input({ target: root, isTrusted: true, inputType: "insertText", data: key });
+  }
+  return { textNode, type };
+}
+
+test("a trigger typed after a space in a rich editor still expands despite the browser's nbsp rewriting", async () => {
+  const c = await richContent();
+  c.type("a", "a");
+  c.type(" ", "a\u00a0");
+  c.type("c", "a c");
+  for (const [key, text] of [["o", "a co"], ["o", "a coo"], ["l", "a cool"], ["/", "a cool/"]]) c.type(key, text);
+  assert.equal(c.textNode.textContent, "a That is really cool!");
+});
+
+test("the nbsp allowance does not let a page swap in different text for a keystroke", async () => {
+  const c = await richContent();
+  c.type("a", "a");
+  c.type(" ", "a\u00a0");
+  for (const [key, text] of [["c", "a c"], ["o", "a co"], ["o", "a coo"], ["l", "a cool"]]) c.type(key, text);
+  c.type("/", "a cool/x");
+  assert.equal(c.textNode.textContent, "a cool/x");
+});
+
 function picker() {
   const handlers = {}, parts = {};
   function element() {
@@ -114,7 +305,8 @@ function picker() {
     addEventListener(name, fn) { handlers[name] = fn; }, removeEventListener(name) { delete handlers[name]; },
     body: { appendChild(el) { el.parentNode = this; }, removeChild(el) { el.parentNode = null; } },
   };
-  const sandbox = { self: {}, document, window: { innerWidth: 800, innerHeight: 600, addEventListener() {}, removeEventListener() {} } };
+  // The picker styles its closed shadow root with a constructed stylesheet.
+  const sandbox = { self: {}, document, CSSStyleSheet: class { replaceSync() {} }, window: { innerWidth: 800, innerHeight: 600, addEventListener() {}, removeEventListener() {} } };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/picker.js"), "utf8"), sandbox);
   const anchor = { getRootNode() { return document; }, getBoundingClientRect() { return { width: 10, height: 10, bottom: 10, left: 0 }; } };

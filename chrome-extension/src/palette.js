@@ -44,7 +44,5 @@
   }
 
   root.ShorthandPalette = { score, search };
-  if (typeof module !== "undefined" && module.exports) {
-    module.exports = root.ShorthandPalette;
-  }
+  if (typeof module !== "undefined" && module.exports) module.exports = root.ShorthandPalette;
 })(typeof self !== "undefined" ? self : this);
