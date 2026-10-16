@@ -36,5 +36,5 @@ dependencies {
     // The app deliberately uses only framework classes (no AndroidX) to stay small.
     testImplementation("junit:junit:4.13.2")
     // org.json is part of Android but not of the JVM used for unit tests.
-    testImplementation("org.json:json:20240303")
+    testImplementation("org.json:json:20260814")
 }
