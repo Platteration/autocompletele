@@ -227,7 +227,9 @@ toolbar or add its hostname under **Never expand on these sites**.
 
 This release is an **unlimited free preview**. The library's **Plans & support**
 section and toolbar show today's local usage. Purchasing and license activation
-are not configured yet; no price or payment provider has been selected.
+are not configured yet; no price or payment provider has been selected. A page
+that was already open when actle was updated or reloaded keeps expanding, but
+those insertions are not counted until the page is reloaded.
 
 The prepared free plan allows **100 auto completes per browser profile per
 day**, resetting at local midnight. Complete triggers, accepted suggestions,

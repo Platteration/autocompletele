@@ -157,3 +157,22 @@ test("premium preview and configured lifetime licenses in Chrome", { timeout: 18
   await runEnforcedCases(t, await adapter(app), configured.tokens);
   assert.deepEqual(app.errors, []);
 });
+
+test("a page left open when actle reloads keeps expanding without a usage notice", { timeout: 60000 }, async (t) => {
+  // Chrome does not re-inject content scripts after an update or reload; the
+  // script already in an open page stays but can no longer reach the background.
+  const app = await launch({ settings: { animationMode: "off" } });
+  t.after(() => app.close());
+  const { page } = app;
+  await page.click("#inp");
+  await page.keyboard.type("cool/");
+  assert.equal(await page.inputValue("#inp"), "That is really cool!");
+  await app.worker.evaluate(() => chrome.runtime.reload()).catch(() => {});
+  await page.waitForTimeout(1000);
+  await page.fill("#inp", "");
+  await page.click("#inp");
+  await page.keyboard.type("brb/");
+  await page.waitForTimeout(300);
+  assert.equal(await page.inputValue("#inp"), "be right back");
+  assert.equal(await page.evaluate(() => !!document.getElementById("actle-usage-notice")), false);
+});

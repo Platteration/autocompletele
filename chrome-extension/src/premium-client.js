@@ -148,7 +148,16 @@
     return false;
   }
 
+  // Chrome keeps this script running in pages that were open when actle was
+  // updated, reloaded or removed, but it can no longer reach the background.
+  function connected() {
+    try { return !!(chrome.runtime && chrome.runtime.id); } catch (_) { return false; }
+  }
+
   async function saveInsertion(id) {
+    // The insertion already succeeded. A count without a receipt cannot be saved
+    // from a disconnected page, and Manage plan cannot open from it either.
+    if (!id && !connected()) return;
     try {
       if (id) await request("finish", { id, success: true });
       else await request("record");
