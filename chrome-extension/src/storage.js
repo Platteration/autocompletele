@@ -9,6 +9,7 @@
   const JOURNAL_KEY = "shorthand-import-journal";
   const BACKUP_KEY = "shorthand-import-backup";
   const USAGE_KEY = "shorthand-usage-counts";
+  const DRAFT_KEY = "shorthand-pending-draft";
   const AREA = chrome.runtime.getManifest().browser_specific_settings?.gecko ? "local" : "sync";
   const dataStore = chrome.storage[AREA];
   const encoder = new TextEncoder();
@@ -76,6 +77,25 @@
       await chrome.storage.local.set({ [USAGE_KEY]: counts });
     }).catch(() => {});
     return usageWrites;
+  }
+
+  // Text the person picked with "Save selection as actle shorthand", held in
+  // local storage only until the library page consumes it once as a prefilled
+  // draft. It is never synced, and saving still needs their trigger and click.
+  async function savePendingDraft(text) {
+    const expansion = String(text == null ? "" : text);
+    if (!expansion || !chrome.storage.local) return false;
+    await chrome.storage.local.set({ [DRAFT_KEY]: { expansion, createdAt: Date.now() } });
+    return true;
+  }
+
+  async function takePendingDraft() {
+    if (!chrome.storage.local) return "";
+    const items = await chrome.storage.local.get(DRAFT_KEY);
+    const draft = items[DRAFT_KEY];
+    if (!draft || typeof draft.expansion !== "string" || !draft.expansion) return "";
+    await chrome.storage.local.remove(DRAFT_KEY);
+    return draft.expansion;
   }
 
   async function saveShorthand(sh) {
@@ -285,6 +305,8 @@
     saveSettings,
     getUsageCounts,
     recordUse,
+    savePendingDraft,
+    takePendingDraft,
     toExportJson,
     DEFAULT_SETTINGS,
     AREA,

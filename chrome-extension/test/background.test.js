@@ -8,6 +8,8 @@ const source = fs.readFileSync(require.resolve("../src/background.js"), "utf8");
 for (const browser of ["chrome", "firefox"]) {
   test(`${browser} background seeds first install and updates the badge from its storage area`, async () => {
     const calls = [];
+    const menus = [];
+    let draft = "";
     const listeners = {};
     let shorthands = [];
     let settings = { enabled: true };
@@ -15,6 +17,7 @@ for (const browser of ["chrome", "firefox"]) {
       AREA: browser === "firefox" ? "local" : "sync",
       getAll: async () => ({ shorthands, settings }),
       replaceAll: async (items) => { shorthands = items; },
+      savePendingDraft: async (text) => { draft = text; return true; },
     };
     const context = {
       URL,
@@ -28,6 +31,10 @@ for (const browser of ["chrome", "firefox"]) {
           openOptionsPage: () => { calls.push("options"); },
         },
         storage: { local: { get: async () => ({}) }, onChanged: { addListener: (fn) => { listeners.change = fn; } } },
+        contextMenus: {
+          create: (props, callback) => { menus.push(props); if (callback) callback(); },
+          onClicked: { addListener: (fn) => { listeners.menuClick = fn; } },
+        },
         action: {
           setBadgeText: async ({ text }) => { calls.push(text); },
           setBadgeBackgroundColor: async () => {},
@@ -80,5 +87,17 @@ for (const browser of ["chrome", "firefox"]) {
     await listeners.install({ reason: "update" });
     assert.equal(shorthands[0].trigger, "mine/");
     assert.equal(calls.includes("options"), false);
+
+    assert.ok(menus.length >= 1 && menus.every((menu) => menu.id === "actle-save-selection"
+      && menu.title === "Save selection as actle shorthand" && menu.contexts[0] === "selection"));
+    calls.length = 0;
+    await listeners.menuClick({ menuItemId: "actle-save-selection", selectionText: "Selected on a page" }, {});
+    assert.equal(draft, "Selected on a page");
+    assert.deepEqual(calls, ["options"]);
+    draft = ""; calls.length = 0;
+    await listeners.menuClick({ menuItemId: "other-menu", selectionText: "Not ours" }, {});
+    await listeners.menuClick({ menuItemId: "actle-save-selection", selectionText: "" }, {});
+    assert.equal(draft, "");
+    assert.deepEqual(calls, []);
   });
 }

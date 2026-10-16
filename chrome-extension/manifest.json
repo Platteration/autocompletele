@@ -3,7 +3,7 @@
   "name": "actle",
   "version": "1.0.0",
   "description": "Expand short triggers into reusable text and fill-in templates in supported webpage fields.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "contextMenus"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "src/background.js"

@@ -40,6 +40,13 @@ active globally and on the current site, with quick toggles for both.
 This makes the toolbar useful even when you only half remember a trigger, and
 lets you grab an expansion for places where automatic insertion is not wanted.
 
+## Save selected text
+
+Select text on any page, right-click, and choose **Save selection as actle
+shorthand**. The library opens with the selection as a draft expansion; give
+it a trigger and save. Nothing is added to your library until you save, and
+the one-time draft is kept only in local storage until the library shows it.
+
 ## Search overlay
 
 Typing `;;` in a supported field opens a search overlay listing every shorthand: type

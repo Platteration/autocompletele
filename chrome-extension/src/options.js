@@ -219,6 +219,20 @@
     }
   }
 
+  // A selection saved from a webpage arrives as a one-time local draft. Only
+  // a pristine create form may receive it, so an edit in progress is safe.
+  async function applyPendingDraft() {
+    if (!writable || editId.value || expansionEl.value || !storage.takePendingDraft) return;
+    let text = "";
+    try { text = await storage.takePendingDraft(); } catch (_) { return; }
+    if (!text || editId.value || expansionEl.value) return;
+    expansionEl.value = text;
+    expansionSelection = { start: text.length, end: text.length };
+    renderPreview();
+    say(formMsg, "Selection added as a draft. Give it a trigger, then save.");
+    triggerEl.focus();
+  }
+
   async function load() {
     const data = await storage.getAll();
     $("exportBtn").disabled = false;
@@ -474,11 +488,16 @@
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes["shorthand-pending-draft"] && changes["shorthand-pending-draft"].newValue) {
+      applyPendingDraft();
+      return;
+    }
     if (area === storage.AREA && Object.keys(changes).some((key) => key !== "actle-premium")) load();
   });
   renderPreview();
   storage.recoverPendingImport().then(async (recovery) => {
     await load();
+    await applyPendingDraft();
     if (recovery.conflicts.length) say(ioMsg, "Import recovery preserved newer edits to " + recovery.conflicts.length + " snippet(s). Export the pre-import backup to review originals.", true);
   }).catch(async (e) => {
     writable = false;

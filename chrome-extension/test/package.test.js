@@ -16,7 +16,7 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.equal(manifest.manifest_version, 3);
     assert.equal(manifest.name, "actle");
     assert.equal(manifest.action.default_title, "actle");
-    assert.deepEqual(manifest.permissions, ["storage"]);
+    assert.deepEqual(manifest.permissions, ["storage", "contextMenus"]);
     assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
     if (browser === "chrome") {
       assert.deepEqual(manifest.background, { service_worker: "src/background.js" });

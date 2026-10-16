@@ -102,6 +102,15 @@ Template answers and chosen/custom pronouns are used temporarily to preview
 and fill the script; they are not saved to extension storage or included in
 library exports.
 
+Per-snippet use counts that rank suggestions and search, and any one-time
+draft from **Save selection as actle shorthand**, also use local storage only
+and are excluded from snippet exports. The draft becomes a snippet only when
+the user gives it a trigger and saves it in the library.
+
+**Context menus:** Adds one right-click item, shown only when text is
+selected, that opens the library with that selection as a draft expansion.
+Nothing is saved as a snippet until the user saves it there.
+
 Daily usage and any signed Forever license use local storage in both browsers,
 separate from Chrome snippet sync. Accounting contains a day, count, and
 unfinished insertion receipts associated with browser tab/frame/document

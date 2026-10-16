@@ -88,6 +88,17 @@ test("stored use counts are sanitized on read", async () => {
   assert.deepEqual(plain(await app.storage.getUsageCounts()), {});
 });
 
+test("a pending selection draft is local-only and consumed exactly once", async () => {
+  const app = storageWith(initial);
+  assert.equal(await app.storage.savePendingDraft(""), false);
+  assert.equal(await app.storage.takePendingDraft(), "");
+  assert.equal(await app.storage.savePendingDraft("Selected on a page"), true);
+  assert.equal(app.items["shorthand-pending-draft"], undefined, "drafts must never reach synced library storage");
+  assert.equal(await app.storage.takePendingDraft(), "Selected on a page");
+  assert.equal(await app.storage.takePendingDraft(), "");
+  assert.equal(app.local["shorthand-pending-draft"], undefined);
+});
+
 test("a rejected library write leaves the entire saved library intact", async () => {
   const app = storageWith(initial, {
     rejectSet() { throw new Error("MAX_WRITE_OPERATIONS_PER_MINUTE quota exceeded"); },

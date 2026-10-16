@@ -6,7 +6,7 @@ const vm = require("node:vm");
 
 const library = [{ id: "one", trigger: "old/", expansion: "keep me", order: 0 }];
 
-async function options(recoveryError = null, conflicts = [], readError = null) {
+async function options(recoveryError = null, conflicts = [], readError = null, draft = "") {
   const nodes = new Map(), created = [], downloads = [];
   function element(tag = "div") {
     const node = { tag, value: "", textContent: "", disabled: false, hidden: false, classList: { toggle() {}, add() {}, remove() {} }, handlers: {}, children: [],
@@ -23,6 +23,7 @@ async function options(recoveryError = null, conflicts = [], readError = null) {
     async recoverPendingImport() { if (recoveryError) throw new Error(recoveryError); return { conflicts }; },
     async getAll() { if (readError) throw new Error(readError); return { shorthands: library, settings: { enabled: true, excludedHosts: [] } }; },
     toExportJson(shorthands) { return JSON.stringify({ shorthands }); },
+    async takePendingDraft() { const text = draft; draft = ""; return text; },
   };
   const sandbox = { self: { ShorthandStorage: storage, ShorthandExpander: require("../src/expander.js"), ShorthandTemplate: require("../src/template.js"),
     ShorthandImportPlan: {}, ShorthandConflicts: { byTrigger() { return new Map(); } } }, document, Blob,
@@ -49,6 +50,13 @@ test("failed writer recovery still exports the readable library and disables all
   assert.equal(page.get("exportBtn").disabled, false);
   assert.equal(page.get("backupBtn").disabled, false);
   assert.match(page.get("ioMsg").textContent, /writer lock unavailable/);
+});
+
+test("a saved selection draft prefills the pristine create form once", async () => {
+  const page = await options(null, [], null, "Selected on a page");
+  assert.equal(page.get("expansion").value, "Selected on a page");
+  assert.equal(page.get("trigger").value, "");
+  assert.match(page.get("formMsg").textContent, /Selection added as a draft/);
 });
 
 test("successful recovery loads the library and reports preserved concurrent edits", async () => {

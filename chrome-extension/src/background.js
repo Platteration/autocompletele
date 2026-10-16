@@ -12,7 +12,33 @@ const EXAMPLES = [
   { trigger: "td/", expansion: "{date}" },
 ];
 
+const SAVE_SELECTION_MENU_ID = "actle-save-selection";
+
+function createSelectionMenu() {
+  if (!chrome.contextMenus) return;
+  // The callback only observes lastError: recreating on update is expected
+  // to report a duplicate id, which would otherwise log an unchecked error.
+  chrome.contextMenus.create({
+    id: SAVE_SELECTION_MENU_ID,
+    title: "Save selection as actle shorthand",
+    contexts: ["selection"],
+  }, () => void chrome.runtime.lastError);
+}
+
+if (chrome.contextMenus) {
+  chrome.contextMenus.onClicked.addListener(async (info) => {
+    if (!info || info.menuItemId !== SAVE_SELECTION_MENU_ID || !info.selectionText) return;
+    try {
+      if (storage.savePendingDraft) await storage.savePendingDraft(info.selectionText);
+    } catch (_) {
+      // The library still opens; the person can paste the text themselves.
+    }
+    chrome.runtime.openOptionsPage();
+  });
+}
+
 chrome.runtime.onInstalled.addListener(async (details) => {
+  createSelectionMenu();
   if (details.reason === "install") {
     const { shorthands } = await storage.getAll();
     if (shorthands.length === 0) await storage.replaceAll(EXAMPLES);

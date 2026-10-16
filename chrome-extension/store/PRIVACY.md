@@ -4,7 +4,7 @@
 
 **Privacy contact:** https://github.com/Platteration/autocompletele/issues
 
-**Effective date:** October 13, 2026
+**Effective date:** October 16, 2026
 
 This policy covers the actle browser extension. The contact page is
 public; do not include snippets, credentials, or other private information when
@@ -57,6 +57,15 @@ browser tab/frame identifiers and, where available, a document identifier;
 completed receipts are removed. Old daily accounting is replaced when the next
 day's usage is saved. No field text, snippet content, template answers, webpage
 URLs, or payment details are included in these accounting messages or records.
+
+The extension also keeps cumulative per-snippet use counts in
+`storage.local`, keyed by snippet identifier with no text or timestamps, only
+to order suggestions and search results. They do not sync, are not exported,
+and are separate from the daily allowance above. If you choose **Save
+selection as actle shorthand** from the right-click menu, the selected text
+is held in `storage.local` as a one-time draft until the library page shows
+it in the editor; it becomes a saved snippet, with the storage and sync
+behavior above, only if you give it a trigger and save it.
 
 If you activate a Forever license, the extension saves its signed token in
 this browser profile and verifies it locally. A token contains a license
