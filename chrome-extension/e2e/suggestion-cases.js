@@ -50,6 +50,11 @@ async function runCases(t, app) {
     assert.fail(message);
   }
   async function opened() { await until(() => visible(), "The real saved-shortcut suggestion menu must open"); }
+  // The settings controls keep their HTML defaults until options.js has read
+  // storage; it sets them in the same step that renders the (non-empty) library.
+  async function libraryLoaded() {
+    await until(() => evaluate(() => document.querySelectorAll("#list tbody tr").length > 0), "The options page must load the library");
+  }
   async function closed() { await until(async () => !(await visible()), "The suggestion menu must close"); }
   async function reset() { await app.fixture(); await app.pause(150); }
   async function typeInto(selector, text) { await app.click(selector); await app.type(text); }
@@ -417,6 +422,7 @@ async function runCases(t, app) {
     const before = await evaluate(() => chrome.storage[self.ShorthandStorage.AREA].get(null));
     await app.reload();
     await until(() => evaluate(() => !!document.querySelector("#suggestionsEnabled")), "The accessible suggestion setting must exist");
+    await libraryLoaded();
     assert.equal(await evaluate(() => document.querySelector("#suggestionsEnabled").checked), true);
     assert.equal(await evaluate(() => document.querySelector("#suggestionsLabel").textContent.trim()), "Suggest saved shortcuts");
     assert.equal(await evaluate(() => document.querySelector("#suggestionsMsg").getAttribute("role")), "status");
@@ -432,7 +438,8 @@ async function runCases(t, app) {
       ...before, settings: { ...before.settings, suggestionsEnabled: false },
     });
     await app.reload();
-    await until(() => evaluate(() => !document.querySelector("#suggestionsEnabled").checked), "The saved preference must survive reload");
+    await libraryLoaded();
+    assert.equal(await evaluate(() => document.querySelector("#suggestionsEnabled").checked), false, "The saved preference must survive reload");
   });
 
   await t.test("a rejected preference save restores its value with a persistent visible error and sensible focus", async () => {
