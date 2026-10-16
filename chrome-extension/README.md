@@ -19,10 +19,126 @@ The preview loops here; the extension plays the logo once and lets you replay it
 Type a trigger in the **Try it** box on the options page to see it work.
 Press Backspace right after an expansion to get the trigger back.
 
-A trigger fires only when you typed it (or pasted it). A page can read whatever
-lands in its own fields, so text a page's script writes into a field, input
-events it dispatches and keys it fakes in the search overlay never produce an
-expansion; otherwise any site could try `addr/` and read your address back.
+Choose **Settings → Text animation** to change how shortcuts appear:
+
+- **Expand** (default): keep matching shorthand letters and quickly fill the
+  missing letters around them, so `yg` grows into `you got it`.
+- **Casino**: cycle random letters, then lock the correct letters from left
+  to right.
+- **Off — instant**: replace the shorthand immediately with no animation.
+
+The effects take less than a second and finish immediately when you continue
+typing, undo, or move away. Reduced-motion preferences suppress both effects.
+The same choice applies to picker and completed-template insertion; toolbar
+copying does not animate.
+
+The page receives the finished text in one edit. Intermediate letters are
+temporary visual feedback, so a page's autosave never receives scrambled text.
+Text animation supports ordinary inputs, textareas and plain rich-text fields.
+Complex formatting or backgrounds, masked fields, overflowing or horizontally
+scrolled single-line inputs, right-to-left layouts and long expansions use a
+brief blue outline when it can be positioned correctly. Otherwise, replacement
+appears instantly. **Off** also suppresses the outline.
+
+![A real browser grows yg into you got it](store/images/actle-expansion.gif)
+
+![Casino letters settle into you got it in a real browser](store/images/actle-casino.gif)
+
+These demos loop; each expansion plays the effect once.
+
+## Install in Firefox (temporary development install)
+
+Firefox 142 or later is required. From this directory, run `npm run build`,
+open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**,
+and select `dist/firefox/manifest.json`. Open the extension's options from
+`about:addons` if the manager does not open automatically.
+
+Temporary installations are removed when Firefox restarts. A regular Firefox
+release must be signed through Firefox Add-ons. The Chrome manifest in the
+source directory is not the Firefox package.
+
+## Your shortcut library
+
+The library has a navy sidebar linking to your library, playground, settings,
+and import/export tools. Saved shorthands appear beside the script editor, with
+three-line text previews and a badge showing each template's number of blanks.
+The selected script is highlighted while you edit it. Narrow windows stack the
+library and editor, keeping the editing controls in view. The library, toolbar,
+search overlay, and fill-in form follow the browser's light or dark appearance.
+Keyboard focus, selected results, and disabled controls have distinct states.
+
+The actle logo completes `actle` into `autocompletele` once when the library or
+toolbar popup opens. Select the logo to replay the completion. Reduced-motion
+preferences suppress the animation. Store screenshots show the resting logo;
+the promotional tile uses a static `actle → autocompletele` motif.
+
+## Fill-in templates
+
+Save one reusable script with named blanks, like a Mad Libs:
+
+```text
+Hi [[name]],
+
+Thanks for reaching out about [[topic]].
+I’ll follow up on {date}. Thanks again, [[name]]!
+```
+
+Give it a trigger such as `hello/`. Type that trigger, choose the script from
+the `;;` picker, or select **Fill in** in the toolbar. A form asks for `name`
+and `topic`, with a live preview of the finished text. Use the **Fields** table
+for one row per named blank, or switch to **In message** to fill blue blanks
+where they appear in the script. Repeated `[[name]]` blanks share one answer
+across both views. Fill every blank, then choose **Insert text** on a
+webpage or **Copy text** in the toolbar. Enter also submits a completed form;
+Escape or **Cancel** dismisses it without inserting or copying text. The page's
+trigger remains until you confirm. If the original field changes or becomes
+unavailable while the form is open, insertion stops with a message and your
+answers remain in the form.
+
+In the editor, type `[[name]]` directly or enter a name under **Add a fill-in
+blank** and choose **Insert blank** to add it at the script's caret. To insert
+the same blank again, choose its blue button under **Reuse a blank**. Reusing
+it links another occurrence to the same answer. The script preview highlights
+blanks before you save. Names are trimmed and case-sensitive:
+`[[ name ]]` and `[[name]]` share an answer; `[[Name]]` is a separate blank.
+Names cannot be empty or contain brackets or line breaks. Write `\[[name]]`
+in the script to insert the literal text `[[name]]` without a prompt.
+
+The editor's **Insert variable** menu inserts `{date}`, `{time}`, `{datetime}`,
+`{cursor}`, `{weekday}`, or a pronoun variable at the script's caret. `{weekday}`
+uses the current local weekday in English, such as `Sunday`. A weekday-only
+script expands directly, without a fill-in form. In a form, the date, time,
+and weekday are fixed when it opens so the preview matches the inserted text.
+
+Add pronoun variables when a script refers to a person. Each use asks you to
+choose **she/her**, **he/him**, **they/them**, or **Custom**; that choice supplies
+all pronoun occurrences in the message. It is never inferred from a name.
+
+| Variable | she/her | he/him | they/them |
+| --- | --- | --- | --- |
+| `{subject}` | she | he | they |
+| `{object}` | her | him | them |
+| `{possessive}` (before a noun) | her | his | their |
+| `{possessivepronoun}` (on its own) | hers | his | theirs |
+| `{reflexive}` | herself | himself | themself |
+
+For example, `On {weekday}, [[name]] said {subject} would bring {possessive}
+notes. Thank [[name]] for helping.` combines the weekday, one linked name,
+and one pronoun choice. Use `{Subject}` for a capitalized first letter or
+`{SUBJECT}` for capitals throughout. Write `{{weekday}}` or `{{subject}}` to
+insert the literal token without evaluating it. A named blank such as
+`[[subject]]` remains a separate free-text answer.
+
+Answers are inserted literally: entering `{date}`, `{cursor}`, or `[[other]]`
+as an answer does not run another placeholder or create another blank. Answers
+and chosen/custom pronouns are temporary; they are not saved to your library,
+synchronized, or included in JSON exports. Your saved script keeps its blanks
+and variables for the next use.
+
+Fill-in forms are available in the Chrome and Firefox extensions. JSON transfer
+preserves the script text in the Windows and Android apps, but those apps do not
+prompt for answers and leave `[[name]]`, `{weekday}`, and pronoun variables in
+the expanded text. The existing date/time/cursor placeholders still work there.
 
 ## Toolbar command palette
 
