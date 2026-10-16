@@ -39,7 +39,10 @@ grant/consumeEdit input-trust model. Fixed areas:
 
 ## Verified (2026-10-16, this machine)
 
-- Extension unit tests: **251/251 pass** (`npm test` in `chrome-extension/`).
+- Extension unit tests: **259/259 pass** (`npm test` in `chrome-extension/`).
+  The bad merge had also dropped 4 `event-security` tests (19 -> 15),
+  including the two NBSP tests guarding the duplicate `consumeEdit` fix;
+  restored verbatim from `3372a0f` on 2026-10-16.
 - Chrome e2e: **168/168 pass** (`npm run test:e2e`, `EXTENSION_PATH=dist/chrome`).
 - Firefox core e2e file: **16/16 pass** (`e2e-firefox/extension.e2e.js`).
 - `npm ci`, `npm run build`, and `npm run lint:firefox` all succeed
@@ -48,11 +51,9 @@ grant/consumeEdit input-trust model. Fixed areas:
 
 ## To do next, in order
 
-1. **Confirm the full Firefox e2e suite in CI.** It was not run to completion
-   locally: this Windows sandbox blocks the helper's `127.0.0.1` listener and
-   GitHub driver downloads, and one `template-variables` case asserted a
-   `1280x800` window against an actual `1280x799` (likely environmental).
-   The restored CI runs it on Ubuntu; read that result before changing code.
+1. **Confirm the full Firefox e2e suite in CI.** DONE 2026-10-16: CI run
+   38979086683 on `d1a48d6` passed all three jobs, including the full
+   Firefox e2e step and the Windows and Android build/test jobs.
 2. **Windows app baseline.** Nothing in `windows/` was touched by the bad
    merge, but its suite has not been run since. From `windows/`: build
    `ShorthandExpander.sln` and run `ShorthandExpander.Tests`. Report the
