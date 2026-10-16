@@ -51,6 +51,22 @@ test("render substitutes date/time placeholders", () => {
   assert.equal(render("{DATE}", now).text, "2026-09-08");
 });
 
+test("render shifts dates by whole local days across month and year ends", () => {
+  const now = new Date(2026, 0, 31, 15, 4);
+  assert.equal(render("{date+1}", now).text, "2026-02-01");
+  assert.equal(render("{date-31}", now).text, "2025-12-31");
+  assert.equal(render("{date+0}", now).text, "2026-01-31");
+  assert.equal(render("{datetime+7}", now).text, "2026-02-07 15:04");
+  assert.equal(render("{DATE+2}", now).text, "2026-02-02");
+  assert.equal(render("due {date+7}", now).cursorOffset, "due 2026-02-07".length);
+});
+
+test("render leaves unsupported or malformed date shifts literal", () => {
+  const now = new Date(2026, 0, 31, 15, 4);
+  assert.equal(render("{time+1} {date+} {date+10000} {cursor+1} {{date+7}}", now).text,
+    "{time+1} {date+} {date+10000} {cursor+1} {date+7}");
+});
+
 test("render handles {cursor}", () => {
   const r = render("Best regards,\n{cursor}\nAlex");
   assert.equal(r.text, "Best regards,\n\nAlex");

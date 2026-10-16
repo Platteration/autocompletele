@@ -44,17 +44,19 @@
       if (source[position] === "{") {
         // Consume an escape as a whole so its inner token cannot request an
         // answer. The shared renderer removes one brace pair later.
-        const escapedVariable = /^\{\{[a-z]+\}\}/i.exec(source.slice(position));
+        const escapedVariable = /^\{\{[a-z]+(?:[+-]\d{1,4})?\}\}/i.exec(source.slice(position));
         if (escapedVariable) {
           pending += escapedVariable[0];
           position += escapedVariable[0].length;
           continue;
         }
-        const variable = /^\{(weekday|subject|object|possessive|possessivepronoun|reflexive)\}/i.exec(source.slice(position));
-        if (variable) {
+        const variable = /^\{(weekday|subject|object|possessive|possessivepronoun|reflexive)([+-]\d{1,4})?\}/i.exec(source.slice(position));
+        if (variable && (!variable[2] || variable[1].toLowerCase() === "weekday")) {
           flush();
           const name = variable[1].toLowerCase();
-          result.push({ type: "variable", name, label: variableLabels[name], raw: variable[0] });
+          const part = { type: "variable", name, label: variableLabels[name], raw: variable[0] };
+          if (variable[2]) part.offset = parseInt(variable[2], 10);
+          result.push(part);
           position += variable[0].length;
           continue;
         }
@@ -127,10 +129,10 @@
 
   function variableValue(part, now, pronouns) {
     let value;
-    if (part.name === "weekday") value = weekdays[now.getDay()];
+    if (part.name === "weekday") value = weekdays[(((now.getDay() + (part.offset || 0)) % 7) + 7) % 7];
     else if (pronouns != null && Object.hasOwn(pronouns, part.name)) value = asText(pronouns[part.name]);
     else return part.raw;
-    const spelling = part.raw.slice(1, -1);
+    const spelling = part.raw.slice(1, 1 + part.name.length);
     if (spelling === spelling.toUpperCase()) return value.toUpperCase();
     if (spelling === part.name[0].toUpperCase() + part.name.slice(1)) {
       return value.replace(/^./u, (letter) => letter.toUpperCase());

@@ -53,7 +53,9 @@ Expansions may contain the placeholders `{date}`, `{time}`, `{datetime}` and
 
 In Chrome and Firefox, add linked `[[name]]` blanks to a script and fill them
 in a table or directly in the message. The editor's **Insert variable** menu
-also offers the local `{weekday}` and pronouns chosen for each use. These
+also offers the local `{weekday}`, shifted dates such as `{date+7}`,
+`{datetime-1}` and `{weekday+1}` (whole days), and pronouns chosen for each
+use. These
 browser features preserve their tokens during JSON transfer; Windows and
 Android do not fill them. See the [template guide](chrome-extension/README.md#fill-in-templates).
 

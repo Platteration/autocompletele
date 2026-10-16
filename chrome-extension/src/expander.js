@@ -47,6 +47,14 @@
     return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
   }
 
+  // {date+7} / {date-1}: whole-day shifts on the local calendar, so month,
+  // year and daylight-saving boundaries follow the local date, not 24h spans.
+  function shifted(d, days) {
+    const copy = new Date(d);
+    copy.setDate(copy.getDate() + days);
+    return copy;
+  }
+
   function formatTime(d) {
     return pad(d.getHours()) + ":" + pad(d.getMinutes());
   }
@@ -73,22 +81,25 @@
       const ch = src[i];
       if (ch === "{") {
         // Escaped literal: {{name}} -> {name}
-        const escaped = /^\{\{([a-z]+)\}\}/i.exec(src.slice(i));
+        const escaped = /^\{\{([a-z]+(?:[+-]\d{1,4})?)\}\}/i.exec(src.slice(i));
         if (escaped) {
           out += "{" + escaped[1] + "}";
           i += escaped[0].length;
           continue;
         }
-        const m = /^\{([a-z]+)\}/i.exec(src.slice(i));
+        const m = /^\{([a-z]+)([+-]\d{1,4})?\}/i.exec(src.slice(i));
         if (m) {
           const name = m[1].toLowerCase();
-          if (name === "cursor") {
+          const dayOffset = m[2] ? parseInt(m[2], 10) : 0;
+          const when = dayOffset ? shifted(d, dayOffset) : d;
+          if (name === "cursor" && !m[2]) {
             if (cursorOffset < 0) cursorOffset = out.length;
             i += m[0].length;
             continue;
           }
-          if (Object.prototype.hasOwnProperty.call(values, name)) {
-            out += values[name];
+          if (name === "date" || name === "datetime" || (!m[2] && name === "time")) {
+            out += name === "date" ? formatDate(when)
+              : name === "datetime" ? formatDate(when) + " " + formatTime(when) : values[name];
             i += m[0].length;
             continue;
           }

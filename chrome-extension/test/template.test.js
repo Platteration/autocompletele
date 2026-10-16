@@ -174,6 +174,16 @@ test("weekday renders full English names for each local calendar day", () => {
   });
 });
 
+test("weekday shifts by whole days without asking for input", () => {
+  const sunday = new Date(2026, 9, 11, 14, 5);
+  assert.equal(template.render("{weekday+1} {weekday-1} {weekday+7} {Weekday+2} {WEEKDAY+3}", {}, sunday).text,
+    "Monday Saturday Sunday Tuesday WEDNESDAY");
+  assert.equal(template.requiresInput("{weekday+1} on {date+7}"), false);
+  assert.deepEqual(template.variables("{weekday+1} {weekday-2}"), ["weekday"]);
+  assert.equal(template.render("{subject+1}", {}, sunday).text, "{subject+1}");
+  assert.equal(template.requiresInput("{subject+1}"), false);
+});
+
 test("weekday uses the local date when UTC is already the next day", () => {
   const output = execFileSync(process.execPath, ["-e", `
     const template = require(${JSON.stringify(path.resolve(__dirname, "../src/template.js"))});

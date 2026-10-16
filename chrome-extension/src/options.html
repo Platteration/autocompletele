@@ -92,6 +92,9 @@
               <optgroup label="Date and time">
                 <option value="{weekday}">Weekday · {weekday}</option>
                 <option value="{date}">Date · {date}</option>
+                <option value="{date+1}">Tomorrow's date · {date+1}</option>
+                <option value="{date+7}">Date in a week · {date+7}</option>
+                <option value="{weekday+1}">Tomorrow's weekday · {weekday+1}</option>
                 <option value="{time}">Time · {time}</option>
                 <option value="{datetime}">Date and time · {datetime}</option>
               </optgroup>
@@ -141,6 +144,7 @@
       <dl>
         <div><dt><code>[[name]]</code></dt><dd>A blank to fill in each time</dd></div>
         <div><dt><code>{date}</code></dt><dd>Today's date</dd></div>
+        <div><dt><code>{date+7}</code></dt><dd>A shifted date: + or − whole days, also for {datetime} and {weekday}</dd></div>
         <div><dt><code>{time}</code></dt><dd>The current time</dd></div>
         <div><dt><code>{datetime}</code></dt><dd>Date and time together</dd></div>
         <div><dt><code>{weekday}</code></dt><dd>Your local weekday, in English</dd></div>
