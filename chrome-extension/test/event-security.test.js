@@ -87,6 +87,24 @@ test("trusted input only expands the actively focused editable field", async () 
   assert.equal(c.field.value, "private snippet");
 });
 
+test("a successful expansion records one local use for ranking", async () => {
+  const recorded = [];
+  const c = await content({
+    storage: {
+      DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" },
+      async getAll() { return { shorthands: [{ id: "s1", trigger: "secret/", expansion: "private snippet" }], settings: {} }; },
+      async getUsageCounts() { return {}; },
+      recordUse(id) { recorded.push(id); },
+    },
+  });
+  c.input("secret/", true);
+  assert.equal(c.field.value, "private snippet");
+  assert.deepEqual(recorded, ["s1"]);
+  c.input("secret/", false);
+  assert.equal(c.field.value, "secret/");
+  assert.deepEqual(recorded, ["s1"], "fabricated input must not record a use");
+});
+
 test("the final DOM check stops changes queued after asynchronous quota validation", async (t) => {
   const scenarios = [
     { name: "the page replaces the draft", change(field) {

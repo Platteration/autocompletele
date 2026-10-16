@@ -33,12 +33,16 @@
     return -1;
   }
 
-  function search(list, query, limit) {
+  function search(list, query, limit, usageCounts) {
     const cap = Number.isFinite(limit) ? Math.max(0, limit) : 6;
     return (Array.isArray(list) ? list : [])
-      .map((item, index) => ({ item, index, score: score(item, query) }))
+      .map((item, index) => {
+        const uses = usageCounts && item && usageCounts[item.id];
+        return { item, index, score: score(item, query), uses: Number.isFinite(uses) && uses > 0 ? uses : 0 };
+      })
       .filter((entry) => entry.score >= 0)
-      .sort((a, b) => b.score - a.score || a.index - b.index)
+      // Match quality stays primary; local use counts break score ties.
+      .sort((a, b) => b.score - a.score || b.uses - a.uses || a.index - b.index)
       .slice(0, cap)
       .map((entry) => entry.item);
   }

@@ -70,8 +70,12 @@ Suggestions are on by default. Type at least two characters of a saved trigger
 at the start of a field or after a space or punctuation, such as `th` for
 `thanks/`. A combined emoji or a letter with combining marks counts as one
 character. Up to five matching partial triggers appear beside the field, with
-their saved text previews. Matching is case-sensitive; shorter completions
-appear first, with your library order breaking ties.
+their saved text previews. Matching is case-sensitive; the snippets you use
+most appear first, with shorter completions and then library order breaking
+ties. Use counts stay in this browser profile's local storage and are never
+synced, exported, or sent anywhere. The same most-used ordering applies to
+the `;;` search overlay and breaks ties in the toolbar palette; successful
+insertions and toolbar copies count as uses.
 
 Press ↑ or ↓ to select a result, then Enter to insert it, or click a result.
 Focus stays in the page's field while browsing suggestions. Enter before you

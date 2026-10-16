@@ -12,6 +12,7 @@
   const premium = self.ActlePremium;
 
   let shorthands = [];
+  let usageCounts = {}; // local per-snippet use counts, for ranking only
   let enabled = true;
   let hostExcluded = false;
   let pickerTrigger = storage.DEFAULT_SETTINGS.pickerTrigger;
@@ -144,7 +145,8 @@
   async function reload() {
     try {
       const data = await storage.getAll();
-      shorthands = data.shorthands.filter((s) => s.trigger);
+      usageCounts = storage.getUsageCounts ? await storage.getUsageCounts() : {};
+      shorthands = sortByUsage(data.shorthands.filter((s) => s.trigger));
       enabled = data.settings.enabled !== false;
       hostExcluded = (data.settings.excludedHosts || []).includes(location.hostname);
       pickerTrigger = typeof data.settings.pickerTrigger === "string"
@@ -160,6 +162,26 @@
     } catch (e) {
       // Extension context may be gone after an update/reload; stay quiet.
     }
+  }
+
+  function usageOf(sh) {
+    const count = sh && usageCounts[sh.id];
+    return Number.isFinite(count) && count > 0 ? count : 0;
+  }
+
+  // Most-used first, library order breaking ties. The picker inherits this
+  // order; suggestions receive the counts and rank with them directly.
+  function sortByUsage(list) {
+    return list.map((sh, index) => ({ sh, index }))
+      .sort((a, b) => usageOf(b.sh) - usageOf(a.sh) || a.index - b.index)
+      .map((entry) => entry.sh);
+  }
+
+  function noteUse(id) {
+    if (!id) return;
+    usageCounts[id] = usageOf({ id }) + 1;
+    shorthands = sortByUsage(shorthands);
+    if (storage.recordUse) storage.recordUse(id);
   }
 
   function insertText(text) {
@@ -191,13 +213,13 @@
   // The fill-in form takes focus. Keep the original text and insertion point,
   // then check them again before restoring focus: a page may save or replace
   // its editor on blur, or receive an update while the form is being filled.
-  function fieldTarget(el, start, end, trigger) {
-    return { el, start, end, trigger, value: el.value };
+  function fieldTarget(el, start, end, trigger, shorthandId = null) {
+    return { el, start, end, trigger, shorthandId, value: el.value };
   }
 
-  function nodeTarget(el, node, start, end, trigger) {
+  function nodeTarget(el, node, start, end, trigger, shorthandId = null) {
     return {
-      el, node, start, end, trigger,
+      el, node, start, end, trigger, shorthandId,
       parent: node.parentNode,
       value: node.textContent,
       rootText: el.textContent,
@@ -275,6 +297,7 @@
         lastExpansion = { el: target.el, start: target.start, text, cursorOffset, trigger: target.trigger };
       }
       showExpansionFeedback(target.el, feedback);
+      noteUse(target.shorthandId);
       return true;
     }, () => {
       if (!insertionReady(target, !fromForm)) return false;
@@ -288,6 +311,7 @@
   }
 
   function fillTemplate(shorthand, target) {
+    target.shorthandId = shorthand.id;
     if (!template.requiresInput(shorthand.expansion)) return false;
     if (templateTarget || templateForm.isOpen()) return true;
     templateTarget = target;
@@ -349,9 +373,9 @@
     const match = findMatch(before, shorthands);
     if (!match || !typedTrigger(el, match.start, caret)) return false;
 
-    if (fillTemplate(match.shorthand, fieldTarget(el, match.start, caret, match.shorthand.trigger))) return true;
+    if (fillTemplate(match.shorthand, fieldTarget(el, match.start, caret, match.shorthand.trigger, match.shorthand.id))) return true;
 
-    insertExpansion(fieldTarget(el, match.start, caret, match.shorthand.trigger), template.render(match.shorthand.expansion));
+    insertExpansion(fieldTarget(el, match.start, caret, match.shorthand.trigger, match.shorthand.id), template.render(match.shorthand.expansion));
     return true;
   }
 
@@ -418,9 +442,9 @@
     if (!match || !typedTrigger(root, match.start, range.startOffset, node)) return false;
 
     if (fillTemplate(match.shorthand,
-      nodeTarget(root, node, match.start, range.startOffset, match.shorthand.trigger))) return true;
+      nodeTarget(root, node, match.start, range.startOffset, match.shorthand.trigger, match.shorthand.id))) return true;
 
-    insertExpansion(nodeTarget(root, node, match.start, range.startOffset, match.shorthand.trigger), template.render(match.shorthand.expansion));
+    insertExpansion(nodeTarget(root, node, match.start, range.startOffset, match.shorthand.trigger, match.shorthand.id), template.render(match.shorthand.expansion));
     return true;
   }
 
@@ -535,7 +559,7 @@
     if (!suggestionsEnabled || templateTarget || templateForm.isOpen()) return;
     const snapshot = editSnapshot(el);
     if (!snapshot || snapshot.start == null || snapshot.start !== snapshot.end) return;
-    const match = suggestions.find(snapshot.value.slice(0, snapshot.end), shorthands);
+    const match = suggestions.find(snapshot.value.slice(0, snapshot.end), shorthands, usageCounts);
     if (!match || !typedTrigger(el, match.start, snapshot.end, snapshot.node)) {
       dismissedSuggestion = null;
       return;
@@ -664,6 +688,11 @@
   for (const event of ["resize", "blur", "pagehide"]) window.addEventListener(event, closeSuggestions);
 
   chrome.storage.onChanged.addListener((_changes, area) => {
+    if (area === "local" && _changes["shorthand-usage-counts"]) {
+      usageCounts = _changes["shorthand-usage-counts"].newValue || {};
+      shorthands = sortByUsage(shorthands);
+      return;
+    }
     if (area === storage.AREA && Object.keys(_changes).some((key) => key !== "actle-premium")) reload();
   });
 

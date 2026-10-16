@@ -68,6 +68,26 @@ test("Chrome keeps using sync storage", async () => {
   assert.equal((await app.storage.getAll()).shorthands.length, 2);
 });
 
+test("use counts live in local storage only and accumulate by id", async () => {
+  const app = storageWith(initial);
+  await app.storage.recordUse("sig");
+  await app.storage.recordUse("sig");
+  await app.storage.recordUse("local");
+  await app.storage.recordUse("");
+  assert.deepEqual(plain(await app.storage.getUsageCounts()), { sig: 2, local: 1 });
+  assert.equal(app.items["shorthand-usage-counts"], undefined, "counts must never reach synced library storage");
+  assert.deepEqual(plain(app.local["shorthand-usage-counts"]), { sig: 2, local: 1 });
+  assert.equal(JSON.stringify(app.storage.toExportJson((await app.storage.getAll()).shorthands)).includes("usage"), false);
+});
+
+test("stored use counts are sanitized on read", async () => {
+  const app = storageWith(initial);
+  app.local["shorthand-usage-counts"] = { a: 2.9, b: -1, c: "many", d: 0, e: Infinity };
+  assert.deepEqual(plain(await app.storage.getUsageCounts()), { a: 2 });
+  app.local["shorthand-usage-counts"] = ["not", "a", "map"];
+  assert.deepEqual(plain(await app.storage.getUsageCounts()), {});
+});
+
 test("a rejected library write leaves the entire saved library intact", async () => {
   const app = storageWith(initial, {
     rejectSet() { throw new Error("MAX_WRITE_OPERATIONS_PER_MINUTE quota exceeded"); },

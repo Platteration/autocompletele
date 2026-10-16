@@ -13,7 +13,7 @@
   const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
   /** Return partial trigger matches sharing one UTF-16 replacement start. */
-  function find(before, shorthands) {
+  function find(before, shorthands, usageCounts) {
     if (typeof before !== "string" || before.length < 2 || !Array.isArray(shorthands)) return null;
     const saved = shorthands.filter((sh) => sh && typeof sh.trigger === "string" && sh.trigger.length > 2);
     let longest = 0;
@@ -31,10 +31,13 @@
         // A query cannot finish halfway through a joined emoji or a combining
         // sequence, nor can one large emoji count as two typed characters.
         if (typed < 2) return;
-        matching.push({ sh, order, remaining: parts.length - typed });
+        const uses = usageCounts && usageCounts[sh.id];
+        matching.push({ sh, order, remaining: parts.length - typed, uses: Number.isFinite(uses) && uses > 0 ? uses : 0 });
       });
       if (matching.length) {
-        matching.sort((a, b) => a.remaining - b.remaining || a.order - b.order);
+        // Most-used first; without counts every use is 0 and the previous
+        // shortest-completion, then library-order, ranking is preserved.
+        matching.sort((a, b) => b.uses - a.uses || a.remaining - b.remaining || a.order - b.order);
         return { start, query, items: matching.slice(0, MAX_RESULTS).map((item) => item.sh) };
       }
     }

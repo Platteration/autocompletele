@@ -62,6 +62,17 @@ test("shortest remaining trigger ranks first, with saved order breaking ties", (
   assert.deepEqual(find("br", list).items, [list[1], list[2], list[4], list[5], list[6]]);
 });
 
+test("most-used suggestions rank first, with previous ranking as fallback", () => {
+  const used = [
+    { id: "brb", trigger: "brb/", expansion: "Be right back" },
+    { id: "brief", trigger: "brief/", expansion: "Here is the brief" },
+  ];
+  assert.deepEqual(find("br", used, { brief: 5 }).items, [used[1], used[0]]);
+  assert.deepEqual(find("br", used, { brb: 2, brief: 2 }).items, [used[0], used[1]]);
+  assert.deepEqual(find("br", used, {}).items, [used[0], used[1]]);
+  assert.deepEqual(find("br", used, { brief: "many" }).items, [used[0], used[1]]);
+});
+
 test("remaining length counts graphemes, including emoji and combining marks", () => {
   const family = { trigger: "br👨‍👩‍👧‍👦", expansion: "Family" };
   const mark = { trigger: "bré", expansion: "Accent" };

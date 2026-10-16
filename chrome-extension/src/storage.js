@@ -8,10 +8,12 @@
   const SETTINGS_KEY = "settings";
   const JOURNAL_KEY = "shorthand-import-journal";
   const BACKUP_KEY = "shorthand-import-backup";
+  const USAGE_KEY = "shorthand-usage-counts";
   const AREA = chrome.runtime.getManifest().browser_specific_settings?.gecko ? "local" : "sync";
   const dataStore = chrome.storage[AREA];
   const encoder = new TextEncoder();
   let writes = Promise.resolve();
+  let usageWrites = Promise.resolve();
   // pickerTrigger opens the search overlay; an empty string turns it off.
   const DEFAULT_SETTINGS = { enabled: true, excludedHosts: [], pickerTrigger: ";;", animationMode: "expand", suggestionsEnabled: true };
 
@@ -44,6 +46,36 @@
     settings.animationMode = animationMode(settings.animationMode);
     settings.suggestionsEnabled = suggestionsEnabled(settings.suggestionsEnabled);
     return { shorthands, settings };
+  }
+
+  // Per-snippet use counts ranking suggestions and search. They are a local
+  // convenience only: always storage.local, never synced, never exported,
+  // and keyed by shorthand id so renaming a trigger keeps its history.
+  function sanitizeUsageCounts(value) {
+    const counts = {};
+    if (!value || typeof value !== "object" || Array.isArray(value)) return counts;
+    for (const [id, count] of Object.entries(value)) {
+      if (Number.isFinite(count) && count > 0) counts[id] = Math.floor(count);
+    }
+    return counts;
+  }
+
+  async function getUsageCounts() {
+    if (!chrome.storage.local) return {};
+    const items = await chrome.storage.local.get(USAGE_KEY);
+    return sanitizeUsageCounts(items[USAGE_KEY]);
+  }
+
+  function recordUse(id) {
+    if (!id || !chrome.storage.local) return Promise.resolve();
+    // Best effort and approximate across tabs: a lost increment only
+    // slightly delays a snippet's rise in the rankings.
+    usageWrites = usageWrites.then(async () => {
+      const counts = await getUsageCounts();
+      counts[id] = (counts[id] || 0) + 1;
+      await chrome.storage.local.set({ [USAGE_KEY]: counts });
+    }).catch(() => {});
+    return usageWrites;
   }
 
   async function saveShorthand(sh) {
@@ -251,6 +283,8 @@
     recoverPendingImport,
     getImportBackup,
     saveSettings,
+    getUsageCounts,
+    recordUse,
     toExportJson,
     DEFAULT_SETTINGS,
     AREA,

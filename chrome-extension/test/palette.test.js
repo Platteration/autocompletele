@@ -27,6 +27,17 @@ test("empty query preserves storage order and obeys the limit", () => {
   assert.deepEqual(search(list, "", 2), list.slice(0, 2));
 });
 
+test("local use counts break score ties, but never beat a better match", () => {
+  const withIds = [
+    { id: "a", trigger: "abx/", expansion: "One" },
+    { id: "b", trigger: "aby/", expansion: "Two" },
+  ];
+  assert.deepEqual(search(withIds, "ab", 4).map((item) => item.id), ["a", "b"]);
+  assert.deepEqual(search(withIds, "ab", 4, { b: 7 }).map((item) => item.id), ["b", "a"]);
+  assert.deepEqual(search(withIds, "", 4, { b: 1 }).map((item) => item.id), ["b", "a"]);
+  assert.deepEqual(search(withIds, "abx/", 4, { b: 99 }).map((item) => item.id), ["a"]);
+});
+
 test("handles junk input and zero limits", () => {
   assert.deepEqual(search(null, "x", 4), []);
   assert.deepEqual(search(list, "x", 0), []);

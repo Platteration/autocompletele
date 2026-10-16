@@ -17,6 +17,7 @@
   let shorthands = [];
   let excluded = [];
   let visible = [];
+  let usageCounts = {};
 
   function setStatus(enabled, siteEnabled) {
     const active = enabled && siteEnabled;
@@ -32,6 +33,12 @@
     }, 1800);
   }
 
+  function noteUse(shorthand) {
+    if (!shorthand || !shorthand.id) return;
+    usageCounts[shorthand.id] = (usageCounts[shorthand.id] || 0) + 1;
+    if (storage.recordUse) storage.recordUse(shorthand.id);
+  }
+
   async function copy(shorthand) {
     if (!shorthand || templateForm.isOpen()) return;
     if (template.requiresInput(shorthand.expansion)) {
@@ -44,6 +51,7 @@
         async onSubmit(result) {
           try {
             await navigator.clipboard.writeText(result.text);
+            noteUse(shorthand);
             say(`Copied ${shorthand.trigger}`);
             if (previous && previous.isConnected) previous.focus({ preventScroll: true });
             return true;
@@ -59,6 +67,7 @@
         ? template.render(shorthand.expansion).text
         : template.fill(shorthand.expansion, {});
       await navigator.clipboard.writeText(text);
+      noteUse(shorthand);
       say(`Copied ${shorthand.trigger}`);
     } catch (_) {
       say("Could not copy to clipboard.");
@@ -66,7 +75,7 @@
   }
 
   function renderResults() {
-    visible = palette.search(shorthands, searchEl.value, 6);
+    visible = palette.search(shorthands, searchEl.value, 6, usageCounts);
     resultsEl.textContent = "";
     if (!visible.length) {
       const empty = document.createElement("div");
@@ -110,6 +119,7 @@
   } catch (_) { /* no tab access */ }
 
   const data = await storage.getAll();
+  usageCounts = storage.getUsageCounts ? await storage.getUsageCounts() : {};
   shorthands = data.shorthands;
   const settings = data.settings;
   enabledEl.checked = settings.enabled !== false;
