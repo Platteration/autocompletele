@@ -5,8 +5,14 @@ on:
     branches: ["**"]
   pull_request:
 
+# Nothing here writes to the repository.
 permissions:
   contents: read
+
+# A newer push to the same ref supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   chrome-extension:
@@ -24,9 +30,13 @@ jobs:
         run: cd chrome-extension && npm test
       - name: Syntax check
         run: cd chrome-extension && npm run check
-      - name: Install Playwright and Chromium
-        run: cd chrome-extension && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
-      - name: End-to-end tests
+      - name: Build browser packages
+        run: cd chrome-extension && npm run build
+      - name: Validate Firefox package
+        run: cd chrome-extension && npm run lint:firefox
+      - name: Install browser runtimes
+        run: cd chrome-extension && npx playwright install --with-deps --no-shell chromium firefox
+      - name: Chrome end-to-end tests
         run: cd chrome-extension && npm run test:e2e
         env:
           EXTENSION_PATH: dist/chrome

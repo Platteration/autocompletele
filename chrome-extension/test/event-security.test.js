@@ -4,22 +4,38 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
+const premiumConfig = { enforceDailyLimit: false };
+function previewClient() {
+  return require("../src/premium-client.js").createClient({
+    config: premiumConfig,
+    chrome: { runtime: { async sendMessage() { return { ok: true, result: {} }; } } },
+    notice() {},
+  });
+}
+
 async function content() {
   const listeners = {}, opened = [];
   const document = { activeElement: null, addEventListener(name, fn) { listeners[name] = fn; }, execCommand() { return false; } };
   const sandbox = {
     self: {
+      ActlePremium: previewClient(), ActlePremiumConfig: premiumConfig,
       ShorthandExpander: require("../src/expander.js"),
-      ShorthandStorage: { DEFAULT_SETTINGS: { pickerTrigger: ";;" }, async getAll() { return { shorthands: [{ trigger: "secret/", expansion: "private snippet" }], settings: {} }; } },
+      ShorthandFieldSafety: require("../src/field-safety.js"),
+      ShorthandSuggestions: require("../src/suggestions.js"),
+      ShorthandTemplate: require("../src/template.js"),
+      ShorthandTemplateForm: { isOpen() { return false; }, show() { return false; } },
+      ShorthandExpansionFeedback: { show() {}, clear() {} },
+      ShorthandStorage: { DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" }, async getAll() { return { shorthands: [{ trigger: "secret/", expansion: "private snippet" }], settings: {} }; } },
       ShorthandPicker: { isOpen() { return false; }, show(opts) { opened.push(opts); return true; } },
     },
-    document, window: {}, location: { hostname: "page.example" }, chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {},
+    document, window: { addEventListener() {} }, location: { hostname: "page.example" }, chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {},
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/content.js"), "utf8"), sandbox);
   await new Promise((resolve) => setImmediate(resolve));
   const field = {
-    tagName: "TEXTAREA", value: "", selectionStart: 0, selectionEnd: 0,
+    tagName: "TEXTAREA", value: "", selectionStart: 0, selectionEnd: 0, isConnected: true,
+    focus() { document.activeElement = this; },
     closest() { return null; }, getRootNode() { return document; },
     setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
     setRangeText(text, start, end) { this.value = this.value.slice(0, start) + text + this.value.slice(end); }, dispatchEvent() {},
@@ -114,7 +130,7 @@ function picker() {
     addEventListener(name, fn) { handlers[name] = fn; }, removeEventListener(name) { delete handlers[name]; },
     body: { appendChild(el) { el.parentNode = this; }, removeChild(el) { el.parentNode = null; } },
   };
-  const sandbox = { self: {}, document, window: { innerWidth: 800, innerHeight: 600, addEventListener() {}, removeEventListener() {} } };
+  const sandbox = { self: {}, document, window: { innerWidth: 800, innerHeight: 600, addEventListener() {}, removeEventListener() {} }, CSSStyleSheet: class { replaceSync() {} } };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/picker.js"), "utf8"), sandbox);
   const anchor = { getRootNode() { return document; }, getBoundingClientRect() { return { width: 10, height: 10, bottom: 10, left: 0 }; } };
