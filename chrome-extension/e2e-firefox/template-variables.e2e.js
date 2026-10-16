@@ -165,6 +165,20 @@ test("Firefox: template variables, synchronized views, and editor tools", { time
         used: 7, pending: {}, licenseToken: "" };
     });
     const expectedStorage = { ...originalStorage, "actle-premium": usageBefore };
+    // The same insertions, plus one toolbar copy, also recorded local
+    // per-snippet use counts for ranking. That separate record is checked
+    // on its own so the library comparison below stays exact.
+    const storedBefore = await driver.executeScript("return chrome.storage.local.get(null)");
+    const usageCounts = storedBefore["shorthand-usage-counts"];
+    delete storedBefore["shorthand-usage-counts"];
+    assert.deepEqual(storedBefore, expectedStorage);
+    assert.ok(usageCounts && Object.keys(usageCounts).length > 0
+      && Object.keys(usageCounts).every((id) => originalStorage["sh:" + id])
+      && Object.values(usageCounts).every((count) => Number.isInteger(count) && count > 0),
+    "use counts must be positive integers keyed by saved snippet ids");
+    assert.equal(Object.values(usageCounts).reduce((sum, count) => sum + count, 0), usageBefore.used + 1,
+      "seven insertions plus one toolbar copy");
+    expectedStorage["shorthand-usage-counts"] = usageCounts;
     assert.deepEqual(await driver.executeScript("return chrome.storage.local.get(null)"), expectedStorage);
     await start("Before pron/");
     await formFill("#template-field-0", "Private answer");

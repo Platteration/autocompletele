@@ -60,8 +60,9 @@ test("picker overlay", async (t) => {
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await page.waitForTimeout(200);
-    // Second entry of the seeded list.
-    assert.equal(await page.inputValue("#inp"), "Extremely cool!");
+    // brb/ was inserted through the picker above, so most-used ranking now
+    // puts it first; ArrowDown moves to the next entry, cool/.
+    assert.equal(await page.inputValue("#inp"), "That is really cool!");
   });
 
   await t.test("works in a contenteditable editor", async () => {
