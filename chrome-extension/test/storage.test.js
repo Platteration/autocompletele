@@ -344,3 +344,15 @@ test("suggestion settings stay out of the cross-platform snippet export", async 
     ],
   });
 });
+
+test("only library and settings keys count as library changes", () => {
+  const firefox = storageWith({}, { firefox: true }).storage;
+  for (const key of ["shorthand-usage-counts", "shorthand-pending-draft", "actle-premium"]) {
+    assert.equal(firefox.isLibraryChange({ [key]: {} }, "local"), false, key);
+  }
+  assert.equal(firefox.isLibraryChange({ "shorthand-usage-counts": {}, "sh:a": {} }, "local"), true);
+  assert.equal(firefox.isLibraryChange({ settings: {} }, "local"), true);
+  const chromeStorage = storageWith({}).storage;
+  assert.equal(chromeStorage.isLibraryChange({ "sh:a": {} }, "sync"), true);
+  assert.equal(chromeStorage.isLibraryChange({ "shorthand-import-journal": {} }, "local"), false, "Chrome's library is in sync storage");
+});

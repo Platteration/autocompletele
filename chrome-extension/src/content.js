@@ -693,7 +693,7 @@
       shorthands = sortByUsage(shorthands);
       return;
     }
-    if (area === storage.AREA && Object.keys(_changes).some((key) => key !== "actle-premium")) reload();
+    if (storage.isLibraryChange(_changes, area)) reload();
   });
 
   reload();
