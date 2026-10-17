@@ -122,16 +122,20 @@
     return values;
   }
 
+  // Each person's choice is keyed as the template expects: "subject" for
+  // person 1, "subject2" for person 2, and so on.
   function pronounsFor(session) {
-    if (!session.pronounSelect || !session.pronounSelect.value) return Object.create(null);
-    if (session.pronounSelect.value === "custom") {
-      const values = Object.create(null);
-      for (const { name, input } of session.customPronouns) {
-        if (input.value !== "") values[name] = input.value;
+    const values = Object.create(null);
+    for (const group of session.pronounGroups) {
+      if (group.select.value === "custom") {
+        for (const { key, input } of group.custom) {
+          if (input.value !== "") values[key] = input.value;
+        }
+      } else if (group.select.value) {
+        Object.assign(values, root.ShorthandTemplate.presetFor(group.select.value, group.person));
       }
-      return values;
     }
-    return root.ShorthandTemplate.pronounPresets[session.pronounSelect.value];
+    return values;
   }
 
   function variableText(session, part, pronouns) {
@@ -141,9 +145,9 @@
   function preview(session) {
     const values = valuesFor(session, false);
     const pronouns = pronounsFor(session);
-    const pronounsReady = session.pronounNames.length && session.pronounNames.every((name) => Object.hasOwn(pronouns, name));
-    const count = Object.keys(values).length + (pronounsReady ? 1 : 0);
-    const total = session.inputs.length + (session.pronounNames.length ? 1 : 0);
+    const ready = session.pronounGroups.filter((group) => group.custom.every(({ key }) => Object.hasOwn(pronouns, key))).length;
+    const count = Object.keys(values).length + ready;
+    const total = session.inputs.length + session.pronounGroups.length;
     session.count.textContent = count + " of " + total + " filled";
     session.preview.textContent = "";
     for (const part of root.ShorthandTemplate.parts(session.expansion)) {
@@ -166,11 +170,11 @@
   function updateControls(session) {
     for (const { input } of session.inputs) input.disabled = session.busy || session.view !== "fields";
     for (const { input } of session.inlineInputs) input.disabled = session.busy || session.view !== "message";
-    if (session.pronounSelect) {
-      session.pronounSelect.disabled = session.busy;
-      const custom = session.pronounSelect.value === "custom";
-      session.customPronounGroup.hidden = !custom;
-      for (const { input } of session.customPronouns) input.disabled = session.busy || !custom;
+    for (const group of session.pronounGroups) {
+      group.select.disabled = session.busy;
+      const custom = group.select.value === "custom";
+      group.customGroup.hidden = !custom;
+      for (const { input } of group.custom) input.disabled = session.busy || !custom;
     }
     for (const button of session.viewButtons) button.disabled = session.busy;
     session.submit.disabled = session.busy;
@@ -205,7 +209,7 @@
     const answers = session.view === "fields" ? session.inputs : session.inlineInputs.filter(({ first }) => first);
     return [
       ...session.viewButtons.filter((button) => button.tabIndex === 0),
-      session.pronounSelect, ...session.customPronouns.map(({ input }) => input),
+      ...session.pronounGroups.flatMap((group) => [group.select, ...group.custom.map(({ input }) => input)]),
       ...answers.map(({ input }) => input), session.cancel, session.submit,
     ].filter((el) => el && !el.disabled);
   }
@@ -269,8 +273,8 @@
     if (!options || typeof options.onSubmit !== "function" || !root.ShorthandTemplate) return false;
     const expansion = String(options.expansion == null ? "" : options.expansion);
     const fields = root.ShorthandTemplate.fields(expansion);
-    const pronounNames = root.ShorthandTemplate.variables(expansion).filter((name) => name !== "weekday");
-    if ((!fields.length && !pronounNames.length) || current) return false;
+    const people = root.ShorthandTemplate.pronounPeople(expansion);
+    if ((!fields.length && !people.length) || current) return false;
 
     const host = element("div");
     host.id = HOST_ID;
@@ -315,46 +319,50 @@
     });
     body.appendChild(viewTabs);
 
-    let pronounSelect = null;
-    let customPronounGroup = null;
-    const customPronouns = [];
-    if (pronounNames.length) {
+    // One pronoun choice per person. Person 1 keeps the original ids, so a
+    // single-person script looks and behaves exactly as before.
+    const several = people.length > 1 || (people.length === 1 && people[0].person > 1);
+    const customLabels = {
+      subject: "Subject (she / he / they)", object: "Object (her / him / them)",
+      possessive: "Possessive (her / his / their)", possessivepronoun: "Possessive pronoun (hers / his / theirs)",
+      reflexive: "Reflexive (herself / himself / themself)",
+    };
+    const pronounGroups = people.map(({ person, names }) => {
+      const suffix = person > 1 ? "-" + person : "";
       const group = element("section", "pronouns");
-      const label = element("label", "field", "Pronouns for this message");
-      label.htmlFor = "template-pronouns";
-      pronounSelect = element("select");
-      pronounSelect.id = "template-pronouns";
-      pronounSelect.required = true;
-      pronounSelect.setAttribute("aria-describedby", "template-pronoun-hint");
+      const label = element("label", "field", several ? "Pronouns for person " + person : "Pronouns for this message");
+      label.htmlFor = "template-pronouns" + suffix;
+      const select = element("select");
+      select.id = "template-pronouns" + suffix;
+      select.required = true;
+      select.setAttribute("aria-describedby", "template-pronoun-hint" + suffix);
       for (const [value, text] of [["", "Choose pronouns…"], ["they/them", "they / them"], ["she/her", "she / her"], ["he/him", "he / him"], ["custom", "Custom forms…"]]) {
         const option = element("option", "", text);
         option.value = value;
-        pronounSelect.appendChild(option);
+        select.appendChild(option);
       }
-      label.appendChild(pronounSelect);
-      const hint = element("p", "hint", "Use one set throughout this message, or enter custom forms.");
-      hint.id = "template-pronoun-hint";
-      customPronounGroup = element("div", "custom-pronouns");
-      const labels = {
-        subject: "Subject (she / he / they)", object: "Object (her / him / them)",
-        possessive: "Possessive (her / his / their)", possessivepronoun: "Possessive pronoun (hers / his / theirs)",
-        reflexive: "Reflexive (herself / himself / themself)",
-      };
-      for (const name of pronounNames) {
-        const customLabel = element("label", "field", labels[name]);
+      label.appendChild(select);
+      const hint = element("p", "hint", several
+        ? "Used wherever the script says " + names.map((name) => "{" + root.ShorthandTemplate.pronounKey(name, person) + "}").join(", ") + "."
+        : "Use one set throughout this message, or enter custom forms.");
+      hint.id = "template-pronoun-hint" + suffix;
+      const customGroup = element("div", "custom-pronouns");
+      const custom = names.map((name) => {
+        const customLabel = element("label", "field", customLabels[name]);
         const input = element("input");
-        input.id = "template-pronoun-" + name;
+        input.id = "template-pronoun-" + name + suffix;
         input.type = "text";
         input.required = true;
         input.autocomplete = "off";
         input.spellcheck = false;
         customLabel.appendChild(input);
-        customPronounGroup.appendChild(customLabel);
-        customPronouns.push({ name, input });
-      }
-      group.append(label, hint, customPronounGroup);
+        customGroup.appendChild(customLabel);
+        return { key: root.ShorthandTemplate.pronounKey(name, person), input };
+      });
+      group.append(label, hint, customGroup);
       body.appendChild(group);
-    }
+      return { person, select, custom, customGroup };
+    });
 
     const fieldsPanel = element("section");
     fieldsPanel.id = "template-fields-panel";
@@ -470,7 +478,7 @@
     const session = {
       host, shadow, form, inputs, expansion, count, preview: previewEl, status,
       answers, answerControls, inlineInputs, inlineVariables, fieldsPanel, messagePanel, previewWrap,
-      view: "fields", viewButtons, pronounSelect, customPronouns, customPronounGroup, pronounNames,
+      view: "fields", viewButtons, pronounGroups,
       submit: submitButton, cancel: cancelButton, actionLabel, busy: false,
       previous: document.activeElement, restoreFocus: options.restoreFocus === true,
       onSubmit: options.onSubmit, onCancel: options.onCancel, now,
@@ -513,12 +521,12 @@
       for (const input of controls) input.addEventListener("input", () => syncAnswer(session, name, input));
     }
     for (const button of viewButtons) button.addEventListener("click", () => setView(session, button.dataset.view));
-    if (pronounSelect) {
-      pronounSelect.addEventListener("change", () => {
+    for (const group of pronounGroups) {
+      group.select.addEventListener("change", () => {
         updateControls(session);
         preview(session);
       });
-      for (const { input } of customPronouns) input.addEventListener("input", () => preview(session));
+      for (const { input } of group.custom) input.addEventListener("input", () => preview(session));
     }
     cancelButton.addEventListener("click", () => cancel(session));
     form.addEventListener("submit", (event) => {
@@ -536,7 +544,7 @@
     setView(session, "fields");
     preview(session);
     (document.body || document.documentElement).appendChild(host);
-    (inputs.length ? inputs[0].input : pronounSelect).focus({ preventScroll: true });
+    (inputs.length ? inputs[0].input : pronounGroups[0].select).focus({ preventScroll: true });
     return true;
   }
 

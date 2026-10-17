@@ -272,3 +272,45 @@ test("variable replacements preserve marker-like literals and custom values", ()
     text: "\uE000\uE0000\uE001 \uE000\uE0001\uE001 \uE0000\uE001", cursorOffset: 1,
   });
 });
+
+test("numbered pronoun variables name up to four people and person 1 is the plain name", () => {
+  const parsed = template.parts("{subject} {Possessive2} {object3} {REFLEXIVE4} {subject1}").filter((part) => part.type === "variable");
+  assert.deepEqual(parsed.map(({ name, person, raw }) => ({ name, person, raw })), [
+    { name: "subject", person: undefined, raw: "{subject}" },
+    { name: "possessive", person: 2, raw: "{Possessive2}" },
+    { name: "object", person: 3, raw: "{object3}" },
+    { name: "reflexive", person: 4, raw: "{REFLEXIVE4}" },
+    { name: "subject", person: 1, raw: "{subject1}" },
+  ]);
+  assert.deepEqual(template.pronounPeople("{object3} {subject} {possessive2} {subject1} {object} {weekday} {possessive2}"), [
+    { person: 1, names: ["subject", "object"] },
+    { person: 2, names: ["possessive"] },
+    { person: 3, names: ["object"] },
+  ]);
+  assert.deepEqual(template.pronounPeople("{weekday} [[name]]"), []);
+});
+
+test("out-of-range people, numbered weekdays and shifted pronouns stay literal", () => {
+  const sunday = new Date(2026, 9, 11, 12);
+  for (const token of ["{subject5}", "{subject0}", "{weekday2}", "{subject2+1}", "{possessive12}"]) {
+    assert.equal(template.render(token, {}, sunday, template.presetFor("she/her", 2)).text, token, token);
+    assert.equal(template.requiresInput(token), false, token);
+  }
+  assert.equal(template.requiresInput("{possessive2}"), true);
+});
+
+test("each person's pronouns render independently with their own capitalisation", () => {
+  const pronouns = { ...template.presetFor("she/her", 1), ...template.presetFor("he/him", 2), ...template.presetFor("they/them", 4) };
+  assert.deepEqual(pronouns.subject2, "he");
+  assert.equal(
+    template.render("{Subject} lent {possessive} car to {object2}; {Subject2} thanked {object1}. {POSSESSIVEPRONOUN4} too.", {}, now, pronouns).text,
+    "She lent her car to him; He thanked her. THEIRS too.");
+  assert.equal(template.render("{subject} and {subject3}", {}, now, template.presetFor("she/her", 1)).text, "she and {subject3}",
+    "a person without a choice stays literal");
+});
+
+test("escaped numbered pronouns stay literal without asking for input", () => {
+  assert.equal(template.requiresInput("{{possessive2}}"), false);
+  assert.equal(template.render("{{possessive2}} [[x]]", { x: "y" }, now, template.presetFor("he/him", 2)).text, "{possessive2} y");
+  assert.equal(expander.render("{{subject3}}", now).text, "{subject3}");
+});

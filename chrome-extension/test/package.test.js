@@ -44,6 +44,7 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.ok(files.includes("src/expansion-feedback.js"));
     assert.ok(files.includes("src/field-safety.js"));
     assert.ok(files.includes("src/suggestions.js"));
+    assert.ok(files.includes("src/google-docs.js"));
     for (const name of ["premium-config", "license", "premium-service", "premium-client", "premium-ui"]) {
       assert.ok(files.includes(`src/${name}.js`), `${name} must ship in both browser packages`);
     }
@@ -54,7 +55,7 @@ test("browser packages contain only runtime files and installable manifests", as
       assert.ok(feedbackIndex >= 0 && feedbackIndex < content.js.indexOf("src/content.js"), "Feedback must load before the content script that uses it");
       const framesIndex = content.js.indexOf("src/animation-frames.js");
       assert.ok(framesIndex >= 0 && framesIndex < feedbackIndex, "Glyph frame generation must load before the feedback renderer");
-      for (const name of ["field-safety", "suggestions"]) {
+      for (const name of ["field-safety", "suggestions", "google-docs"]) {
         const index = content.js.indexOf(`src/${name}.js`);
         assert.ok(index >= 0 && index < content.js.indexOf("src/content.js"), `${name} must load before the content script`);
       }

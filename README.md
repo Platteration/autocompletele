@@ -14,6 +14,9 @@ For shortcut text, choose Expand to fill letters around the shorthand, Casino
 to settle scrambling letters, or Off for instant replacement. Continuing to type
 finishes the visual effect immediately; reduced-motion preferences suppress it.
 
+Google Docs and Slides draw their own text, so expansion there is experimental:
+see [Google Docs and Slides](chrome-extension/README.md#google-docs-and-slides-experimental).
+
 Chrome and Firefox also suggest saved shortcuts after you type at least two
 characters. Choose with ↑ or ↓, then Enter; Tab keeps its normal behavior.
 Suggestions are on by default and can be turned off in Settings. They come
@@ -55,7 +58,7 @@ In Chrome and Firefox, add linked `[[name]]` blanks to a script and fill them
 in a table or directly in the message. The editor's **Insert variable** menu
 also offers the local `{weekday}`, shifted dates such as `{date+7}`,
 `{datetime-1}` and `{weekday+1}` (whole days), and pronouns chosen for each
-use. These
+use, for up to four people (`{subject}`, `{possessive2}`, `{object3}`…). These
 browser features preserve their tokens during JSON transfer; Windows and
 Android do not fill them. See the [template guide](chrome-extension/README.md#fill-in-templates).
 

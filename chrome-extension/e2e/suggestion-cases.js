@@ -417,6 +417,10 @@ async function runCases(t, app) {
     const before = await evaluate(() => chrome.storage[self.ShorthandStorage.AREA].get(null));
     await app.reload();
     await until(() => evaluate(() => !!document.querySelector("#suggestionsEnabled")), "The accessible suggestion setting must exist");
+    // The checkbox starts unchecked in the HTML and takes the stored value once
+    // the page has read its settings; the library rows are drawn in that same
+    // step. Reading it before then measured page-load speed, not the default.
+    await until(() => evaluate(() => !!document.querySelector("#list tbody tr")), "The library page must finish reading its settings");
     assert.equal(await evaluate(() => document.querySelector("#suggestionsEnabled").checked), true);
     assert.equal(await evaluate(() => document.querySelector("#suggestionsLabel").textContent.trim()), "Suggest saved shortcuts");
     assert.equal(await evaluate(() => document.querySelector("#suggestionsMsg").getAttribute("role")), "status");
@@ -432,7 +436,9 @@ async function runCases(t, app) {
       ...before, settings: { ...before.settings, suggestionsEnabled: false },
     });
     await app.reload();
-    await until(() => evaluate(() => !document.querySelector("#suggestionsEnabled").checked), "The saved preference must survive reload");
+    // Unchecked is also the HTML default, so check only after the settings read.
+    await until(() => evaluate(() => !!document.querySelector("#list tbody tr")), "The library page must finish reading its settings");
+    assert.equal(await evaluate(() => document.querySelector("#suggestionsEnabled").checked), false, "The saved preference must survive reload");
   });
 
   await t.test("a rejected preference save restores its value with a persistent visible error and sensible focus", async () => {

@@ -118,6 +118,24 @@ These checks use field metadata, not entered text. A page that does not identify
 its fields may not be recognized. You can pause actle on that site from the
 toolbar or add its hostname under **Never expand on these sites**.
 
+## Google Docs and Slides (experimental)
+
+Docs and Slides draw text themselves and take typing through a hidden frame, so
+ordinary field handling never sees it. In those two editors, actle remembers the
+characters you physically type until the caret moves another way (a click, an
+arrow key, Enter, Tab or a shortcut). When they end in a trigger, it removes the
+trigger with simulated Backspaces and pastes the expansion; `{cursor}` moves the
+caret back with simulated arrow keys. Fill-in templates open the usual form.
+
+This depends on how Google's editors handle simulated keys and paste, which can
+change without notice, and it has been tested only against a stand-in page.
+Limits: undo with the editor's own Ctrl+Z (Backspace does not restore the
+trigger), and the `;;` picker and suggestions do not appear there. A trigger
+typed right after clicking into the middle of a word can expand, because the
+characters before the click are unknown. Add `docs.google.com` under **Never
+expand on these sites** to turn it off. Sheets, Forms and Drive's own fields
+use the normal handling.
+
 ## Plans and support
 
 This release is an **unlimited free preview**. The library's **Plans & support**
@@ -169,6 +187,7 @@ Use the appropriate `autocomplete` tokens on credential and payment controls.
 | `src/storage.js`      | Chrome sync / Firefox local storage (one key per shorthand)    |
 | `src/content.js`      | Watches editable fields and performs the replacement           |
 | `src/suggestions.js`  | Saved-trigger prefix matching and the in-field suggestion list |
+| `src/google-docs.js`  | Experimental Google Docs and Slides typing bridge              |
 | `src/field-safety.js` | Identifies credential and payment fields from page metadata    |
 | `src/animation-frames.js` | Grapheme-aware Expand and Casino animation frames             |
 | `src/expansion-feedback.js` | Temporary in-field animation, respecting reduced motion    |

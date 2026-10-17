@@ -98,6 +98,15 @@
     return draft.expansion;
   }
 
+  // Firefox keeps the library in storage.local beside premium accounting, use
+  // counts and the selection draft. Only library or settings changes should
+  // make a page reload them; otherwise every expansion in any tab would.
+  const NON_LIBRARY_KEYS = new Set(["actle-premium", USAGE_KEY, DRAFT_KEY]);
+
+  function isLibraryChange(changes, area) {
+    return area === AREA && Object.keys(changes || {}).some((key) => !NON_LIBRARY_KEYS.has(key));
+  }
+
   async function saveShorthand(sh) {
     return withWriteLock(async () => {
       await recoverImport();
@@ -307,6 +316,7 @@
     recordUse,
     savePendingDraft,
     takePendingDraft,
+    isLibraryChange,
     toExportJson,
     DEFAULT_SETTINGS,
     AREA,

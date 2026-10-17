@@ -22,6 +22,9 @@
     reflexive: "Reflexive pronoun",
   });
   const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  // {subject} is person 1; {subject2} to {subject4} let one script refer to
+  // up to four people, each with their own pronoun choice.
+  const PEOPLE = 4;
   const pronounPresets = Object.freeze({
     "she/her": Object.freeze({ subject: "she", object: "her", possessive: "her", possessivepronoun: "hers", reflexive: "herself" }),
     "he/him": Object.freeze({ subject: "he", object: "him", possessive: "his", possessivepronoun: "his", reflexive: "himself" }),
@@ -44,18 +47,20 @@
       if (source[position] === "{") {
         // Consume an escape as a whole so its inner token cannot request an
         // answer. The shared renderer removes one brace pair later.
-        const escapedVariable = /^\{\{[a-z]+(?:[+-]\d{1,4})?\}\}/i.exec(source.slice(position));
+        const escapedVariable = /^\{\{[a-z]+[1-4]?(?:[+-]\d{1,4})?\}\}/i.exec(source.slice(position));
         if (escapedVariable) {
           pending += escapedVariable[0];
           position += escapedVariable[0].length;
           continue;
         }
-        const variable = /^\{(weekday|subject|object|possessive|possessivepronoun|reflexive)([+-]\d{1,4})?\}/i.exec(source.slice(position));
-        if (variable && (!variable[2] || variable[1].toLowerCase() === "weekday")) {
+        const variable = /^\{(weekday|subject|object|possessive|possessivepronoun|reflexive)([1-4])?([+-]\d{1,4})?\}/i.exec(source.slice(position));
+        const weekday = variable && variable[1].toLowerCase() === "weekday";
+        if (variable && (weekday ? !variable[2] : !variable[3])) {
           flush();
           const name = variable[1].toLowerCase();
           const part = { type: "variable", name, label: variableLabels[name], raw: variable[0] };
-          if (variable[2]) part.offset = parseInt(variable[2], 10);
+          if (variable[3]) part.offset = parseInt(variable[3], 10);
+          if (variable[2]) part.person = Number(variable[2]);
           result.push(part);
           position += variable[0].length;
           continue;
@@ -103,6 +108,32 @@
     return [...new Set(parts(text).filter((part) => part.type === "variable").map((part) => part.name))];
   }
 
+  /** Pronoun values are keyed "subject" for person 1 and "subject2" onward. */
+  function pronounKey(name, person) {
+    return person > 1 ? name + person : name;
+  }
+
+  /** The people a script mentions, in order, with the pronoun forms each uses. */
+  function pronounPeople(text) {
+    const people = new Map();
+    for (const part of parts(text)) {
+      if (part.type !== "variable" || part.name === "weekday") continue;
+      const person = part.person || 1;
+      if (!people.has(person)) people.set(person, []);
+      const names = people.get(person);
+      if (!names.includes(part.name)) names.push(part.name);
+    }
+    return [...people].sort((a, b) => a[0] - b[0]).map(([person, names]) => ({ person, names }));
+  }
+
+  /** Expand a preset choice for one person into its keyed pronoun values. */
+  function presetFor(preset, person) {
+    const forms = pronounPresets[preset];
+    const values = Object.create(null);
+    if (forms) for (const name of Object.keys(forms)) values[pronounKey(name, person)] = forms[name];
+    return values;
+  }
+
   function requiresInput(text) {
     return parts(text).some((part) => part.type === "field"
       || (part.type === "variable" && part.name !== "weekday"));
@@ -130,7 +161,9 @@
   function variableValue(part, now, pronouns) {
     let value;
     if (part.name === "weekday") value = weekdays[(((now.getDay() + (part.offset || 0)) % 7) + 7) % 7];
-    else if (pronouns != null && Object.hasOwn(pronouns, part.name)) value = asText(pronouns[part.name]);
+    else if (pronouns != null && Object.hasOwn(pronouns, pronounKey(part.name, part.person))) {
+      value = asText(pronouns[pronounKey(part.name, part.person)]);
+    }
     else return part.raw;
     const spelling = part.raw.slice(1, 1 + part.name.length);
     if (spelling === spelling.toUpperCase()) return value.toUpperCase();
@@ -178,5 +211,5 @@
     return { text: output, cursorOffset };
   }
 
-  return { parts, fields, variables, requiresInput, pronounPresets, fill, render };
+  return { parts, fields, variables, pronounPeople, pronounKey, presetFor, requiresInput, pronounPresets, PEOPLE, fill, render };
 });

@@ -91,6 +91,7 @@ textarea, #templatePreview { scrollbar-color: var(--control-line) var(--card); s
 .field-builder input, .variable-builder select { flex: 1; font-size: 12px; padding: 10px; }
 .field-builder button, .variable-builder button { flex: none; padding: 10px 12px; min-height: 40px; }
 .variable-builder { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.variable-builder select#variablePerson { flex: none; width: auto; }
 .repeat-fields { margin-top: 12px; display: grid; gap: 7px; }
 .tool-label { color: var(--muted); font-size: 11px; font-weight: 650; }
 .repeat-field-buttons { display: flex; flex-wrap: wrap; gap: 7px; }

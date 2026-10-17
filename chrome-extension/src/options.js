@@ -125,10 +125,13 @@
     $("editorTitle").textContent = "Create a shorthand";
     $("fieldName").value = "";
     $("variableToken").value = "{weekday}";
+    $("variablePerson").value = "1";
+    updateVariablePerson();
     say($("fieldBuilderMsg"), "");
     expansionSelection = { start: 0, end: 0 };
     renderPreview();
     for (const row of tbody.querySelectorAll(".is-editing")) row.classList.remove("is-editing");
+    applyPendingDraft();
   }
 
   function clearImportPreview() {
@@ -220,11 +223,19 @@
   }
 
   // A selection saved from a webpage arrives as a one-time local draft. Only
-  // a pristine create form may receive it, so an edit in progress is safe.
+  // a pristine create form may receive it, so an edit in progress is safe;
+  // the draft stays stored until the form is saved, cancelled or emptied.
+  const DRAFT_WAITING = "A selection from a webpage is waiting. Save, cancel or clear this shorthand to use it.";
+
   async function applyPendingDraft() {
-    if (!writable || editId.value || expansionEl.value || !storage.takePendingDraft) return;
+    if (!writable || !storage.takePendingDraft) return;
+    if (editId.value || expansionEl.value) {
+      say(formMsg, DRAFT_WAITING, false, true);
+      return;
+    }
     let text = "";
     try { text = await storage.takePendingDraft(); } catch (_) { return; }
+    if (!text && formMsg.textContent === DRAFT_WAITING) say(formMsg, "");
     if (!text || editId.value || expansionEl.value) return;
     expansionEl.value = text;
     expansionSelection = { start: text.length, end: text.length };
@@ -238,7 +249,9 @@
     $("exportBtn").disabled = false;
     shorthands = data.shorthands;
     enabledEl.checked = data.settings.enabled !== false;
-    excludedEl.value = (data.settings.excludedHosts || []).join("\n");
+    // The list saves on change; a reload from another tab must not discard
+    // hosts still being typed, the same rule as the picker trigger below.
+    if (document.activeElement !== excludedEl) excludedEl.value = (data.settings.excludedHosts || []).join("\n");
     if (!savingAnimationMode) {
       savedAnimationMode = data.settings.animationMode;
       animationModeEl.value = savedAnimationMode;
@@ -347,6 +360,9 @@
   cancelBtn.addEventListener("click", resetForm);
   searchEl.addEventListener("input", renderList);
   expansionEl.addEventListener("input", renderPreview);
+  expansionEl.addEventListener("input", () => {
+    if (!expansionEl.value && formMsg.textContent === DRAFT_WAITING) applyPendingDraft();
+  });
   function rememberExpansionSelection() {
     expansionSelection = { start: expansionEl.selectionStart, end: expansionEl.selectionEnd };
   }
@@ -368,8 +384,16 @@
       $("addFieldBtn").click();
     }
   });
+  // Pronoun variables can refer to up to four people: {possessive2} and so on.
+  function updateVariablePerson() {
+    $("variablePerson").disabled = !template.pronounPeople($("variableToken").value).length;
+  }
+
+  $("variableToken").addEventListener("change", updateVariablePerson);
   $("addVariableBtn").addEventListener("click", () => {
-    const token = $("variableToken").value;
+    const chosen = $("variableToken").value;
+    const person = Number($("variablePerson").value);
+    const token = !$("variablePerson").disabled && person > 1 ? chosen.slice(0, -1) + person + "}" : chosen;
     insertAtSelection(token);
     say($("fieldBuilderMsg"), `${token} inserted at the script’s caret.`);
   });
@@ -492,7 +516,7 @@
       applyPendingDraft();
       return;
     }
-    if (area === storage.AREA && Object.keys(changes).some((key) => key !== "actle-premium")) load();
+    if (storage.isLibraryChange(changes, area)) load();
   });
   renderPreview();
   storage.recoverPendingImport().then(async (recovery) => {

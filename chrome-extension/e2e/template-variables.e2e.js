@@ -11,6 +11,7 @@ const TEMPLATES = [
   { trigger: "only/", expansion: "{Subject} thanked {object}." },
   { trigger: "custom/", expansion: "{subject} / {object} / {possessive} / {possessivepronoun} / {reflexive}; [[name]]; {subject}" },
   { trigger: "unicode/", expansion: "[[name]]{cursor}{subject}" },
+  { trigger: "two/", expansion: "{Subject} gave {possessive2} keys to {object2}; {Subject2} thanked {object}." },
 ];
 const clients = new WeakMap();
 
@@ -61,12 +62,12 @@ async function formFill(page, selector, value) {
   await page.keyboard.type(value);
 }
 
-async function formSelect(page, value) {
-  const index = await formRead(page, function (value) {
-    return [...this.querySelector("#template-pronouns").options].findIndex((option) => option.value === value);
-  }, value);
+async function formSelect(page, value, selector = "#template-pronouns") {
+  const index = await formRead(page, function ([value, selector]) {
+    return [...this.querySelector(selector).options].findIndex((option) => option.value === value);
+  }, [value, selector]);
   assert.ok(index >= 0, `Pronoun choice must exist: ${value}`);
-  await formClick(page, "#template-pronouns");
+  await formClick(page, selector);
   await page.keyboard.press("Home");
   for (let i = 0; i < index; i++) await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
@@ -230,6 +231,43 @@ test("Chrome template variable forms and editor", { timeout: 120000 }, async (t)
     await page.keyboard.press("Control+v");
     assert.equal(await page.inputValue("#inp"), `Avery said they would bring their notes for them; They kept theirs and reminded themself. THEY arrives on ${day}.`);
     await popup.close();
+  });
+
+  await t.test("each numbered person in a script gets their own required pronoun choice", async () => {
+    await start(app, "two/");
+    assert.deepEqual(await formRead(page, function () {
+      return [...this.querySelectorAll(".pronouns > label")].map((label) => label.firstChild.textContent);
+    }), ["Pronouns for person 1", "Pronouns for person 2"]);
+    await formSelect(page, "she/her");
+    await formClick(page, "#template-submit");
+    assert.equal(await page.locator(HOST).count(), 1, "Every person needs a pronoun choice");
+    assert.equal(await page.inputValue("#inp"), "two/");
+    assert.equal(await formRead(page, function () { return this.activeElement.id; }), "template-pronouns-2");
+    await formSelect(page, "he/him", "#template-pronouns-2");
+    const expected = "She gave his keys to him; He thanked her.";
+    assert.equal(await formRead(page, function () { return this.querySelector("#template-preview").textContent; }), expected);
+    assert.equal(await formRead(page, function () { return this.querySelector(".count").textContent; }), "2 of 2 filled");
+    await submit(page);
+    assert.equal(await page.inputValue("#inp"), expected);
+    await page.keyboard.press("Backspace");
+    assert.equal(await page.inputValue("#inp"), "two/");
+  });
+
+  await t.test("the editor inserts another person's pronoun only for pronoun variables", async () => {
+    const options = await app.context.newPage();
+    await options.goto(`chrome-extension://${app.extensionId}/src/options.html`);
+    await options.waitForSelector("#list tbody tr");
+    assert.equal(await options.isDisabled("#variablePerson"), true, "Weekday has no person");
+    await options.fill("#expansion", "");
+    await options.selectOption("#variableToken", "{possessive}");
+    assert.equal(await options.isDisabled("#variablePerson"), false);
+    await options.selectOption("#variablePerson", "3");
+    await options.click("#addVariableBtn");
+    await options.selectOption("#variableToken", "{date}");
+    assert.equal(await options.isDisabled("#variablePerson"), true);
+    await options.click("#addVariableBtn");
+    assert.equal(await options.inputValue("#expansion"), "{possessive3}{date}");
+    await options.close();
   });
 
   await t.test("editor tools insert variables and reuse blanks at the remembered caret and export the script", async () => {

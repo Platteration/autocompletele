@@ -109,10 +109,16 @@
                 <option value="{cursor}">Cursor position · {cursor}</option>
               </optgroup>
             </select>
+            <select id="variablePerson" aria-label="Whose pronouns" aria-describedby="variableHint" disabled data-shorthand-ignore>
+              <option value="1">Person 1</option>
+              <option value="2">Person 2</option>
+              <option value="3">Person 3</option>
+              <option value="4">Person 4</option>
+            </select>
             <button type="button" id="addVariableBtn" class="secondary">Insert variable</button>
           </div>
         </div>
-        <p id="variableHint" class="hint">Weekday uses your local day. Choose pronouns each time you use the script.</p>
+        <p id="variableHint" class="hint">Weekday uses your local day. Choose pronouns each time you use the script; pick Person 2 to 4 when it mentions more than one person.</p>
       </div>
       <div class="template-preview">
         <div class="preview-title"><h4>Script preview</h4><span id="templateFieldCount">No fill-in blanks</span></div>
@@ -153,6 +159,7 @@
         <div><dt><code>{possessive}</code></dt><dd>her, his, their, or custom</dd></div>
         <div><dt><code>{possessivepronoun}</code></dt><dd>hers, his, theirs, or custom</dd></div>
         <div><dt><code>{reflexive}</code></dt><dd>herself, himself, themself, or custom</dd></div>
+        <div><dt><code>{possessive2}</code></dt><dd>Another person's pronouns: add 2, 3 or 4 to any pronoun variable</dd></div>
         <div><dt><code>{cursor}</code></dt><dd>Where typing continues</dd></div>
       </dl>
     </div>
