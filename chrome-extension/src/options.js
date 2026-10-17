@@ -125,6 +125,8 @@
     $("editorTitle").textContent = "Create a shorthand";
     $("fieldName").value = "";
     $("variableToken").value = "{weekday}";
+    $("variablePerson").value = "1";
+    updateVariablePerson();
     say($("fieldBuilderMsg"), "");
     expansionSelection = { start: 0, end: 0 };
     renderPreview();
@@ -382,8 +384,16 @@
       $("addFieldBtn").click();
     }
   });
+  // Pronoun variables can refer to up to four people: {possessive2} and so on.
+  function updateVariablePerson() {
+    $("variablePerson").disabled = !template.pronounPeople($("variableToken").value).length;
+  }
+
+  $("variableToken").addEventListener("change", updateVariablePerson);
   $("addVariableBtn").addEventListener("click", () => {
-    const token = $("variableToken").value;
+    const chosen = $("variableToken").value;
+    const person = Number($("variablePerson").value);
+    const token = !$("variablePerson").disabled && person > 1 ? chosen.slice(0, -1) + person + "}" : chosen;
     insertAtSelection(token);
     say($("fieldBuilderMsg"), `${token} inserted at the script’s caret.`);
   });

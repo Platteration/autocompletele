@@ -32,7 +32,9 @@ webpage field to insert your saved text.
   insertion. Fill blue blanks directly in the message or use a table with one
   row per name. Repeated names share one answer; answers are not saved.
 - Insert `{weekday}` for the current local weekday in English. Choose pronouns
-  for each use of a script: she/her, he/him, they/them, or custom forms.
+  for each use of a script: she/her, he/him, they/them, or custom forms. A
+  script can mention up to four people, each with their own pronouns, using
+  `{subject2}`, `{possessive3}` and so on.
 - Add `{date}`, `{time}`, and `{datetime}` placeholders, or use `{cursor}` to
   choose where typing continues after insertion.
 - Type `;;` to search snippets from the field and select one to insert or fill
