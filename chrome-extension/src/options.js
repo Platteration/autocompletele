@@ -10,6 +10,7 @@
   const excludedEl = $("excluded");
   const pickerTriggerEl = $("pickerTrigger");
   const animationModeEl = $("animationMode");
+  const phraseWordsEl = $("phraseWords");
   const suggestionsEnabledEl = $("suggestionsEnabled");
   const form = $("editor");
   const editId = $("editId");
@@ -37,6 +38,7 @@
   let expansionSelection = { start: 0, end: 0 };
   let savedAnimationMode = storage.DEFAULT_SETTINGS.animationMode;
   let savingAnimationMode = false;
+  let savingPhraseWords = false;
   let savedSuggestionsEnabled = storage.DEFAULT_SETTINGS.suggestionsEnabled;
   let savingSuggestionsEnabled = false;
 
@@ -252,6 +254,7 @@
     // The list saves on change; a reload from another tab must not discard
     // hosts still being typed, the same rule as the picker trigger below.
     if (document.activeElement !== excludedEl) excludedEl.value = (data.settings.excludedHosts || []).join("\n");
+    if (!savingPhraseWords) phraseWordsEl.value = String(data.settings.phraseWords);
     if (!savingAnimationMode) {
       savedAnimationMode = data.settings.animationMode;
       animationModeEl.value = savedAnimationMode;
@@ -425,6 +428,23 @@
     }
   });
 
+  phraseWordsEl.addEventListener("change", async () => {
+    if (savingPhraseWords) return;
+    savingPhraseWords = true;
+    phraseWordsEl.disabled = true;
+    say($("phraseMsg"), "Saving…", false, true);
+    try {
+      const settings = await storage.saveSettings({ phraseWords: Number(phraseWordsEl.value) });
+      phraseWordsEl.value = String(settings.phraseWords);
+      say($("phraseMsg"), `Saved: ${phraseWordsEl.selectedOptions[0].textContent}.`);
+    } catch (error) {
+      say($("phraseMsg"), "Could not save: " + (error && error.message ? error.message : error) + ". Reload to see the saved choice.", true, true);
+    } finally {
+      savingPhraseWords = false;
+      phraseWordsEl.disabled = !writable;
+    }
+  });
+
   animationModeEl.addEventListener("change", async () => {
     if (savingAnimationMode) return;
     const previous = savedAnimationMode;
@@ -533,7 +553,7 @@
     }
     say(ioMsg, "Library recovery needs attention: " + e.message + ". Export the pre-import backup before editing." + readError, true);
     form.querySelectorAll("input, textarea, select, button").forEach((el) => { el.disabled = true; });
-    [enabledEl, excludedEl, pickerTriggerEl, animationModeEl, suggestionsEnabledEl, $("importBtn"), $("importFile")].forEach((el) => { el.disabled = true; });
+    [enabledEl, excludedEl, pickerTriggerEl, animationModeEl, suggestionsEnabledEl, phraseWordsEl, $("importBtn"), $("importFile")].forEach((el) => { el.disabled = true; });
     $("mergeBtn").disabled = $("replaceBtn").disabled = true;
   });
 })();

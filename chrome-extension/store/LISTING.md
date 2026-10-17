@@ -27,6 +27,8 @@ webpage field to insert your saved text.
   trigger. Choose with ↑ or ↓, then Enter, or click a result. Suggestions are
   on by default and can be turned off in settings. Enter before selection and
   Tab keep their normal behavior.
+- Start typing a saved paragraph and the same list offers to finish it after
+  three matching words; choose 2 to 6 words, or Off, in settings.
 - Turn one script into a fill-in template with `[[name]]`, `[[company]]`, or
   other named blanks. Answer each blank, check the live preview, and confirm
   insertion. Fill blue blanks directly in the message or use a table with one

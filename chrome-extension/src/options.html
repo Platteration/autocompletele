@@ -182,6 +182,19 @@
         <small>Username, password, sign-in code and payment fields are skipped when identified by the page.</small>
       </div>
       <div class="row column">
+        <label for="phraseWords"><strong>Finish saved paragraphs</strong></label>
+        <select id="phraseWords" aria-describedby="phraseHint phraseMsg" data-shorthand-ignore>
+          <option value="0">Off</option>
+          <option value="2">After 2 matching words</option>
+          <option value="3">After 3 matching words</option>
+          <option value="4">After 4 matching words</option>
+          <option value="5">After 5 matching words</option>
+          <option value="6">After 6 matching words</option>
+        </select>
+        <small id="phraseHint">When the words you type match the start of a saved snippet of six or more words, the suggestion list offers the rest. Press ↓ then Enter; Backspace right after puts your words back. Works while suggestions are on.</small>
+        <span id="phraseMsg" class="msg" role="status"></span>
+      </div>
+      <div class="row column">
         <label for="animationMode"><strong>Text animation</strong></label>
         <select id="animationMode" aria-describedby="animationHint animationMsg" data-shorthand-ignore>
           <option value="expand">Expand</option>

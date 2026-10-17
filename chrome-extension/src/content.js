@@ -18,6 +18,7 @@
   let pickerTrigger = storage.DEFAULT_SETTINGS.pickerTrigger;
   let animationMode = storage.DEFAULT_SETTINGS.animationMode;
   let suggestionsEnabled = storage.DEFAULT_SETTINGS.suggestionsEnabled;
+  let phraseWords = storage.DEFAULT_SETTINGS.phraseWords;
   let suggestionTarget = null;
   let dismissedSuggestion = null;
   let suggestionFrame = 0;
@@ -160,6 +161,7 @@
       const previousMode = animationMode;
       animationMode = data.settings.animationMode;
       suggestionsEnabled = data.settings.suggestionsEnabled;
+      phraseWords = data.settings.phraseWords;
       closeSuggestions();
       if (previousMode !== animationMode || !enabled || hostExcluded) {
         self.ShorthandExpansionFeedback.clear();
@@ -556,15 +558,19 @@
     closeSuggestions();
     if (!activeSuggestion(target) || !shorthands.some((saved) => saved.id === sh.id
         && saved.trigger === sh.trigger && saved.expansion === sh.expansion)) return;
-    if (fillTemplate(sh, target)) return;
-    insertExpansion(target, template.render(sh.expansion));
+    const chosen = target.phrase ? { ...sh, expansion: suggestions.keepTypedCase(target.trigger, sh.expansion) } : sh;
+    if (fillTemplate(chosen, target)) return;
+    insertExpansion(target, template.render(chosen.expansion));
   }
 
   function offerSuggestions(el) {
     if (!suggestionsEnabled || templateTarget || templateForm.isOpen()) return;
     const snapshot = editSnapshot(el);
     if (!snapshot || snapshot.start == null || snapshot.start !== snapshot.end) return;
-    const match = suggestions.find(snapshot.value.slice(0, snapshot.end), shorthands, usageCounts);
+    const before = snapshot.value.slice(0, snapshot.end);
+    // A trigger prefix wins; otherwise offer to finish a saved paragraph.
+    const match = suggestions.find(before, shorthands, usageCounts)
+      || (phraseWords ? suggestions.findPhrase(before, shorthands, phraseWords, usageCounts) : null);
     if (!match || !typedTrigger(el, match.start, snapshot.end, snapshot.node)) {
       dismissedSuggestion = null;
       return;
@@ -575,9 +581,10 @@
       ? nodeTarget(el, snapshot.node, match.start, snapshot.end, match.query)
       : fieldTarget(el, match.start, snapshot.end, match.query);
     if (!activeSuggestion(target)) return;
+    target.phrase = !!match.phrase;
     suggestionTarget = target;
     const shown = suggestions.show({
-      query: match.query, items: match.items, anchorEl: el,
+      query: match.query, items: match.items, anchorEl: el, phrase: match.phrase,
       onPick(sh) { acceptSuggestion(sh, target); },
       onDismiss() {
         dismissedSuggestion = { el, node: snapshot.node, start: match.start };

@@ -88,6 +88,20 @@ Press ↑ or ↓ to select a result, then Enter to insert it, or click a result.
 Focus stays in the page's field while browsing suggestions. Enter before you
 select a result keeps its normal behavior; Tab always keeps its normal behavior.
 Escape hides suggestions for the current shortcut while you keep typing it.
+
+### Finish saved paragraphs
+
+The same list also offers to finish a saved snippet you start typing in full.
+When the words before the caret match the opening of a snippet that has at
+least six words, ignoring case and runs of spaces, the snippet appears; choose
+it to replace the words you typed with the whole snippet. The first letter keeps
+the case you typed, so a lowercase start mid-sentence stays lowercase.
+Backspace right after puts your words back. Only the fixed opening counts: the
+text before a snippet's first `[[blank]]` or `{variable}`. A trigger prefix
+takes priority when both match, and the words must have been typed in one go.
+
+Settings → **Finish saved paragraphs** chooses how many words are needed, from 2
+to 6 (3 by default), or Off. It works while suggestions are on.
 Fully typed triggers still expand immediately, including after suggestions are
 dismissed. Backspace immediately after accepting a suggestion restores the
 partial trigger you actually typed.

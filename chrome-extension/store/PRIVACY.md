@@ -4,7 +4,7 @@
 
 **Privacy contact:** https://github.com/Platteration/autocompletele/issues
 
-**Effective date:** October 16, 2026
+**Effective date:** October 17, 2026
 
 This policy covers the actle browser extension. The contact page is
 public; do not include snippets, credentials, or other private information when
@@ -21,8 +21,10 @@ attributes, labels, and related form metadata. A page that does not identify
 these fields may not be recognized; you can exclude its hostname.
 
 Optional suggestions match the prefix you type against your saved shortcuts
-locally. They do not learn from your typing history or request suggestions from
-a remote service. Suggestions are enabled by default and can be turned off.
+locally, and compare the words you type with the openings of your saved
+snippets to offer finishing one. They do not learn from your typing history or
+request suggestions from a remote service. Suggestions are enabled by default
+and can be turned off; paragraph completion can also be turned off on its own.
 
 The extension saves the triggers and expansion text you create, their ordering,
 and your settings. Settings include whether expansion is enabled, the search

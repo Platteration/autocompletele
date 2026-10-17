@@ -218,7 +218,7 @@ test("unknown saved animation modes normalize on read without changing other set
     };
     const app = storageWith(saved);
     assert.deepEqual(plain((await app.storage.getAll()).settings), {
-      enabled: false, excludedHosts: ["example.com"], pickerTrigger: "//", animationMode: "expand", suggestionsEnabled: true,
+      enabled: false, excludedHosts: ["example.com"], pickerTrigger: "//", animationMode: "expand", suggestionsEnabled: true, phraseWords: 3,
     });
     assert.deepEqual(app.items, saved);
     assert.deepEqual(app.calls, []);
@@ -236,10 +236,10 @@ test("all animation modes round-trip in Chrome and Firefox without changing libr
       const next = await app.storage.saveSettings({ animationMode });
       assert.equal(next.animationMode, animationMode);
       assert.equal((await app.storage.getAll()).settings.animationMode, animationMode);
-      assert.deepEqual(app.items, { ...saved, settings: { ...saved.settings, animationMode, suggestionsEnabled: true } });
+      assert.deepEqual(app.items, { ...saved, settings: { ...saved.settings, animationMode, suggestionsEnabled: true, phraseWords: 3 } });
     }
     await app.storage.saveSettings({ enabled: true });
-    assert.deepEqual(app.items.settings, { ...saved.settings, animationMode: "expand", enabled: true, suggestionsEnabled: true });
+    assert.deepEqual(app.items.settings, { ...saved.settings, animationMode: "expand", enabled: true, suggestionsEnabled: true, phraseWords: 3 });
   }
 });
 
@@ -281,7 +281,7 @@ test("nonboolean suggestion preferences normalize on read without changing saved
     };
     const app = storageWith(saved);
     assert.deepEqual(plain((await app.storage.getAll()).settings), {
-      ...saved.settings, suggestionsEnabled: true,
+      ...saved.settings, suggestionsEnabled: true, phraseWords: 3,
     });
     assert.deepEqual(app.items, saved);
     assert.deepEqual(app.calls, []);
@@ -298,14 +298,14 @@ test("suggestion choices round-trip in Chrome and Firefox while retaining other 
     for (const suggestionsEnabled of [false, true, false]) {
       assert.equal((await app.storage.saveSettings({ suggestionsEnabled })).suggestionsEnabled, suggestionsEnabled);
       assert.equal((await app.storage.getAll()).settings.suggestionsEnabled, suggestionsEnabled);
-      assert.deepEqual(app.items, { ...saved, settings: { ...saved.settings, suggestionsEnabled } });
+      assert.deepEqual(app.items, { ...saved, settings: { ...saved.settings, suggestionsEnabled, phraseWords: 3 } });
     }
     await Promise.all([
       app.storage.saveSettings({ enabled: true }),
       app.storage.saveSettings({ animationMode: "off" }),
     ]);
     assert.deepEqual(app.items, {
-      ...saved, settings: { ...saved.settings, suggestionsEnabled: false, enabled: true, animationMode: "off" },
+      ...saved, settings: { ...saved.settings, suggestionsEnabled: false, enabled: true, animationMode: "off", phraseWords: 3 },
     });
   }
 });
@@ -355,4 +355,19 @@ test("only library and settings keys count as library changes", () => {
   const chromeStorage = storageWith({}).storage;
   assert.equal(chromeStorage.isLibraryChange({ "sh:a": {} }, "sync"), true);
   assert.equal(chromeStorage.isLibraryChange({ "shorthand-import-journal": {} }, "local"), false, "Chrome's library is in sync storage");
+});
+
+test("paragraph completion defaults to three words, accepts off and two to six, and normalizes anything else", async () => {
+  const app = storageWith(initial);
+  assert.equal(app.storage.DEFAULT_SETTINGS.phraseWords, 3);
+  assert.equal((await app.storage.getAll()).settings.phraseWords, 3);
+  assert.deepEqual(app.calls, [], "reading the default writes nothing");
+  for (const phraseWords of [0, 2, 3, 4, 5, 6]) {
+    assert.equal((await app.storage.saveSettings({ phraseWords })).phraseWords, phraseWords);
+    assert.equal((await app.storage.getAll()).settings.phraseWords, phraseWords);
+  }
+  for (const phraseWords of [1, 7, 2.5, -3, "3", null, true, NaN]) {
+    assert.equal((await app.storage.saveSettings({ phraseWords })).phraseWords, 3, String(phraseWords));
+  }
+  assert.deepEqual(app.items["sh:sig"], initial["sh:sig"], "the library is untouched");
 });

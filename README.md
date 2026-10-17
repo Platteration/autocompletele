@@ -18,7 +18,9 @@ Google Docs and Slides draw their own text, so expansion there is experimental:
 see [Google Docs and Slides](chrome-extension/README.md#google-docs-and-slides-experimental).
 
 Chrome and Firefox also suggest saved shortcuts after you type at least two
-characters. Choose with ↑ or ↓, then Enter; Tab keeps its normal behavior.
+characters, and offer to finish a saved paragraph once you type its first
+three words (adjustable from 2 to 6, or off). Choose with ↑ or ↓, then Enter;
+Tab keeps its normal behavior.
 Suggestions are on by default and can be turned off in Settings. They come
 only from your saved library, without learning from typing history or sending
 field text to a service. Identified username, password, sign-in code and payment

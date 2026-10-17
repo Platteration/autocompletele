@@ -44,6 +44,48 @@
     return null;
   }
 
+  // Finishing a saved paragraph: the words before the caret match the fixed
+  // opening of a snippet (the text before its first [[blank]] or {variable}),
+  // ignoring case and runs of whitespace. Short snippets are left to triggers.
+  const PHRASE_MIN_WORDS = 6;
+  const PHRASE_SCAN = 400;
+  const squash = (text) => text.replace(/\s+/g, " ").toLowerCase();
+  const wordCount = (text) => text.split(/\s+/).filter(Boolean).length;
+
+  function findPhrase(before, shorthands, minWords, usageCounts) {
+    if (typeof before !== "string" || !Number.isInteger(minWords) || minWords < 1 || !Array.isArray(shorthands)) return null;
+    const saved = [];
+    shorthands.forEach((sh, order) => {
+      if (!sh || typeof sh.trigger !== "string" || typeof sh.expansion !== "string") return;
+      if (wordCount(sh.expansion) < PHRASE_MIN_WORDS) return;
+      const cut = sh.expansion.search(/\[\[|\{/);
+      const opening = squash(cut < 0 ? sh.expansion : sh.expansion.slice(0, cut));
+      saved.push({ sh, order, opening, whole: squash(sh.expansion).trimEnd() });
+    });
+    if (!saved.length) return null;
+    // The earliest word start that still matches covers the most typed words.
+    for (let start = Math.max(0, before.length - PHRASE_SCAN); start < before.length; start++) {
+      if (/\s/.test(before[start]) || !expander.isBoundary(before[start - 1])) continue;
+      const query = before.slice(start);
+      if (wordCount(query) < minWords) break;
+      const typed = squash(query);
+      const matching = saved.filter((entry) => entry.opening.startsWith(typed) && typed.trimEnd() !== entry.whole);
+      if (!matching.length) continue;
+      const uses = (entry) => { const count = usageCounts && usageCounts[entry.sh.id]; return Number.isFinite(count) && count > 0 ? count : 0; };
+      matching.sort((a, b) => uses(b) - uses(a) || a.order - b.order);
+      return { start, query, items: matching.slice(0, MAX_RESULTS).map((entry) => entry.sh), phrase: true };
+    }
+    return null;
+  }
+
+  /** A finished paragraph keeps the case of the first letter the person typed. */
+  function keepTypedCase(typed, expansion) {
+    const [first] = String(typed);
+    const [saved] = String(expansion);
+    if (!first || !saved || first === saved || first.toLowerCase() !== saved.toLowerCase()) return expansion;
+    return first + expansion.slice(saved.length);
+  }
+
   const HOST_ID = "actle-suggestions-host";
   let host = null;
   let listEl = null;
@@ -56,6 +98,7 @@
   let selected = -1;
   let onPick = null;
   let onDismiss = null;
+  let phrase = false;
 
   function anchorFocused() {
     const tree = anchor && anchor.getRootNode ? anchor.getRootNode() : document;
@@ -162,10 +205,14 @@
       row.setAttribute("aria-selected", String(index === selected));
       const trigger = document.createElement("span");
       trigger.className = "trigger";
-      const typed = document.createElement("span");
-      typed.className = "typed";
-      typed.textContent = query;
-      trigger.append(typed, document.createTextNode(sh.trigger.slice(query.length)));
+      if (phrase) {
+        trigger.textContent = sh.trigger;
+      } else {
+        const typed = document.createElement("span");
+        typed.className = "typed";
+        typed.textContent = query;
+        trigger.append(typed, document.createTextNode(sh.trigger.slice(query.length)));
+      }
       const expansion = document.createElement("span");
       expansion.className = "expansion";
       expansion.textContent = preview(sh);
@@ -175,8 +222,9 @@
     const chosen = listEl.querySelector('[data-selected="true"]');
     if (chosen) chosen.scrollIntoView({ block: "nearest" });
     statusEl.textContent = selected < 0
-      ? `${items.length} shorthand suggestion${items.length === 1 ? "" : "s"}. Press Down arrow to choose, then Enter to insert.`
-      : `${items[selected].trigger}: ${preview(items[selected])}. Press Enter to insert.`;
+      ? (phrase ? `${items.length} saved paragraph${items.length === 1 ? "" : "s"} to finish. Press Down arrow to choose, then Enter to finish it.`
+        : `${items.length} shorthand suggestion${items.length === 1 ? "" : "s"}. Press Down arrow to choose, then Enter to insert.`)
+      : `${items[selected].trigger}: ${preview(items[selected])}. Press Enter to ${phrase ? "finish it" : "insert"}.`;
     position();
   }
 
@@ -189,6 +237,7 @@
     selected = -1;
     onPick = null;
     onDismiss = null;
+    phrase = false;
   }
 
   function dismiss() {
@@ -212,10 +261,11 @@
     }
     build();
     const next = opts.items.slice(0, MAX_RESULTS);
-    if (anchor !== opts.anchorEl || query !== opts.query || items.length !== next.length
+    if (anchor !== opts.anchorEl || query !== opts.query || phrase !== !!opts.phrase || items.length !== next.length
         || next.some((sh, index) => sh !== items[index])) selected = -1;
     anchor = opts.anchorEl;
     query = opts.query;
+    phrase = !!opts.phrase;
     items = next;
     onPick = opts.onPick;
     onDismiss = opts.onDismiss;
@@ -262,5 +312,5 @@
     return false;
   }
 
-  return { find, show, update: show, close, isOpen: () => open, isHost: (el) => !!host && el === host, handleKeyDown };
+  return { find, findPhrase, keepTypedCase, show, update: show, close, isOpen: () => open, isHost: (el) => !!host && el === host, handleKeyDown };
 });
