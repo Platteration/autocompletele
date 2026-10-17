@@ -229,7 +229,7 @@ test("fabricated Backspace cannot undo a trusted expansion", async () => {
 // a trailing space is stored as U+00A0 and becomes U+0020 once more text follows.
 async function richContent() {
   const listeners = {};
-  const textNode = { nodeType: 3, textContent: "", isConnected: true };
+  let textNode = { nodeType: 3, textContent: "", isConnected: true };
   const root = { nodeType: 1, tagName: "DIV", isContentEditable: true, parentElement: null, isConnected: true,
     get textContent() { return textNode.textContent; }, contains(node) { return node === textNode || node === root; },
     closest() { return null; }, getRootNode() { return document; }, dispatchEvent() {}, focus() {} };
@@ -283,7 +283,14 @@ async function richContent() {
     selStart = selEnd = selStart + 1;
     listeners.input({ target: root, isTrusted: true, inputType: "insertText", data: key });
   }
-  return { textNode, type };
+  // The page replaces the text node with a copy, as ProseMirror does after the
+  // first character of a line. `keepOld` leaves the typed node on the page.
+  function redraw(text = textNode.textContent, keepOld = false) {
+    const old = textNode;
+    textNode = { nodeType: 3, textContent: text, isConnected: true, parentElement: root, parentNode: root };
+    if (!keepOld) old.isConnected = false;
+  }
+  return { get textNode() { return textNode; }, type, redraw };
 }
 
 test("a trigger typed after a space in a rich editor still expands despite the browser's nbsp rewriting", async () => {
@@ -293,6 +300,28 @@ test("a trigger typed after a space in a rich editor still expands despite the b
   c.type("c", "a c");
   for (const [key, text] of [["o", "a co"], ["o", "a coo"], ["l", "a cool"], ["/", "a cool/"]]) c.type(key, text);
   assert.equal(c.textNode.textContent, "a That is really cool!");
+});
+
+test("a trigger typed first in an editor that redraws the line after its first character still expands", async () => {
+  const c = await richContent();
+  c.type("c", "c");
+  c.redraw();
+  for (const [key, text] of [["o", "co"], ["o", "coo"], ["l", "cool"], ["/", "cool/"]]) c.type(key, text);
+  assert.equal(c.textNode.textContent, "That is really cool!");
+});
+
+test("a redraw continues typing only when the typed node left the page with its text unchanged", async () => {
+  const kept = await richContent();
+  kept.type("c", "c");
+  kept.redraw("c", true);
+  for (const [key, text] of [["o", "co"], ["o", "coo"], ["l", "cool"], ["/", "cool/"]]) kept.type(key, text);
+  assert.equal(kept.textNode.textContent, "cool/", "a second node beside the typed one is not the typed text");
+
+  const changed = await richContent();
+  changed.type("x", "x");
+  changed.redraw("c");
+  for (const [key, text] of [["o", "co"], ["o", "coo"], ["l", "cool"], ["/", "cool/"]]) changed.type(key, text);
+  assert.equal(changed.textNode.textContent, "cool/", "a page-written first character is not typed text");
 });
 
 test("the nbsp allowance does not let a page swap in different text for a keystroke", async () => {

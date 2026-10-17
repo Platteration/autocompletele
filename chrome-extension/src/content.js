@@ -129,11 +129,16 @@
       if (!sameText(el.textContent, rootExpected)) return false;
     }
     const previous = trustedEdits.get(el);
-    const continuing = previous && previous.value === before.value && previous.node === before.node &&
+    // Editors such as ProseMirror redraw a line after its first character,
+    // swapping the typed text node for a copy. A copy holding the same text
+    // at the same place, after the typed node left the page, continues it.
+    const sameNode = previous && (previous.node === before.node || (previous.node && before.node
+      && !previous.node.isConnected && previous.offset === before.offset));
+    const continuing = sameNode && previous.value === before.value &&
       before.start >= previous.start && before.end <= previous.end;
     const start = continuing ? previous.start : before.start;
     const end = continuing ? previous.end + grant.data.length - (before.end - before.start) : live.start;
-    trustedEdits.set(el, { value: live.value, node: live.node, start, end });
+    trustedEdits.set(el, { value: live.value, node: live.node, offset: live.offset, start, end });
     return true;
   }
 
