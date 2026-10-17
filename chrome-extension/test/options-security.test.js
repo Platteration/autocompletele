@@ -12,7 +12,7 @@ async function options(recoveryError = null, conflicts = [], readError = null) {
     const node = { tag, value: "", textContent: "", disabled: false, hidden: false, classList: { toggle() {}, add() {}, remove() {} }, handlers: {}, children: [],
       addEventListener(event, fn) { this.handlers[event] = fn; }, append(...children) { this.children.push(...children); },
       appendChild(child) { this.children.push(child); }, replaceChildren() { this.children = []; }, setAttribute() {}, click() {}, remove() {}, focus() {},
-      querySelectorAll() { return ["editId", "trigger", "expansion", "saveBtn", "cancelBtn"].map(get); },
+      querySelectorAll() { return ["editId", "trigger", "expansion", "fieldName", "addFieldBtn", "variableToken", "addVariableBtn", "saveBtn", "cancelBtn"].map(get); },
     };
     created.push(node); return node;
   }
@@ -40,7 +40,7 @@ test("failed writer recovery still exports the readable library and disables all
   page.get("exportBtn").handlers.click();
   const exported = JSON.parse(await page.downloads[0].text());
   assert.deepEqual(exported.shorthands, library, "recovery failure must not export an empty library");
-  for (const id of ["enabled", "excluded", "pickerTrigger", "trigger", "expansion", "saveBtn", "importBtn", "importFile", "mergeBtn", "replaceBtn"]) {
+  for (const id of ["enabled", "excluded", "pickerTrigger", "animationMode", "suggestionsEnabled", "trigger", "expansion", "fieldName", "addFieldBtn", "variableToken", "addVariableBtn", "saveBtn", "importBtn", "importFile", "mergeBtn", "replaceBtn"]) {
     assert.equal(page.get(id).disabled, true, id + " must not accept edits after failed recovery");
   }
   const libraryButtons = page.created.filter((node) => node.tag === "button");

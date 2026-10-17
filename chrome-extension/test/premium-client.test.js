@@ -14,6 +14,7 @@ function setup({ enforced = false, handle = () => ({}), tabs } = {}) {
   const notices = [];
   const chrome = {
     runtime: {
+      id: "actle-test",
       sendMessage(message) {
         messages.push(message);
         return Promise.resolve(handle(message)).then((result) => ({ ok: true, result }));
@@ -55,6 +56,19 @@ test("preview accounting failure leaves inserted text and reports unsaved usage"
   assert.equal(inserted, 1);
   assert.match(notices[0], /inserted.*usage.*saved/i);
   assert.equal(client.lastError(), notices[0]);
+});
+
+test("a page left open after actle updates keeps preview insertion without a usage notice", async () => {
+  const { client, chrome, notices } = setup();
+  // Chrome clears runtime.id for scripts orphaned by an update, reload or removal.
+  delete chrome.runtime.id;
+  chrome.runtime.sendMessage = () => { throw new Error("Extension context invalidated."); };
+  let inserted = 0;
+  assert.equal(client.execute(() => { inserted++; }, () => true), true);
+  await ready();
+  assert.equal(inserted, 1);
+  assert.deepEqual(notices, []);
+  assert.equal(client.lastError(), "");
 });
 
 test("preview rejects asynchronous validators without inserting or leaking a rejection", async () => {

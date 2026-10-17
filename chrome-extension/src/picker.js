@@ -130,7 +130,6 @@
       if (!ev.isTrusted || !anchorFocused()) return;
       // mousedown, not click: clicking must not blur the page's field.
       ev.preventDefault();
-      if (!ev.isTrusted) return; // the page cannot pick for the person
       const item = ev.target.closest(".item");
       if (!item) return;
       selected = Number(item.dataset.index);
