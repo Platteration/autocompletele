@@ -14,6 +14,9 @@ For shortcut text, choose Expand to fill letters around the shorthand, Casino
 to settle scrambling letters, or Off for instant replacement. Continuing to type
 finishes the visual effect immediately; reduced-motion preferences suppress it.
 
+Google Docs and Slides draw their own text, so expansion there is experimental:
+see [Google Docs and Slides](chrome-extension/README.md#google-docs-and-slides-experimental).
+
 Chrome and Firefox also suggest saved shortcuts after you type at least two
 characters. Choose with ↑ or ↓, then Enter; Tab keeps its normal behavior.
 Suggestions are on by default and can be turned off in Settings. They come

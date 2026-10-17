@@ -701,5 +701,62 @@
     if (storage.isLibraryChange(_changes, area)) reload();
   });
 
+  // ---- Google Docs and Slides (experimental) --------------------------------
+  // The canvas editors type through a hidden frame; see google-docs.js. Undo is
+  // the editor's own Ctrl+Z there, and the picker and suggestions do not show.
+
+  const googleDocs = self.ShorthandGoogleDocs;
+
+  function insertInGoogleDocs(frame, shorthand, result, fromForm) {
+    return premium.execute(() => {
+      if (!frame.isConnected || !googleDocs.replace(frame, shorthand.trigger, result)) return false;
+      noteUse(shorthand.id);
+      return true;
+    }, () => frame.isConnected && enabled && !hostExcluded, { notice: !fromForm });
+  }
+
+  function expandInGoogleDocs(typed, frame) {
+    if (!enabled || hostExcluded || templateTarget || templateForm.isOpen()) return;
+    const match = findMatch(typed, shorthands);
+    if (!match) return;
+    const shorthand = match.shorthand;
+    if (!template.requiresInput(shorthand.expansion)) {
+      insertInGoogleDocs(frame, shorthand, template.render(shorthand.expansion), false);
+      return;
+    }
+    templateTarget = { frame };
+    const shown = templateForm.show({
+      trigger: shorthand.trigger,
+      expansion: shorthand.expansion,
+      actionLabel: "Insert text",
+      anchorEl: frame,
+      async onSubmit(result) {
+        let settings;
+        try {
+          ({ settings } = await storage.getAll());
+        } catch (_) {
+          return "Could not check your settings. Cancel this form and try again.";
+        }
+        if (settings.enabled === false || (settings.excludedHosts || []).includes(location.hostname)) {
+          return "Shorthand expansion is paused. Cancel this form and enable expansion before trying again.";
+        }
+        googleDocs.focus(frame);
+        if (!await insertInGoogleDocs(frame, shorthand, result, true)) return premium.lastError()
+          || "The document is no longer ready. Cancel and try the shorthand again.";
+        templateTarget = null;
+        return true;
+      },
+      onCancel() {
+        templateTarget = null;
+        googleDocs.focus(frame);
+      },
+    });
+    if (!shown) templateTarget = null;
+  }
+
+  if (googleDocs && window === window.top && googleDocs.supports(location)) {
+    googleDocs.attach(document, expandInGoogleDocs);
+  }
+
   reload();
 })();
