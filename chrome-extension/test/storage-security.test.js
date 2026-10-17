@@ -178,16 +178,6 @@ test("replace does not delete a newer edit arriving during its sync write", asyn
   assert.deepEqual(e.localData["shorthand-import-backup"], old);
 });
 
-test("an import rechecks original values before overwriting a newer sync edit", async () => {
-  const edited = { ...old["sh:one"], expansion: "edited remotely before import wrote" };
-  const e = environment();
-  let reads = 0;
-  e.onRead((data) => { if (++reads === 2) data["sh:one"] = clone(edited); });
-  await assert.rejects(e.storage.replaceAll([{ trigger: "old/", expansion: "imported revision" }], { merge: true }), /concurrent edits.*preserved/i);
-  assert.deepEqual(e.syncData, { "sh:one": edited });
-  assert.deepEqual(e.localData["shorthand-import-backup"], old);
-});
-
 test("records that Chrome returns with alphabetised keys still count as persisted", async () => {
   const e = environment(old, {}, { chromeKeyOrder: true });
   const result = await e.storage.replaceAll([{ trigger: "new/", expansion: "replacement" }]);
@@ -196,4 +186,14 @@ test("records that Chrome returns with alphabetised keys still count as persiste
   assert.equal(e.localData["shorthand-import-journal"], undefined);
   await e.storage.replaceAll([{ trigger: "old/", expansion: "keep me" }], { merge: true });
   assert.deepEqual(Object.values(e.syncData).map((s) => s.trigger).sort(), ["new/", "old/"]);
+});
+
+test("an import rechecks original values before overwriting a newer sync edit", async () => {
+  const edited = { ...old["sh:one"], expansion: "edited remotely before import wrote" };
+  const e = environment();
+  let reads = 0;
+  e.onRead((data) => { if (++reads === 2) data["sh:one"] = clone(edited); });
+  await assert.rejects(e.storage.replaceAll([{ trigger: "old/", expansion: "imported revision" }], { merge: true }), /concurrent edits.*preserved/i);
+  assert.deepEqual(e.syncData, { "sh:one": edited });
+  assert.deepEqual(e.localData["shorthand-import-backup"], old);
 });

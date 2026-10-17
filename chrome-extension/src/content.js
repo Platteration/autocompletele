@@ -73,6 +73,16 @@
       node, rootValue: el.textContent, offset: before.toString().length - range.startOffset };
   }
 
+  // ---- what the person actually typed --------------------------------------
+  //
+  // An expansion is the person's own text, and the page can read whatever lands
+  // in its fields. So a trigger only fires when the person typed it: a page
+  // script that writes "addr/" into a field, dispatches an input event, or calls
+  // execCommand("insertText") produces an input event too (execCommand's is even
+  // marked trusted), and without this it got the expansion back to read. The
+  // grant/consumeEdit pair below is the gate: a trigger must sit inside an edit
+  // that an exact trusted key press, paste or drop produced.
+
   function grantUserInput(ev) {
     inputGrant = null;
     if (!ev.isTrusted || ev.isComposing) return;

@@ -5,8 +5,14 @@ on:
     branches: ["**"]
   pull_request:
 
+# Nothing here writes to the repository.
 permissions:
   contents: read
+
+# A newer push to the same ref supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   chrome-extension:
