@@ -29,8 +29,22 @@
   const importSummaryEl = $("importSummary");
   const updatePreviewEl = $("updatePreview");
   const updateListEl = $("updateList");
+  const libraryMsg = $("libraryMsg");
+  const undoBtn = $("undoBtn");
+  const trashEl = $("trash");
+  const trashSummary = $("trashSummary");
+  const trashCountEl = $("trashCount");
+  const trashEmptyEl = $("trashEmpty");
+  const trashListEl = $("trashList");
+  const emptyTrashBtn = $("emptyTrashBtn");
 
   let shorthands = [];
+  let trash = [];
+  let undoId = null;
+  let visibleIds = [];
+  // Re-rendering replaces these buttons; the maps let focus stay on the same action.
+  const listButtons = new Map();
+  const trashButtons = new Map();
   let pendingImport = null;
   let writable = true;
   let skippedImportItems = 0;
@@ -118,6 +132,32 @@
     if (text && !persistent) setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 4000);
   }
 
+  function errorText(error) {
+    return error && error.message ? error.message : String(error);
+  }
+
+  // The outcome of the latest library action. It stays until the next one or
+  // a reload, so Undo has no deadline.
+  function tellLibrary(text, isError = false, undo = null) {
+    undoId = undo;
+    undoBtn.hidden = !undo;
+    undoBtn.disabled = !writable;
+    libraryMsg.textContent = "";
+    say(libraryMsg, text, isError, true);
+  }
+
+  function focusedKey(buttons) {
+    for (const [key, el] of buttons) if (el === document.activeElement) return key;
+    return null;
+  }
+
+  function focusButton(buttons, key) {
+    const el = key ? buttons.get(key) : null;
+    if (!el || el.disabled) return false;
+    el.focus();
+    return true;
+  }
+
   function resetForm() {
     editId.value = "";
     triggerEl.value = "";
@@ -145,9 +185,12 @@
   }
 
   function renderList() {
+    const focused = focusedKey(listButtons);
+    listButtons.clear();
     tbody.textContent = "";
     const query = searchEl.value.trim();
     const visible = shorthands.filter((sh) => matchesSearch(sh, query));
+    visibleIds = visible.map((sh) => sh.id);
     const warnings = self.ShorthandConflicts.byTrigger(shorthands);
 
     shorthandCountEl.textContent = String(shorthands.length);
@@ -213,15 +256,159 @@
       del.className = "danger small";
       del.textContent = "Delete";
       del.disabled = !writable;
-      del.addEventListener("click", async () => {
-        await storage.deleteShorthand(sh.id);
-        await load();
-      });
+      del.addEventListener("click", () => deleteFromLibrary(sh));
 
+      listButtons.set("edit:" + sh.id, edit);
+      listButtons.set("delete:" + sh.id, del);
       b.append(edit, " ", del);
       tr.append(t, e, b);
       tbody.appendChild(tr);
     }
+    focusButton(listButtons, focused);
+  }
+
+  // After a row disappears, focus the row now in its place, else the one
+  // before it, else the search box.
+  function focusListAt(index) {
+    const id = visibleIds[Math.min(index, visibleIds.length - 1)];
+    if (!focusButton(listButtons, id === undefined ? null : "edit:" + id)) searchEl.focus();
+  }
+
+  async function deleteFromLibrary(sh) {
+    const index = visibleIds.indexOf(sh.id);
+    tellLibrary("");
+    let result;
+    try {
+      result = await storage.deleteShorthand(sh.id);
+    } catch (error) {
+      if (!error || error.code !== "NOT_KEPT") {
+        await load();
+        return tellLibrary(`Could not delete ${sh.trigger}: ${errorText(error)}`, true);
+      }
+      if (!window.confirm(`${sh.trigger} could not be kept in Recently deleted, so deleting it cannot be undone. Delete it anyway?`)) {
+        return tellLibrary(`${sh.trigger} was not deleted.`);
+      }
+      try {
+        result = await storage.deleteShorthand(sh.id, { withoutCopy: true });
+      } catch (failure) {
+        await load();
+        return tellLibrary(`Could not delete ${sh.trigger}: ${errorText(failure)}`, true);
+      }
+    }
+    await load();
+    if (result.deleted && result.kept) {
+      tellLibrary(`Deleted ${sh.trigger}.`, false, sh.id);
+      undoBtn.focus();
+      return;
+    }
+    tellLibrary(result.deleted ? `Deleted ${sh.trigger}. It was not kept in Recently deleted.` : `${sh.trigger} was already deleted.`);
+    focusListAt(index);
+  }
+
+  // Undo and Restore both end here. A refusal keeps the entry in Recently
+  // deleted, so that is where focus goes.
+  async function restoreFromTrash(id, fromUndo) {
+    const index = trash.findIndex((entry) => entry.id === id);
+    tellLibrary("");
+    let result;
+    try {
+      result = await storage.restoreDeleted(id);
+    } catch (error) {
+      result = { restored: false, message: "Could not restore: " + errorText(error) };
+    }
+    await load();
+    if (!result.restored) {
+      tellLibrary(result.message, true);
+      trashEl.open = true;
+      if (!focusButton(trashButtons, "restore:" + id)) trashSummary.focus();
+      return;
+    }
+    tellLibrary(result.alreadyThere ? `${result.trigger} is already back in your library.` : `Restored ${result.trigger}.`);
+    if (fromUndo) {
+      if (!focusButton(listButtons, "edit:" + id)) searchEl.focus();
+    } else focusTrashAt(index);
+  }
+
+  function focusTrashAt(index) {
+    const entry = trash[Math.min(index, trash.length - 1)];
+    if (!focusButton(trashButtons, entry ? "restore:" + entry.id : null)) trashSummary.focus();
+  }
+
+  async function forgetFromTrash(entry) {
+    const index = trash.findIndex((item) => item.id === entry.id);
+    tellLibrary("");
+    try {
+      await storage.forgetDeleted(entry.id);
+    } catch (error) {
+      await loadTrash();
+      return tellLibrary(`Could not delete ${entry.trigger} for good: ${errorText(error)}`, true);
+    }
+    await loadTrash();
+    tellLibrary(`Deleted ${entry.trigger} for good.`);
+    focusTrashAt(index);
+  }
+
+  function trashButton(text, className, key, label, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.textContent = text;
+    button.setAttribute("aria-label", label);
+    button.disabled = !writable;
+    button.addEventListener("click", onClick);
+    trashButtons.set(key, button);
+    return button;
+  }
+
+  function renderTrash(readError = "") {
+    const focused = focusedKey(trashButtons);
+    trashButtons.clear();
+    trashListEl.replaceChildren();
+    trashCountEl.textContent = String(trash.length);
+    trashCountEl.hidden = !!readError;
+    trashEmptyEl.textContent = readError ? "Recently deleted could not be read: " + readError : "No recently deleted shorthands.";
+    trashEmptyEl.classList.toggle("error", !!readError);
+    trashEmptyEl.hidden = trash.length > 0;
+    emptyTrashBtn.hidden = trash.length === 0;
+    emptyTrashBtn.disabled = !writable;
+    for (const entry of trash) {
+      const li = document.createElement("li");
+      const trigger = document.createElement("span");
+      trigger.className = "trash-trigger";
+      trigger.textContent = entry.trigger;
+      const preview = document.createElement("span");
+      preview.className = "trash-preview";
+      preview.textContent = entry.expansion.replace(/\s+/g, " ").trim();
+      const when = document.createElement("time");
+      when.className = "trash-time";
+      if (entry.deletedAt === null) when.textContent = "Deletion time unknown";
+      else {
+        const date = new Date(entry.deletedAt);
+        when.setAttribute("datetime", date.toISOString());
+        when.textContent = "Deleted " + date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+      }
+      const actions = document.createElement("span");
+      actions.className = "trash-actions";
+      actions.append(
+        trashButton("Restore", "secondary small", "restore:" + entry.id, `Restore ${entry.trigger}`,
+          () => restoreFromTrash(entry.id, false)),
+        " ",
+        trashButton("Delete for good", "danger small", "forget:" + entry.id, `Delete ${entry.trigger} for good`,
+          () => forgetFromTrash(entry)));
+      li.append(trigger, actions, preview, when);
+      trashListEl.appendChild(li);
+    }
+    focusButton(trashButtons, focused);
+  }
+
+  async function loadTrash() {
+    try {
+      trash = await storage.getTrash();
+    } catch (error) {
+      trash = [];
+      return renderTrash(errorText(error));
+    }
+    renderTrash();
   }
 
   // A selection saved from a webpage arrives as a one-time local draft. Only
@@ -269,6 +456,7 @@
         : storage.DEFAULT_SETTINGS.pickerTrigger;
     }
     renderList();
+    await loadTrash();
   }
 
   function showImportPreview(list, skipped) {
@@ -321,6 +509,7 @@
       importControls.forEach((button) => { button.disabled = false; });
     }
     clearImportPreview();
+    tellLibrary("");
     if (outcome.skipped.length) {
       say(ioMsg,
         `Skipped ${outcome.skipped.length} shorthand(s) that exceed Chrome sync limits. Entries that fit were merged; existing snippets were retained. ` +
@@ -356,11 +545,27 @@
       return say(formMsg, "Could not save: " + (e && e.message ? e.message : e), true);
     }
     say(formMsg, existing ? "Saved." : "Added.");
+    tellLibrary("");
     resetForm();
     await load();
   });
 
   cancelBtn.addEventListener("click", resetForm);
+  undoBtn.addEventListener("click", () => (undoId ? restoreFromTrash(undoId, true) : undefined));
+  emptyTrashBtn.addEventListener("click", async () => {
+    const count = trash.length;
+    if (!count || !window.confirm(`Empty Recently deleted? The ${count === 1 ? "shorthand" : count + " shorthands"} in it will be deleted for good.`)) return;
+    tellLibrary("");
+    try {
+      await storage.emptyTrash();
+    } catch (error) {
+      await loadTrash();
+      return tellLibrary("Could not empty Recently deleted: " + errorText(error), true);
+    }
+    await loadTrash();
+    tellLibrary("Emptied Recently deleted.");
+    trashSummary.focus();
+  });
   searchEl.addEventListener("input", renderList);
   expansionEl.addEventListener("input", renderPreview);
   expansionEl.addEventListener("input", () => {
@@ -537,6 +742,7 @@
       return;
     }
     if (storage.isLibraryChange(changes, area)) load();
+    else if (area === "local" && changes[storage.TRASH_KEY]) loadTrash();
   });
   renderPreview();
   storage.recoverPendingImport().then(async (recovery) => {
@@ -550,10 +756,11 @@
     catch (failure) {
       $("exportBtn").disabled = true;
       readError = " Current library could not be read: " + failure.message + ".";
+      await loadTrash();
     }
     say(ioMsg, "Library recovery needs attention: " + e.message + ". Export the pre-import backup before editing." + readError, true);
     form.querySelectorAll("input, textarea, select, button").forEach((el) => { el.disabled = true; });
-    [enabledEl, excludedEl, pickerTriggerEl, animationModeEl, suggestionsEnabledEl, phraseWordsEl, $("importBtn"), $("importFile")].forEach((el) => { el.disabled = true; });
+    [enabledEl, excludedEl, pickerTriggerEl, animationModeEl, suggestionsEnabledEl, phraseWordsEl, $("importBtn"), $("importFile"), undoBtn].forEach((el) => { el.disabled = true; });
     $("mergeBtn").disabled = $("replaceBtn").disabled = true;
   });
 })();

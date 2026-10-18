@@ -10,6 +10,8 @@
   const BACKUP_KEY = "shorthand-import-backup";
   const USAGE_KEY = "shorthand-usage-counts";
   const DRAFT_KEY = "shorthand-pending-draft";
+  const TRASH_KEY = "shorthand-trash";
+  const TRASH_LIMIT = 50;
   const AREA = chrome.runtime.getManifest().browser_specific_settings?.gecko ? "local" : "sync";
   const dataStore = chrome.storage[AREA];
   const encoder = new TextEncoder();
@@ -105,9 +107,10 @@
   }
 
   // Firefox keeps the library in storage.local beside premium accounting, use
-  // counts and the selection draft. Only library or settings changes should
-  // make a page reload them; otherwise every expansion in any tab would.
-  const NON_LIBRARY_KEYS = new Set(["actle-premium", USAGE_KEY, DRAFT_KEY]);
+  // counts, the selection draft and Recently deleted. Only library or settings
+  // changes should make a page reload them; otherwise every expansion in any
+  // tab would.
+  const NON_LIBRARY_KEYS = new Set(["actle-premium", USAGE_KEY, DRAFT_KEY, TRASH_KEY]);
 
   function isLibraryChange(changes, area) {
     return area === AREA && Object.keys(changes || {}).some((key) => !NON_LIBRARY_KEYS.has(key));
@@ -142,11 +145,117 @@
     });
   }
 
-  async function deleteShorthand(id) {
+  // Recently deleted: copies of deleted shorthands, newest first, at most
+  // TRASH_LIMIT. Always storage.local, in both browsers: never synced, never
+  // exported, and outside Chrome's sync quota.
+  function sanitizeTrash(value) {
+    const entries = [];
+    if (!Array.isArray(value)) return entries;
+    const seen = new Set();
+    for (const entry of value) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const { id, trigger, expansion, order, deletedAt } = entry;
+      if (typeof id !== "string" || !id || typeof trigger !== "string" || typeof expansion !== "string") continue;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      entries.push({
+        id, trigger, expansion,
+        order: Number.isFinite(order) ? order : 0,
+        deletedAt: Number.isFinite(deletedAt) ? deletedAt : null,
+      });
+    }
+    return entries;
+  }
+
+  async function getTrash() {
+    const items = await chrome.storage.local.get(TRASH_KEY);
+    return sanitizeTrash(items[TRASH_KEY]);
+  }
+
+  function writeTrash(entries) {
+    return entries.length ? chrome.storage.local.set({ [TRASH_KEY]: entries }) : chrome.storage.local.remove(TRASH_KEY);
+  }
+
+  // The copy is written before the record is removed. When it cannot be,
+  // nothing is deleted and the error carries code "NOT_KEPT"; the page may
+  // then pass { withoutCopy: true } once the person agrees.
+  async function deleteShorthand(id, options = {}) {
     return withWriteLock(async () => {
       await recoverImport();
-      await dataStore.remove(PREFIX + id);
+      const key = PREFIX + id;
+      const value = (await dataStore.get(key))[key];
+      if (!value || typeof value !== "object") return { deleted: false, kept: false };
+      const trigger = String(value.trigger || "");
+      let before = null;
+      if (!options.withoutCopy) {
+        try {
+          before = await getTrash();
+          const entry = {
+            id, trigger, expansion: String(value.expansion || ""),
+            order: typeof value.order === "number" ? value.order : 0, deletedAt: Date.now(),
+          };
+          await writeTrash([entry, ...before.filter((old) => old.id !== id)].slice(0, TRASH_LIMIT));
+        } catch (cause) {
+          const error = new Error(trigger + " could not be kept in Recently deleted: " + (cause && cause.message ? cause.message : cause));
+          error.code = "NOT_KEPT";
+          error.trigger = trigger;
+          throw error;
+        }
+      }
+      try {
+        await dataStore.remove(key);
+      } catch (error) {
+        // It is still in the library, so it should not also be listed as deleted.
+        if (before) await writeTrash(before).catch(() => {});
+        throw error;
+      }
+      return { deleted: true, kept: !options.withoutCopy, trigger };
     });
+  }
+
+  // Puts a Recently deleted shorthand back under its original id and order.
+  // A refusal keeps the entry and returns the message for the page to show.
+  async function restoreDeleted(id) {
+    return withWriteLock(async () => {
+      await recoverImport();
+      const trash = await getTrash();
+      const entry = trash.find((item) => item.id === id);
+      const rest = trash.filter((item) => item.id !== id);
+      const key = PREFIX + id;
+      const existing = await dataStore.get(null);
+      if (existing[key] && typeof existing[key] === "object") {
+        // Already back, for example synced from another device: drop the copy.
+        if (entry) await writeTrash(rest);
+        return { restored: true, alreadyThere: true, trigger: String(existing[key].trigger || "") };
+      }
+      if (!entry) return { restored: false, message: "That shorthand is no longer in Recently deleted." };
+      if (Object.values(records(existing)).some((value) => value && value.trigger === entry.trigger)) {
+        return { restored: false, trigger: entry.trigger, message: entry.trigger + " is already in your library. Rename or delete that one first." };
+      }
+      const value = { trigger: entry.trigger, expansion: entry.expansion, order: entry.order };
+      const reason = quotaError({ ...existing, [key]: value });
+      if (reason) {
+        return { restored: false, trigger: entry.trigger,
+          message: entry.trigger + " would exceed the " + reason + ", so it stays in Recently deleted. Delete or shorten another shorthand first." };
+      }
+      await dataStore.set({ [key]: value });
+      // A copy left behind by a failed cleanup is harmless: restoring it
+      // again finds the id in the library and only drops the copy.
+      await writeTrash(rest).catch(() => {});
+      return { restored: true, trigger: entry.trigger };
+    });
+  }
+
+  async function forgetDeleted(id) {
+    return withWriteLock(async () => {
+      const trash = await getTrash();
+      const rest = trash.filter((item) => item.id !== id);
+      if (rest.length !== trash.length) await writeTrash(rest);
+    });
+  }
+
+  async function emptyTrash() {
+    return withWriteLock(() => chrome.storage.local.remove(TRASH_KEY));
   }
 
   function withWriteLock(fn) {
@@ -332,6 +441,10 @@
     getAll,
     saveShorthand,
     deleteShorthand,
+    getTrash,
+    restoreDeleted,
+    forgetDeleted,
+    emptyTrash,
     replaceAll,
     recoverPendingImport,
     getImportBackup,
@@ -345,5 +458,7 @@
     toExportJson,
     DEFAULT_SETTINGS,
     AREA,
+    TRASH_KEY,
+    TRASH_LIMIT,
   };
 })(typeof self !== "undefined" ? self : this);

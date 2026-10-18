@@ -17,7 +17,7 @@
   /**
    * Inspect a list of shorthands for triggers that will misbehave.
    *
-   * Two problems are worth warning about:
+   * Three problems are worth warning about:
    *
    * - `unreachable`: another trigger is a proper prefix of this one. Expansion
    *   fires the moment the text before the caret ends with a trigger, so the
@@ -29,18 +29,43 @@
    *   it fires inside ordinary words. A trigger of `sig` goes off partway
    *   through typing "signature".
    *
+   * - `duplicate`: more than one shorthand uses the trigger, which Chrome sync
+   *   can produce by merging two devices' libraries. The content script ranks
+   *   the library by use count in this browser, keeping library order for
+   *   ties, and findMatch keeps the first of equally long matches, so typing
+   *   the trigger only ever expands one of them. (The picker and suggestions
+   *   still list both.)
+   *
+   * Each warning is reported once per trigger, however many shorthands use it.
+   *
    * @param {Array<{trigger: string}>} shorthands
-   * @returns {Array<{trigger: string, kind: string, other?: string, message: string}>}
+   * @returns {Array<{trigger: string, kind: string, other?: string, count?: number, message: string}>}
    */
   function find(shorthands) {
     const out = [];
     if (!Array.isArray(shorthands)) return out;
 
-    const triggers = shorthands
-      .map((s) => (s && typeof s.trigger === "string" ? s.trigger : ""))
-      .filter(Boolean);
+    const uses = new Map();
+    for (const s of shorthands) {
+      const trigger = s && typeof s.trigger === "string" ? s.trigger : "";
+      if (trigger) uses.set(trigger, (uses.get(trigger) || 0) + 1);
+    }
+    const triggers = [...uses.keys()];
 
     for (const trigger of triggers) {
+      const count = uses.get(trigger);
+      if (count > 1) {
+        out.push({
+          trigger,
+          kind: "duplicate",
+          count,
+          message:
+            `${count === 2 ? "Two" : count} shorthands use "${trigger}". Typing it expands only one of them: ` +
+            `the one used most in this browser, or the first in the list when they are tied. ` +
+            `Rename or delete the ${count === 2 ? "other" : "others"}.`,
+        });
+      }
+
       // Shortest prefix first, so the warning names the trigger that actually wins.
       const blockers = triggers
         .filter((other) => other !== trigger && trigger.startsWith(other))

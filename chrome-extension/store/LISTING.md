@@ -106,8 +106,9 @@ Template answers and chosen/custom pronouns are used temporarily to preview
 and fill the script; they are not saved to extension storage or included in
 library exports.
 
-Per-snippet use counts that rank suggestions and search, and any one-time
-draft from **Save selection as actle shorthand**, also use local storage only
+Per-snippet use counts that rank suggestions and search, any one-time
+draft from **Save selection as actle shorthand**, and copies of up to 50
+deleted snippets kept for **Recently deleted** also use local storage only
 and are excluded from snippet exports. The draft becomes a snippet only when
 the user gives it a trigger and saves it in the library.
 

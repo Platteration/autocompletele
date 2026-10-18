@@ -59,6 +59,30 @@ test("handles junk input without throwing", () => {
   assert.deepEqual(find([null, { trigger: "" }, {}]), []);
 });
 
+test("two shorthands with one trigger get one duplicate warning that says which one expands", () => {
+  const found = find([{ trigger: "sig/" }, { trigger: "brb/" }, { trigger: "sig/" }]);
+  assert.deepEqual(found.map((c) => [c.trigger, c.kind, c.count]), [["sig/", "duplicate", 2]]);
+  assert.equal(found[0].message,
+    'Two shorthands use "sig/". Typing it expands only one of them: the one used most in this browser, ' +
+    "or the first in the list when they are tied. Rename or delete the other.");
+});
+
+test("three shorthands with one trigger are counted", () => {
+  const found = find([{ trigger: "x/" }, { trigger: "x/" }, { trigger: "x/" }]);
+  assert.deepEqual(found.map((c) => [c.kind, c.count]), [["duplicate", 3]]);
+  assert.match(found[0].message, /^3 shorthands use "x\/"\. .* Rename or delete the others\.$/);
+});
+
+test("triggers that differ only in case are not duplicates", () => {
+  assert.deepEqual(find([{ trigger: "Sig/" }, { trigger: "sig/" }]), []);
+});
+
+test("a duplicated trigger reports each of its other warnings once", () => {
+  const map = byTrigger([{ trigger: "sig" }, { trigger: "si" }, { trigger: "sig" }]);
+  assert.deepEqual(map.get("sig").map((c) => c.kind).sort(), ["duplicate", "fires-mid-word", "unreachable"]);
+  assert.deepEqual(map.get("si").map((c) => c.kind), ["fires-mid-word"]);
+});
+
 test("byTrigger groups the warnings", () => {
   const map = byTrigger([{ trigger: "si" }, { trigger: "sig" }]);
   assert.equal(map.get("sig").length, 2);

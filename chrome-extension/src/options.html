@@ -60,6 +60,17 @@
       </div>
       <p id="empty" class="empty-state" hidden>Your library starts here. Create a shorthand in the editor.</p>
       <p id="noMatches" class="empty-state" hidden>No shorthand matches that search.</p>
+      <div class="library-status">
+        <span id="libraryMsg" class="msg" role="status"></span>
+        <button type="button" id="undoBtn" class="secondary small" hidden>Undo</button>
+      </div>
+      <details id="trash" class="trash">
+        <summary id="trashSummary">Recently deleted <span id="trashCount" class="trash-count">0</span></summary>
+        <p class="hint">Kept only in this browser on this device: never synced or exported. The 50 most recent stay until you restore them or delete them for good.</p>
+        <p id="trashEmpty" class="trash-empty">No recently deleted shorthands.</p>
+        <ul id="trashList" class="trash-list" aria-label="Recently deleted shorthands"></ul>
+        <button type="button" id="emptyTrashBtn" class="danger small" hidden>Empty Recently deleted</button>
+      </details>
       <p class="library-note">Add <code>[[name]]</code> to a script for a fill-in blank.</p>
     </div>
 

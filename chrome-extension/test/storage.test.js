@@ -7,21 +7,23 @@ const vm = require("node:vm");
 // mutation, as sync storage does for quota failures. Browser tests cover the
 // actual API's per-item quota separately. The import journal and backup live in
 // storage.local, which on Firefox is the library's own area.
-function storageWith(initial, { rejectSet, rejectRemove, firefox = false, limits = {} } = {}) {
+function storageWith(initial, { rejectSet, rejectRemove, rejectLocalSet, firefox = false, limits = {} } = {}) {
   const items = structuredClone(initial);
   const local = {};
   const calls = [];
+  const localCalls = [];
   function area(data, library) {
     return {
       ...(library ? limits : {}),
       async get(key) { return structuredClone(key ? { [key]: data[key] } : data); },
       async set(payload) {
-        if (library) calls.push({ operation: "set", payload: structuredClone(payload) });
+        (library ? calls : localCalls).push({ operation: "set", payload: structuredClone(payload) });
         if (library && rejectSet) rejectSet(payload, data);
+        if (!library && rejectLocalSet) rejectLocalSet(payload, data);
         Object.assign(data, structuredClone(payload));
       },
       async remove(keys) {
-        if (library) calls.push({ operation: "remove", keys });
+        (library ? calls : localCalls).push({ operation: "remove", keys });
         if (library && rejectRemove) rejectRemove();
         for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key];
       },
@@ -35,7 +37,7 @@ function storageWith(initial, { rejectSet, rejectRemove, firefox = false, limits
   };
   const context = vm.createContext({ chrome, self: {}, TextEncoder });
   vm.runInContext(fs.readFileSync(require.resolve("../src/storage.js"), "utf8"), context);
-  return { storage: context.self.ShorthandStorage, items, local, calls };
+  return { storage: context.self.ShorthandStorage, items, local, calls, localCalls };
 }
 
 const initial = {
@@ -399,4 +401,225 @@ test("a library that is already there when the examples would be written is neve
     assert.deepEqual(app.items, synced);
     assert.deepEqual(app.calls, []);
   }
+});
+
+// Recently deleted lives in storage.local in both browsers. On Firefox that is
+// also the library's area, so the helper's `items` holds it there.
+const TRASH = "shorthand-trash";
+const trashArea = (app, firefox) => (firefox ? app.items : app.local);
+const withoutTime = (entries) => plain(entries).map(({ deletedAt, ...rest }) => rest);
+
+test("deleting keeps a copy in Recently deleted before the record is removed, in both browsers", async () => {
+  for (const firefox of [false, true]) {
+    let app;
+    let trashWhenRemoved = "not removed";
+    app = storageWith(initial, { firefox, rejectRemove() { trashWhenRemoved = structuredClone(trashArea(app, firefox)[TRASH]); } });
+    const before = Date.now();
+    assert.deepEqual(plain(await app.storage.deleteShorthand("sig")), { deleted: true, kept: true, trigger: "sig/" });
+    const stored = trashArea(app, firefox)[TRASH];
+    assert.deepEqual(withoutTime(stored), [{ id: "sig", trigger: "sig/", expansion: "Original signature", order: 1 }]);
+    assert.ok(stored[0].deletedAt >= before && stored[0].deletedAt <= Date.now(), "the time of deletion is recorded");
+    assert.deepEqual(trashWhenRemoved, stored, "the copy was already written when the record was removed");
+    assert.equal(app.items["sh:sig"], undefined);
+    assert.deepEqual(plain((await app.storage.getAll()).shorthands).map((sh) => sh.trigger), ["local/"], "the copy is not part of the library");
+    assert.equal(app.storage.toExportJson((await app.storage.getAll()).shorthands).includes("Original signature"), false, "nor of its export");
+    if (!firefox) assert.equal(app.items[TRASH], undefined, "Chrome never puts the copy in sync storage");
+  }
+});
+
+test("Recently deleted keeps the 50 newest, newest first", async () => {
+  const older = Array.from({ length: 50 }, (_, i) => ({ id: "old" + i, trigger: "old" + i + "/", expansion: "x", order: i, deletedAt: 1000 - i }));
+  const app = storageWith(initial);
+  app.local[TRASH] = older;
+  assert.equal(app.storage.TRASH_LIMIT, 50);
+  await app.storage.deleteShorthand("sig");
+  const trash = await app.storage.getTrash();
+  assert.equal(trash.length, 50);
+  assert.equal(trash[0].id, "sig");
+  assert.deepEqual(plain(trash.slice(1).map((entry) => entry.id)), older.slice(0, 49).map((entry) => entry.id), "only the oldest is dropped");
+});
+
+test("deleting the same id again replaces its older copy instead of listing it twice", async () => {
+  const app = storageWith(initial);
+  app.local[TRASH] = [{ id: "sig", trigger: "sig/", expansion: "Older text", order: 1, deletedAt: 5 }];
+  await app.storage.deleteShorthand("sig");
+  assert.deepEqual(withoutTime(await app.storage.getTrash()), [{ id: "sig", trigger: "sig/", expansion: "Original signature", order: 1 }]);
+});
+
+test("when the copy cannot be kept nothing is deleted, unless the person agrees to delete without it", async () => {
+  const notKept = (error) => error.code === "NOT_KEPT" && error.trigger === "sig/" && /could not be kept in Recently deleted: QUOTA_BYTES/.test(error.message);
+  const chromeApp = storageWith(initial, { rejectLocalSet() { throw new Error("QUOTA_BYTES quota exceeded"); } });
+  await assert.rejects(chromeApp.storage.deleteShorthand("sig"), notKept);
+  assert.deepEqual(chromeApp.items, initial, "the library is untouched");
+  assert.deepEqual(chromeApp.calls, []);
+  assert.deepEqual(plain(await chromeApp.storage.deleteShorthand("sig", { withoutCopy: true })), { deleted: true, kept: false, trigger: "sig/" });
+  assert.equal(chromeApp.items["sh:sig"], undefined);
+  assert.equal(chromeApp.local[TRASH], undefined);
+
+  const firefoxApp = storageWith(initial, { firefox: true, rejectSet(payload) { if (TRASH in payload) throw new Error("QUOTA_BYTES quota exceeded"); } });
+  await assert.rejects(firefoxApp.storage.deleteShorthand("sig"), notKept);
+  assert.deepEqual(firefoxApp.items["sh:sig"], initial["sh:sig"]);
+  assert.equal(firefoxApp.calls.some((call) => call.operation === "remove"), false);
+});
+
+test("an unreadable trash also stops the delete rather than replacing it", async () => {
+  const app = storageWith(initial);
+  let replaced = false;
+  Object.defineProperty(app.local, TRASH, {
+    get() { throw new Error("local storage unavailable"); }, set() { replaced = true; }, enumerable: true, configurable: true,
+  });
+  await assert.rejects(app.storage.deleteShorthand("sig"), (error) => error.code === "NOT_KEPT");
+  assert.equal(replaced, false, "the copies it could not read are not overwritten");
+  assert.deepEqual(app.items["sh:sig"], initial["sh:sig"]);
+});
+
+test("a delete that fails after the copy was written withdraws the copy", async () => {
+  const app = storageWith(initial, { rejectRemove() { throw new Error("sync unavailable"); } });
+  await assert.rejects(app.storage.deleteShorthand("sig"), /sync unavailable/);
+  assert.deepEqual(app.items["sh:sig"], initial["sh:sig"]);
+  assert.deepEqual(plain(await app.storage.getTrash()), []);
+});
+
+test("deleting a shorthand that is already gone is not an error and keeps nothing", async () => {
+  const app = storageWith(initial);
+  assert.deepEqual(plain(await app.storage.deleteShorthand("missing")), { deleted: false, kept: false });
+  assert.deepEqual(app.calls, []);
+  assert.deepEqual(app.localCalls.filter((call) => call.operation === "set"), []);
+});
+
+test("restore puts the shorthand back under its id and order and drops its copy, in both browsers", async () => {
+  for (const firefox of [false, true]) {
+    const app = storageWith(initial, { firefox });
+    await app.storage.deleteShorthand("sig");
+    assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, trigger: "sig/" });
+    assert.deepEqual(app.items["sh:sig"], initial["sh:sig"]);
+    assert.deepEqual(plain((await app.storage.getAll()).shorthands).map((sh) => sh.trigger), ["local/", "sig/"]);
+    assert.deepEqual(plain(await app.storage.getTrash()), []);
+    assert.equal(trashArea(app, firefox)[TRASH], undefined);
+  }
+});
+
+test("restore is refused while another shorthand uses the trigger, and the entry stays", async () => {
+  const app = storageWith(initial);
+  await app.storage.deleteShorthand("sig");
+  const id = await app.storage.saveShorthand({ trigger: "sig/", expansion: "New signature" });
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), {
+    restored: false, trigger: "sig/", message: "sig/ is already in your library. Rename or delete that one first.",
+  });
+  assert.equal(app.items["sh:sig"], undefined);
+  assert.equal(app.items["sh:" + id].expansion, "New signature");
+  assert.deepEqual(plain((await app.storage.getTrash()).map((entry) => entry.id)), ["sig"]);
+});
+
+test("restore is refused when it would exceed the Chrome sync quota, and the entry stays", async () => {
+  // Four slots: settings, the unrelated record and two shorthands.
+  const app = storageWith(initial, { limits: { MAX_ITEMS: 4 } });
+  await app.storage.deleteShorthand("sig");
+  await app.storage.saveShorthand({ trigger: "new/", expansion: "Took the free slot" });
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), {
+    restored: false, trigger: "sig/",
+    message: "sig/ would exceed the sync item-count limit, so it stays in Recently deleted. Delete or shorten another shorthand first.",
+  });
+  assert.equal(app.items["sh:sig"], undefined);
+  assert.equal((await app.storage.getTrash()).length, 1);
+});
+
+test("copies in Recently deleted do not count toward the sync quota", async () => {
+  // 400 bytes fit the four synced records but not a 5,000-character copy.
+  const app = storageWith(initial, { limits: { QUOTA_BYTES: 400 } });
+  app.local[TRASH] = [{ id: "big", trigger: "big/", expansion: "x".repeat(5000), order: 9, deletedAt: 1 }];
+  await app.storage.deleteShorthand("sig");
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, trigger: "sig/" });
+});
+
+test("restoring an id that is already back in the library only drops the copy", async () => {
+  const app = storageWith(initial);
+  await app.storage.deleteShorthand("sig");
+  app.items["sh:sig"] = { trigger: "sig/", expansion: "Synced back from another device", order: 1 };
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, alreadyThere: true, trigger: "sig/" });
+  assert.equal(app.items["sh:sig"].expansion, "Synced back from another device", "the library record is not overwritten");
+  assert.deepEqual(plain(await app.storage.getTrash()), []);
+});
+
+test("a restore whose copy cannot be dropped still reports the restore, and the next restore drops it", async () => {
+  let failCleanup = false;
+  const app = storageWith(initial, { rejectLocalSet() { if (failCleanup) throw new Error("local storage unavailable"); } });
+  await app.storage.deleteShorthand("local");
+  await app.storage.deleteShorthand("sig");
+  failCleanup = true;
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, trigger: "sig/" });
+  assert.deepEqual(app.items["sh:sig"], initial["sh:sig"]);
+  assert.deepEqual(plain((await app.storage.getTrash()).map((entry) => entry.id)), ["sig", "local"], "the stale copy is still listed");
+  failCleanup = false;
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, alreadyThere: true, trigger: "sig/" });
+  assert.deepEqual(plain((await app.storage.getTrash()).map((entry) => entry.id)), ["local"]);
+});
+
+test("restoring an entry that is no longer kept says so", async () => {
+  const app = storageWith(initial);
+  assert.deepEqual(plain(await app.storage.restoreDeleted("missing")), { restored: false, message: "That shorthand is no longer in Recently deleted." });
+  assert.deepEqual(app.calls, []);
+});
+
+test("Delete for good removes one entry and Empty removes them all, without touching the library", async () => {
+  for (const firefox of [false, true]) {
+    const app = storageWith(initial, { firefox });
+    await app.storage.deleteShorthand("sig");
+    await app.storage.deleteShorthand("local");
+    assert.deepEqual(plain((await app.storage.getTrash()).map((entry) => entry.id)), ["local", "sig"]);
+    await app.storage.forgetDeleted("local");
+    assert.deepEqual(plain((await app.storage.getTrash()).map((entry) => entry.id)), ["sig"]);
+    await app.storage.forgetDeleted("missing");
+    assert.deepEqual(plain((await app.storage.getTrash()).map((entry) => entry.id)), ["sig"]);
+    await app.storage.emptyTrash();
+    assert.deepEqual(plain(await app.storage.getTrash()), []);
+    assert.equal(TRASH in trashArea(app, firefox), false);
+    assert.deepEqual(plain((await app.storage.getAll()).shorthands), []);
+    assert.deepEqual(app.items.settings, initial.settings);
+  }
+});
+
+test("Recently deleted ignores malformed entries", async () => {
+  const app = storageWith(initial);
+  app.local[TRASH] = [
+    { id: "ok", trigger: "ok/", expansion: "Fine", order: 3, deletedAt: 5 },
+    null, "text", 7, [], { trigger: "noid/", expansion: "x" }, { id: "", trigger: "x/", expansion: "x" },
+    { id: 9, trigger: "x/", expansion: "x" }, { id: "num", trigger: 7, expansion: "x" },
+    { id: "obj", trigger: "e/", expansion: { html: "<b>x</b>" } },
+    { id: "ok", trigger: "dup/", expansion: "a second entry for the same id" },
+    { id: "loose", trigger: "loose/", expansion: "", order: "2", deletedAt: "yesterday" },
+  ];
+  assert.deepEqual(plain(await app.storage.getTrash()), [
+    { id: "ok", trigger: "ok/", expansion: "Fine", order: 3, deletedAt: 5 },
+    { id: "loose", trigger: "loose/", expansion: "", order: 0, deletedAt: null },
+  ]);
+  for (const value of [{ not: "a list" }, "text", null, 3]) {
+    app.local[TRASH] = value;
+    assert.deepEqual(plain(await app.storage.getTrash()), []);
+  }
+});
+
+test("on Chrome, nothing about Recently deleted is ever written to sync storage", async () => {
+  const app = storageWith(initial);
+  await app.storage.deleteShorthand("sig");
+  await app.storage.restoreDeleted("sig");
+  await app.storage.deleteShorthand("sig");
+  await app.storage.forgetDeleted("sig");
+  await app.storage.deleteShorthand("local");
+  await app.storage.emptyTrash();
+  for (const call of app.calls) {
+    const keys = call.operation === "set" ? Object.keys(call.payload) : [].concat(call.keys);
+    assert.equal(keys.includes(TRASH), false, JSON.stringify(call));
+  }
+  assert.equal(TRASH in app.items, false);
+  assert.ok(app.localCalls.some((call) => call.operation === "set" && TRASH in call.payload), "it went to local storage instead");
+});
+
+test("a Recently deleted change is not a library change", () => {
+  const firefox = storageWith({}, { firefox: true }).storage;
+  assert.equal(firefox.TRASH_KEY, TRASH);
+  assert.equal(firefox.isLibraryChange({ [TRASH]: {} }, "local"), false);
+  assert.equal(firefox.isLibraryChange({ [TRASH]: {}, "sh:a": {} }, "local"), true);
+  const chromeStorage = storageWith({}).storage;
+  assert.equal(chromeStorage.isLibraryChange({ [TRASH]: {} }, "local"), false);
 });

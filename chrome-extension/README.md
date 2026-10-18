@@ -59,6 +59,26 @@ shorthand**. The library opens with the selection as a draft expansion; give
 it a trigger and save. Nothing is added to your library until you save, and
 the one-time draft is kept only in local storage until the library shows it.
 
+## Deleting and Recently deleted
+
+**Delete** on a library row removes the shorthand and says so under the list,
+with an **Undo** button that puts it back under its original id and place in
+the list. The offer stays until your next library action or a reload.
+
+Each deleted shorthand is also copied to **Recently deleted**, a collapsed
+section below the list. The copies stay in this browser's local storage on
+this device, in Chrome and Firefox alike: they are never synced, exported, or
+sent anywhere, and do not count toward Chrome's sync quota. Only the 50 most
+recent are kept; deleting another drops the oldest. **Restore** puts one back,
+**Delete for good** removes one copy, and **Empty Recently deleted** (after a
+confirmation) removes them all. Restore is refused, and the copy kept, while
+another shorthand uses the same trigger or when the shorthand would no longer
+fit in Chrome's sync storage. If the copy cannot be saved, the page asks
+before deleting the shorthand without one.
+
+In Chrome, the deletion itself still syncs to your other devices; only the
+device where you deleted it has the copy.
+
 ## Search overlay
 
 Typing `;;` in a supported field opens a search overlay listing every shorthand: type
@@ -77,6 +97,10 @@ Chrome stores your library and settings in extension sync storage, so they can
 follow your Chrome profile when its sync settings permit it. Firefox stores
 them locally in your browser profile and does not automatically sync them.
 Use JSON export and import to move your library between browsers or devices.
+When sync merges two devices' libraries into two shorthands with the same
+trigger, the library marks both rows: typing the trigger expands only one of
+them (the one used most in this browser, or the first in the list when they
+are tied), so rename or delete the other.
 Use **Export JSON** / **Import JSON** on the options page to move it to the
 Windows and Android apps (same file format, see `../shared/SPEC.md`). Imports
 are previewed before applying: the manager shows how many triggers are new,

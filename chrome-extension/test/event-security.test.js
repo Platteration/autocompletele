@@ -130,6 +130,28 @@ test("a successful expansion records one local use for ranking", async () => {
   assert.deepEqual(recorded, ["s1"], "fabricated input must not record a use");
 });
 
+// The library page's duplicate-trigger warning (src/conflicts.js) describes
+// this: the most used of the two in this browser expands, the first in library
+// order when their counts are tied, and never the other one.
+test("of two shorthands with one trigger, the most used expands, else the first in the library", async () => {
+  const library = [
+    { id: "first", trigger: "dup/", expansion: "first one", order: 0 },
+    { id: "second", trigger: "dup/", expansion: "second one", order: 1 },
+  ];
+  for (const [counts, expected] of [[{}, "first one"], [{ first: 2, second: 2 }, "first one"], [{ first: 1, second: 3 }, "second one"]]) {
+    const c = await content({
+      storage: {
+        DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" },
+        async getAll() { return { shorthands: library, settings: {} }; },
+        async getUsageCounts() { return counts; },
+        recordUse() {},
+      },
+    });
+    c.input("dup/", true);
+    assert.equal(c.field.value, expected, JSON.stringify(counts));
+  }
+});
+
 test("the final DOM check stops changes queued after asynchronous quota validation", async (t) => {
   const scenarios = [
     { name: "the page replaces the draft", change(field) {

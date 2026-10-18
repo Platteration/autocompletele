@@ -4,7 +4,7 @@
 
 **Privacy contact:** https://github.com/Platteration/autocompletele/issues
 
-**Effective date:** October 17, 2026
+**Effective date:** October 18, 2026
 
 This policy covers the actle browser extension. The contact page is
 public; do not include snippets, credentials, or other private information when
@@ -69,6 +69,14 @@ is held in `storage.local` as a one-time draft until the library page shows
 it in the editor; it becomes a saved snippet, with the storage and sync
 behavior above, only if you give it a trigger and save it.
 
+When you delete a snippet, the extension keeps a copy of it on this device
+under **Recently deleted** so that you can restore it: its trigger, expansion
+text, position in your list, and the time you deleted it. In both browsers
+these copies use `storage.local`. They do not sync, are not exported, and are
+never sent anywhere. Up to 50 are kept; deleting another snippet removes the
+oldest copy. **Delete for good** removes one copy, and **Empty Recently
+deleted** removes them all.
+
 If you activate a Forever license, the extension saves its signed token in
 this browser profile and verifies it locally. A token contains a license
 identifier, issue time, product, and plan. Activation does not ask for your
@@ -109,13 +117,16 @@ answers you supplied to a fill-in template.
 
 ## Your controls
 
-You can edit or delete snippets, export your library, change settings, pause
-expansion globally, and exclude individual hostnames. A hostname exclusion
+You can edit or delete snippets, restore or permanently remove recently deleted
+ones, export your library, change settings, pause expansion globally, and
+exclude individual hostnames. A hostname exclusion
 pauses expansion there; it does not remove the browser's site-access permission.
 Use your browser's extension settings to change site permissions or uninstall
 the extension, and Chrome's sync settings to control Chrome synchronization.
 
-Deleting a snippet removes it from the extension's active storage. In Chrome,
+Deleting a snippet removes it from your library; its local copy in **Recently
+deleted**, described above, stays until you restore it, delete it for good,
+empty Recently deleted, or 50 newer deletions replace it. In Chrome,
 propagation to other devices and retention by the sync service are controlled
 by the browser provider. Deletion does not remove JSON files you exported or
 copies you placed in webpages or on the clipboard.
