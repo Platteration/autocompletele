@@ -231,16 +231,19 @@ dd { margin: 0; color: var(--muted); font-size: 12px; line-height: 18px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (min-width: 961px) and (min-height: 640px) {
   .editor-panel > .actions {
-    position: sticky; bottom: 0; z-index: 2; padding: 12px 0;
+    position: sticky; bottom: 0; z-index: 2; padding: 8px 0;
     background: var(--surface); border-top: 1px solid var(--line);
   }
   .editor-panel :is(input, textarea, select, button) { scroll-margin-block: 24px 112px; }
 }
 @media (min-width: 1181px) {
-  .main-content { padding-top: 24px; }
+  /* Wide screens keep the whole editor above the sticky Save bar on an 800px-tall
+     window, as before the restyle: a compact title and tighter vertical rhythm. */
+  .main-content { padding-top: 16px; }
   .workspace-heading { margin-bottom: 16px; }
-  .workspace-heading .hint { margin-top: 8px; }
-  .library-card { padding: 24px 0; }
+  .workspace-heading h1 { font-size: 30px; line-height: 36px; }
+  .workspace-heading .hint { margin-top: 4px; }
+  .library-card { padding: 16px 0; }
   .library-workspace { margin-top: 16px; }
   .editor-panel { padding: 16px; }
   .editor-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 12px; margin-bottom: 8px; }
@@ -250,11 +253,11 @@ dd { margin: 0; color: var(--muted); font-size: 12px; line-height: 18px; }
   .fields label:nth-child(2) { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 8px; }
   .fields label > small { margin: 0; }
   .fields label > textarea { grid-column: 1 / -1; }
-  #expansion { min-height: 112px; height: 112px; }
-  .template-tools { margin-top: 12px; }
+  #expansion { min-height: 96px; height: 96px; }
+  .template-tools { margin-top: 8px; }
   .field-builder { grid-template-columns: 108px minmax(0, 1fr); align-items: center; }
   .field-builder button, .variable-builder button { padding: 8px 12px; min-height: 38px; }
-  .variable-builder { margin-top: 12px; padding-top: 12px; }
+  .variable-builder { margin-top: 8px; padding-top: 8px; }
   .template-preview { margin-top: 12px; padding-top: 12px; }
   #templatePreview { margin-top: 8px; line-height: 24px; }
   #templateHint { margin-top: 8px; }
