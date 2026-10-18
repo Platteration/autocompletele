@@ -1,6 +1,7 @@
 package com.shorthand.expander
 
 import android.content.SharedPreferences
+import com.shorthand.expander.ShorthandStore.Companion.KEY_BEFORE_IMPORT
 import com.shorthand.expander.ShorthandStore.Companion.KEY_JSON
 import com.shorthand.expander.ShorthandStore.Companion.KEY_UNREADABLE
 import org.junit.Assert.assertEquals
@@ -104,6 +105,107 @@ class ShorthandStoreTest {
         assertEquals(ShorthandStore.defaults(), store.shorthands)
         assertNull(store.unreadableCopyKey)
         assertEquals(listOf("apply $KEY_JSON"), prefs.writes)
+    }
+
+    // ---- the list kept before an import --------------------------------------
+
+    private val before = listOf(Shorthand("a/", "Alpha\nline two"), Shorthand("b/", "{date}"))
+    private val imported = listOf(Shorthand("i/", "Imported"))
+
+    @Test fun nothingIsKeptUntilAnImport() {
+        val prefs = FakePrefs(KEY_JSON to ShorthandJson.toJson(before))
+        val store = ShorthandStore(prefs)
+
+        assertNull(store.listBeforeImport)
+        assertNull(store.restoreListBeforeImport())
+        assertEquals(before, store.shorthands)
+        assertEquals(emptyList<String>(), prefs.writes)
+    }
+
+    @Test fun theSavedListIsKeptWithCommitBeforeAnImport() {
+        val saved = ShorthandJson.toJson(before)
+        val prefs = FakePrefs(KEY_JSON to saved)
+        val store = ShorthandStore(prefs)
+
+        assertTrue(store.keepListBeforeImport())
+        assertEquals(saved, prefs.values[KEY_BEFORE_IMPORT])
+        assertEquals(listOf("commit $KEY_BEFORE_IMPORT"), prefs.writes)
+
+        store.shorthands = imported
+        assertEquals(imported, store.shorthands)
+        assertEquals(before, store.listBeforeImport)
+        // A store opened later (after a restart) still finds it.
+        assertEquals(before, ShorthandStore(prefs).listBeforeImport)
+    }
+
+    @Test fun aLaterImportKeepsOnlyTheListBeforeIt() {
+        val prefs = FakePrefs(KEY_JSON to ShorthandJson.toJson(before))
+        val store = ShorthandStore(prefs)
+        store.keepListBeforeImport()
+        store.shorthands = imported
+        store.keepListBeforeImport()
+        store.shorthands = listOf(Shorthand("z/", "Z"))
+
+        assertEquals(imported, store.listBeforeImport)
+    }
+
+    @Test fun aKeepThatCannotBeWrittenIsReported() {
+        val saved = ShorthandJson.toJson(before)
+        val prefs = FakePrefs(KEY_JSON to saved)
+        prefs.failCommits = true
+        val store = ShorthandStore(prefs)
+
+        assertFalse(store.keepListBeforeImport())
+        assertEquals(saved, prefs.values[KEY_JSON])
+        assertEquals(before, store.shorthands)
+        assertEquals(listOf("commit $KEY_BEFORE_IMPORT"), prefs.writes)
+    }
+
+    @Test fun restoringSavesTheKeptListAndOnlyThenClearsIt() {
+        val prefs = FakePrefs(KEY_JSON to ShorthandJson.toJson(before))
+        val store = ShorthandStore(prefs)
+        store.keepListBeforeImport()
+        store.shorthands = imported
+        prefs.writes.clear()
+
+        assertEquals(before, store.restoreListBeforeImport())
+        assertEquals(before, store.shorthands)
+        assertNull(store.listBeforeImport)
+        assertFalse(KEY_BEFORE_IMPORT in prefs.values)
+        // The restored list is saved first; the kept list is removed after that save.
+        assertEquals(listOf("apply $KEY_JSON", "apply $KEY_BEFORE_IMPORT"), prefs.writes)
+    }
+
+    @Test fun restoringCopiesAnUnreadableSavedListAsideFirst() {
+        val kept = ShorthandJson.toJson(before)
+        val prefs = FakePrefs(KEY_JSON to unreadable, KEY_BEFORE_IMPORT to kept)
+        val store = ShorthandStore(prefs)
+
+        assertEquals(before, store.restoreListBeforeImport())
+        assertEquals(unreadable, prefs.values[KEY_UNREADABLE])
+        assertEquals(before, store.shorthands)
+        assertNull(store.listBeforeImport)
+        assertEquals(listOf("commit $KEY_UNREADABLE", "apply $KEY_JSON", "apply $KEY_BEFORE_IMPORT"), prefs.writes)
+    }
+
+    @Test fun aRefusedRestoreKeepsTheKeptList() {
+        val kept = ShorthandJson.toJson(before)
+        val prefs = FakePrefs(KEY_JSON to unreadable, KEY_BEFORE_IMPORT to kept)
+        prefs.failCommits = true
+        val store = ShorthandStore(prefs)
+
+        assertThrows(IllegalStateException::class.java) { store.restoreListBeforeImport() }
+        assertEquals(unreadable, prefs.values[KEY_JSON])
+        assertEquals(kept, prefs.values[KEY_BEFORE_IMPORT])
+        assertEquals(before, store.listBeforeImport)
+        assertEquals(listOf("commit $KEY_UNREADABLE"), prefs.writes)
+
+        // Once the unreadable list can be copied aside, the same restore goes through.
+        prefs.failCommits = false
+        assertEquals(before, store.restoreListBeforeImport())
+        assertEquals(unreadable, prefs.values[KEY_UNREADABLE])
+        assertEquals(before, store.shorthands)
+        assertNull(store.listBeforeImport)
     }
 }
 

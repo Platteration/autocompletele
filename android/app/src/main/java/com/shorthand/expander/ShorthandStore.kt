@@ -65,6 +65,33 @@ class ShorthandStore internal constructor(private val prefs: SharedPreferences) 
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
 
     /**
+     * Before an import changes the list: keeps the saved list's text under [KEY_BEFORE_IMPORT] with
+     * commit(), in place of the list kept before an earlier import. Returns false if that write failed.
+     */
+    fun keepListBeforeImport(): Boolean =
+        prefs.edit().putString(KEY_BEFORE_IMPORT, prefs.getString(KEY_JSON, null)).commit()
+
+    /** The list kept by [keepListBeforeImport], or null when none is kept (or it cannot be read). */
+    val listBeforeImport: List<Shorthand>?
+        get() {
+            val kept = prefs.getString(KEY_BEFORE_IMPORT, null) ?: return null
+            return (ShorthandJson.read(kept) as? ShorthandJson.ReadResult.Parsed)?.shorthands
+        }
+
+    /**
+     * Saves the list kept before the last import as the saved list again, through [shorthands], so a
+     * saved list that cannot be read is still copied aside first. The kept list is removed only after
+     * that save; if the save is refused, its IllegalStateException is thrown and the kept list stays.
+     * Returns the restored list, or null when no list was kept.
+     */
+    fun restoreListBeforeImport(): List<Shorthand>? {
+        val kept = listBeforeImport ?: return null
+        shorthands = kept
+        prefs.edit().remove(KEY_BEFORE_IMPORT).apply()
+        return kept
+    }
+
+    /**
      * Copies [raw] with commit() to the first recovery key that is free or already holds exactly
      * this text, so an earlier copy is never replaced. Returns that key, or null if the write failed.
      */
@@ -85,6 +112,7 @@ class ShorthandStore internal constructor(private val prefs: SharedPreferences) 
         const val PREFS_NAME = "shorthands"
         const val KEY_JSON = "shorthands_json"
         const val KEY_UNREADABLE = "shorthands_json_unreadable"
+        const val KEY_BEFORE_IMPORT = "shorthands_json_before_import"
         const val KEY_ENABLED = "enabled"
 
         fun defaults(): List<Shorthand> = listOf(

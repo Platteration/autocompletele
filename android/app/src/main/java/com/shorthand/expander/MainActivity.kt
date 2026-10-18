@@ -71,10 +71,16 @@ class MainActivity : Activity() {
         return true
     }
 
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        menu.findItem(R.id.action_undo_import)?.isVisible = store.listBeforeImport != null
+        return super.onPrepareOptionsMenu(menu)
+    }
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_import -> { startImport(); true }
             R.id.action_export -> { startExport(); true }
+            R.id.action_undo_import -> { confirmUndoImport(); true }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -120,13 +126,23 @@ class MainActivity : Activity() {
             .setPositiveButton(R.string.save, null) // handled below so validation can keep the dialog open
             .setNegativeButton(R.string.cancel, null)
         if (existing != null) {
-            builder.setNeutralButton(R.string.delete) { _, _ ->
-                items.remove(existing)
-                persist()
-            }
+            builder.setNeutralButton(R.string.delete, null) // handled below so Cancel keeps the dialog open
         }
         val dialog = builder.create()
         dialog.setOnShowListener {
+            if (existing != null) {
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                    AlertDialog.Builder(this)
+                        .setMessage(getString(R.string.delete_confirm, existing.trigger))
+                        .setPositiveButton(R.string.delete) { _, _ ->
+                            items.remove(existing)
+                            persist()
+                            dialog.dismiss()
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                }
+            }
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val trigger = triggerEdit.text.toString().trim()
                 val expansion = expansionEdit.text.toString()
@@ -208,6 +224,21 @@ class MainActivity : Activity() {
     }
 
     private fun applyImport(imported: List<Shorthand>, replace: Boolean) {
+        // Replace and merge both change a non-empty list, so it is kept first for Undo last import.
+        if (items.isEmpty()) {
+            changeListByImport(imported, replace, kept = false)
+        } else if (store.keepListBeforeImport()) {
+            changeListByImport(imported, replace, kept = true)
+        } else {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.import_keep_failed)
+                .setPositiveButton(R.string.import_anyway) { _, _ -> changeListByImport(imported, replace, kept = false) }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun changeListByImport(imported: List<Shorthand>, replace: Boolean, kept: Boolean) {
         if (replace) {
             items.clear()
         } else {
@@ -215,7 +246,28 @@ class MainActivity : Activity() {
             items.removeAll { it.trigger in triggers }
         }
         items.addAll(imported)
-        if (persist()) toast(getString(R.string.import_done, imported.size))
+        if (persist()) toast(getString(if (kept) R.string.import_done_undo else R.string.import_done, imported.size))
+        invalidateOptionsMenu()
+    }
+
+    private fun confirmUndoImport() {
+        val kept = store.listBeforeImport ?: return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.menu_undo_import)
+            .setMessage(getString(R.string.undo_import_message, kept.size, items.size))
+            .setPositiveButton(R.string.undo_import_confirm) { _, _ -> undoImport() }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun undoImport() {
+        try {
+            store.restoreListBeforeImport()?.let { toast(getString(R.string.undo_import_done, it.size)) }
+        } catch (e: IllegalStateException) {
+            toast(getString(R.string.save_refused_unreadable))
+        }
+        refresh()
+        invalidateOptionsMenu()
     }
 
     private fun exportTo(uri: Uri) {

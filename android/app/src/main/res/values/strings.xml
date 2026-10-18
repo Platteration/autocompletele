@@ -28,6 +28,14 @@
     <string name="replace">Replace</string>
     <string name="merge">Merge</string>
     <string name="import_done">Imported %1$d shorthand(s).</string>
+    <string name="import_done_undo">Imported %1$d shorthand(s). Undo last import in the menu puts your previous list back.</string>
+    <string name="import_keep_failed">Your current shorthands could not be kept before the import. Import anyway?</string>
+    <string name="import_anyway">Import anyway</string>
+    <string name="menu_undo_import">Undo last import</string>
+    <string name="undo_import_message">Put back the %1$d shorthand(s) you had before your last import? This replaces your current %2$d shorthand(s).</string>
+    <string name="undo_import_confirm">Put back</string>
+    <string name="undo_import_done">Put back the %1$d shorthand(s) you had before your last import.</string>
+    <string name="delete_confirm">Delete %1$s?</string>
     <string name="import_failed">Could not read that file: %1$s</string>
     <string name="import_empty">No shorthands were found in that file.</string>
     <string name="export_done">Exported %1$d shorthand(s).</string>

@@ -28,7 +28,7 @@ or copy it over and open it).
 1. Open **Shorthand Expander** and tap **Turn on in Accessibility settings**.
    Find *Shorthand Expander* in the list, enable it and confirm the prompt.
 2. Back in the app, add your shorthands with **Add shorthand**. Tap one to
-   edit or delete it.
+   edit or delete it; **Delete** asks before it removes the shorthand.
 3. Type a trigger in any other app. It is replaced as soon as you type its
    last character. Press Backspace right after an expansion to put the
    trigger back.
@@ -44,6 +44,15 @@ service off. The overflow menu offers **Import JSON** and **Export JSON**,
 using the same file format as the Chrome extension and the Windows app
 (see `../shared/SPEC.md`). Placeholders `{date}`, `{time}`, `{datetime}` and
 `{cursor}` are supported.
+
+Before an import replaces or merges into a list that is not empty (merging
+also overwrites the expansions of triggers you already have), the app keeps
+that list. While it is kept, the overflow menu shows **Undo last import**,
+which asks first and then puts the kept list back in place of the current
+one (so changes made since the import are replaced too). Only the list from before
+the latest such import is kept. If the list cannot be kept, the app asks
+whether to import anyway, and nothing changes unless you choose
+**Import anyway**.
 
 ## Notes and limitations
 
