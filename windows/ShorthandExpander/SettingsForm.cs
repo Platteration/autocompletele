@@ -204,6 +204,7 @@ namespace ShorthandExpander
                     return;
                 }
             }
+            string? editedTrigger = target >= 0 ? _items[target].Trigger : null;
             if (target >= 0)
             {
                 _items[target] = new Shorthand(trigger, expansion);
@@ -212,8 +213,9 @@ namespace ShorthandExpander
             {
                 _items.Add(new Shorthand(trigger, expansion));
             }
-            Persist();
-            ClearEditor();
+            if (Persist()) ClearEditor();
+            // The list was reloaded; Save again still edits the same saved shorthand.
+            else _editingIndex = editedTrigger == null ? -1 : _items.FindIndex(s => s.Trigger == editedTrigger);
         }
 
         private void DeleteSelected()
@@ -224,17 +226,26 @@ namespace ShorthandExpander
             ClearEditor();
         }
 
-        private void Persist()
+        /// <summary>
+        /// Saves the edited list. When the save fails the list goes back to what is saved and in use, so the window
+        /// never shows shorthands that are not stored; callers keep the editor filled so nothing typed is lost.
+        /// </summary>
+        private bool Persist()
         {
+            bool saved = true;
             try
             {
                 _store.SaveShorthands(_items);
             }
             catch (Exception ex)
             {
+                saved = false;
+                _items.Clear();
+                _items.AddRange(_store.Shorthands.Select(s => new Shorthand(s.Trigger, s.Expansion)));
                 MessageBox.Show(this, "Could not save shorthands:\n" + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             RefreshList();
+            return saved;
         }
 
         private void Import()

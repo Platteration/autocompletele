@@ -37,6 +37,15 @@ The executable lands in `ShorthandExpander\bin\Release\net8.0-windows\win-x64\pu
   same format used by the Chrome extension and the Android app
   (see `../shared/SPEC.md`), so you can copy the file between devices or use
   the Import / Export buttons.
+* Saves are written to `shorthands.json.tmp` first and then swapped in, keeping
+  the previous version as `shorthands.json.bak` (`settings.json` works the same
+  way). If a save was interrupted and only those files are left, the app puts
+  the newest readable one back on start-up.
+* If `shorthands.json` or `settings.json` cannot be read, the app copies it
+  byte for byte to `shorthands.unreadable-<date>-<time>.json` (or
+  `settings.unreadable-…`) next to it, tells you, and starts with an empty list
+  or default settings. If that copy cannot be made, the file is left alone and
+  saving is turned off until the app is restarted.
 * Placeholders `{date}`, `{time}`, `{datetime}` and `{cursor}` are supported.
 * Press Backspace right after an expansion to put the trigger back.
 

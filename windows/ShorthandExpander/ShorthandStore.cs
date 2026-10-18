@@ -63,16 +63,18 @@ namespace ShorthandExpander
             List<Shorthand> list;
             AppSettings settings;
             var problems = new List<string>();
-            bool shorthandsBlocked = false, settingsBlocked = false;
+            bool shorthandsBlocked = !RestoreInterruptedSave(ShorthandsPath, text => ParseFile(text), problems);
+            bool settingsBlocked = !RestoreInterruptedSave(SettingsPath,
+                text => JsonSerializer.Deserialize<AppSettings>(text, JsonOptions) ?? throw new FormatException("Empty settings."), problems);
             try
             {
-                list = File.Exists(ShorthandsPath) ? ParseFile(File.ReadAllText(ShorthandsPath)) : DefaultShorthands();
+                list = File.Exists(ShorthandsPath) ? ReadSavedList(File.ReadAllText(ShorthandsPath)) : DefaultShorthands();
             }
             catch (Exception ex)
             {
                 // Start empty, but keep the unreadable file: the next save would otherwise overwrite it.
                 list = new List<Shorthand>();
-                shorthandsBlocked = !CopyAside(ShorthandsPath, ex, "Your shorthand list started empty.", problems);
+                shorthandsBlocked |= !CopyAside(ShorthandsPath, ex, "Your shorthand list started empty.", problems);
             }
             try
             {
@@ -83,7 +85,7 @@ namespace ShorthandExpander
             catch (Exception ex)
             {
                 settings = new AppSettings();
-                settingsBlocked = !CopyAside(SettingsPath, ex, "Default settings are in use.", problems);
+                settingsBlocked |= !CopyAside(SettingsPath, ex, "Default settings are in use.", problems);
             }
             lock (_lock)
             {
@@ -93,26 +95,71 @@ namespace ShorthandExpander
             ShorthandsSaveBlocked = shorthandsBlocked;
             SettingsSaveBlocked = settingsBlocked;
             LoadProblem = problems.Count == 0 ? null : string.Join("\n\n", problems);
-            if (!File.Exists(ShorthandsPath)) SaveShorthands(list);
+            // First run seeds the defaults, but never while something is left that saving would bury.
+            if (!File.Exists(ShorthandsPath) && !shorthandsBlocked) SaveShorthands(list);
             Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// A crash, or a ReplaceFile failure between its two renames, can leave no file at all: the newest version in
+        /// ".tmp" and the previous one in ".bak". Put the newest readable one back before loading, so the first-run seed
+        /// cannot write over them. Returns false when one was found but could not be put back; saving is then refused.
+        /// </summary>
+        private bool RestoreInterruptedSave(string path, Func<string, object> mustRead, List<string> problems)
+        {
+            if (File.Exists(path)) return true;
+            foreach (string candidate in new[] { path + ".tmp", path + ".bak" })
+            {
+                if (!File.Exists(candidate)) continue;
+                try { mustRead(File.ReadAllText(candidate)); } catch { continue; }
+                try
+                {
+                    File.Copy(candidate, path, overwrite: false);
+                    problems.Add($"{Path.GetFileName(path)} was missing after an interrupted save, so it was restored from {candidate}.");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    problems.Add($"{Path.GetFileName(path)} was missing after an interrupted save, and {candidate} could not be put back ({ex.Message}).\n" +
+                        "It was left untouched, and nothing will be saved over it until Shorthand Expander is restarted and can restore it.");
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Reads the saved list, treating a file whose entries were all unrecognised (a hand edit, another tool's
+        /// format) as unreadable, so it is copied aside instead of loading empty and being saved over.
+        /// </summary>
+        private static List<Shorthand> ReadSavedList(string json)
+        {
+            var list = ParseFile(json);
+            if (list.Count == 0)
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (FindArray(doc.RootElement).GetArrayLength() > 0) throw new FormatException("None of its entries could be read.");
+            }
+            return list;
         }
 
         public void SaveShorthands(IEnumerable<Shorthand> list)
         {
             if (ShorthandsSaveBlocked) throw new InvalidOperationException(BlockedMessage(ShorthandsPath));
             var clean = Expander.Sanitize(list);
-            lock (_lock) _shorthands = clean;
             System.IO.Directory.CreateDirectory(Directory);
             WriteAtomically(ShorthandsPath, Serialize(clean));
+            // Only a list that reached the disk becomes the one in use.
+            lock (_lock) _shorthands = clean;
             Changed?.Invoke(this, EventArgs.Empty);
         }
 
         public void SaveSettings(AppSettings settings)
         {
             if (SettingsSaveBlocked) throw new InvalidOperationException(BlockedMessage(SettingsPath));
-            lock (_lock) _settings = new AppSettings { Enabled = settings.Enabled, ShiftEnterForNewlines = settings.ShiftEnterForNewlines };
             System.IO.Directory.CreateDirectory(Directory);
             WriteAtomically(SettingsPath, JsonSerializer.Serialize(settings, JsonOptions));
+            lock (_lock) _settings = new AppSettings { Enabled = settings.Enabled, ShiftEnterForNewlines = settings.ShiftEnterForNewlines };
             Changed?.Invoke(this, EventArgs.Empty);
         }
 
@@ -125,11 +172,21 @@ namespace ShorthandExpander
             string name = Path.GetFileName(path);
             try
             {
-                string stem = Path.Combine(Directory, Path.GetFileNameWithoutExtension(path) + ".unreadable-" +
-                    DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
-                string backup = stem + ".json";
-                for (int n = 2; File.Exists(backup); n++) backup = stem + "-" + n + ".json";
-                File.Copy(path, backup, overwrite: false);
+                // An identical earlier copy is reused, so starting with the same unreadable file adds no new copies.
+                string? backup = null;
+                byte[] bytes = File.ReadAllBytes(path);
+                foreach (string earlier in System.IO.Directory.GetFiles(Directory, Path.GetFileNameWithoutExtension(path) + ".unreadable-*.json"))
+                {
+                    if (File.ReadAllBytes(earlier).AsSpan().SequenceEqual(bytes)) { backup = earlier; break; }
+                }
+                if (backup == null)
+                {
+                    string stem = Path.Combine(Directory, Path.GetFileNameWithoutExtension(path) + ".unreadable-" +
+                        DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
+                    backup = stem + ".json";
+                    for (int n = 2; File.Exists(backup); n++) backup = stem + "-" + n + ".json";
+                    File.Copy(path, backup, overwrite: false);
+                }
                 problems.Add($"{name} could not be read ({readError.Message}).\n" +
                     $"An exact copy was saved as {backup}, and nothing was overwritten. {fallback}");
                 return true;
@@ -171,21 +228,7 @@ namespace ShorthandExpander
         public static List<Shorthand> ParseFile(string json)
         {
             using var doc = JsonDocument.Parse(json);
-            JsonElement arr;
-            if (doc.RootElement.ValueKind == JsonValueKind.Array)
-            {
-                arr = doc.RootElement;
-            }
-            else if (doc.RootElement.ValueKind == JsonValueKind.Object &&
-                     doc.RootElement.TryGetProperty("shorthands", out var prop) &&
-                     prop.ValueKind == JsonValueKind.Array)
-            {
-                arr = prop;
-            }
-            else
-            {
-                throw new FormatException("No \"shorthands\" array found.");
-            }
+            JsonElement arr = FindArray(doc.RootElement);
             var list = new List<Shorthand?>();
             foreach (var el in arr.EnumerateArray())
             {
@@ -195,6 +238,14 @@ namespace ShorthandExpander
                 list.Add(new Shorthand(trigger, expansion));
             }
             return Expander.Sanitize(list);
+        }
+
+        private static JsonElement FindArray(JsonElement root)
+        {
+            if (root.ValueKind == JsonValueKind.Array) return root;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("shorthands", out var prop) &&
+                prop.ValueKind == JsonValueKind.Array) return prop;
+            throw new FormatException("No \"shorthands\" array found.");
         }
 
         public static List<Shorthand> DefaultShorthands() => new List<Shorthand>
