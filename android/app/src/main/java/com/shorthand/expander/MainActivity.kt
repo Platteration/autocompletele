@@ -92,10 +92,10 @@ class MainActivity : Activity() {
         emptyText.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
     }
 
-    /** Saves [items]; returns false, after telling the user, when the save was refused. */
-    private fun persist(): Boolean {
+    /** Saves [items] (with [save]); returns false, after telling the user, when the save was refused. */
+    private fun persist(save: () -> Unit = { store.shorthands = ArrayList(items) }): Boolean {
         val saved = try {
-            store.shorthands = ArrayList(items)
+            save()
             true
         } catch (e: IllegalStateException) {
             toast(getString(R.string.save_refused_unreadable))
@@ -246,7 +246,10 @@ class MainActivity : Activity() {
             items.removeAll { it.trigger in triggers }
         }
         items.addAll(imported)
-        if (persist()) toast(getString(if (kept) R.string.import_done_undo else R.string.import_done, imported.size))
+        // An import that kept nothing also drops the list kept before an earlier one, so Undo never offers it.
+        if (persist { store.saveImported(ArrayList(items), kept) }) {
+            toast(getString(if (kept) R.string.import_done_undo else R.string.import_done, imported.size))
+        }
         invalidateOptionsMenu()
     }
 

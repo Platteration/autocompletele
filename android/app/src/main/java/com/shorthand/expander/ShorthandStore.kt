@@ -66,10 +66,29 @@ class ShorthandStore internal constructor(private val prefs: SharedPreferences) 
 
     /**
      * Before an import changes the list: keeps the saved list's text under [KEY_BEFORE_IMPORT] with
-     * commit(), in place of the list kept before an earlier import. Returns false if that write failed.
+     * commit(), in place of the list kept before an earlier import. Returns false if that write failed;
+     * the list kept before the earlier import is then put back, so it is still there.
      */
-    fun keepListBeforeImport(): Boolean =
-        prefs.edit().putString(KEY_BEFORE_IMPORT, prefs.getString(KEY_JSON, null)).commit()
+    fun keepListBeforeImport(): Boolean {
+        val earlier = prefs.getString(KEY_BEFORE_IMPORT, null)
+        if (prefs.edit().putString(KEY_BEFORE_IMPORT, prefs.getString(KEY_JSON, null)).commit()) return true
+        // SharedPreferences changes its values in memory even when commit() cannot write them to disk.
+        // Putting null removes the key, as when nothing was kept before.
+        prefs.edit().putString(KEY_BEFORE_IMPORT, earlier).apply()
+        return false
+    }
+
+    /**
+     * Saves the list an import produced, through [shorthands]. [kept] tells whether [keepListBeforeImport]
+     * kept the list it replaces. When it did not (the list was empty, or the import went ahead after the
+     * keep failed), the list kept before an earlier import is removed once the save is done, so Undo last
+     * import only ever puts back the list from before the latest import. A refused save throws
+     * IllegalStateException, as [shorthands] does, and the kept list stays.
+     */
+    fun saveImported(list: List<Shorthand>, kept: Boolean) {
+        shorthands = list
+        if (!kept) prefs.edit().remove(KEY_BEFORE_IMPORT).apply()
+    }
 
     /** The list kept by [keepListBeforeImport], or null when none is kept (or it cannot be read). */
     val listBeforeImport: List<Shorthand>?

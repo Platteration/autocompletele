@@ -50,9 +50,11 @@ also overwrites the expansions of triggers you already have), the app keeps
 that list. While it is kept, the overflow menu shows **Undo last import**,
 which asks first and then puts the kept list back in place of the current
 one (so changes made since the import are replaced too). Only the list from before
-the latest such import is kept. If the list cannot be kept, the app asks
-whether to import anyway, and nothing changes unless you choose
-**Import anyway**.
+the latest import is kept: an import into an empty list, or one you choose to
+import anyway, removes the list kept before an earlier import. If the list
+cannot be kept, the app asks whether to import anyway, and nothing changes
+unless you choose **Import anyway**. A shorthand in the kept list stays there,
+even after you delete it, until your next import or **Undo last import**.
 
 ## Notes and limitations
 

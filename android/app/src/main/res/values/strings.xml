@@ -28,7 +28,7 @@
     <string name="replace">Replace</string>
     <string name="merge">Merge</string>
     <string name="import_done">Imported %1$d shorthand(s).</string>
-    <string name="import_done_undo">Imported %1$d shorthand(s). Undo last import in the menu puts your previous list back.</string>
+    <string name="import_done_undo">Imported %1$d shorthand(s). Undo last import is in the menu.</string>
     <string name="import_keep_failed">Your current shorthands could not be kept before the import. Import anyway?</string>
     <string name="import_anyway">Import anyway</string>
     <string name="menu_undo_import">Undo last import</string>
