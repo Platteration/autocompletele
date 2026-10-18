@@ -55,6 +55,7 @@ class MainActivity : Activity() {
         enabledSwitch.setOnCheckedChangeListener { _, checked -> store.enabled = checked }
 
         refresh()
+        if (store.unreadableCopyKey != null) toast(getString(R.string.saved_list_unreadable))
     }
 
     override fun onResume() {
@@ -84,7 +85,11 @@ class MainActivity : Activity() {
     }
 
     private fun persist() {
-        store.shorthands = ArrayList(items)
+        try {
+            store.shorthands = ArrayList(items)
+        } catch (e: IllegalStateException) {
+            toast(getString(R.string.save_refused_unreadable))
+        }
         refresh()
     }
 

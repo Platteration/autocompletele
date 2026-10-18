@@ -31,4 +31,18 @@ object ShorthandJson {
         }
         return Expander.sanitize(list)
     }
+
+    /** What [read] found: the shorthands, or the exact text that could not be parsed. */
+    sealed class ReadResult {
+        class Parsed(val shorthands: List<Shorthand>) : ReadResult()
+        class Unreadable(val raw: String) : ReadResult()
+    }
+
+    /** Like [parse], but returns unparseable input unchanged instead of throwing. */
+    fun read(json: String): ReadResult =
+        try {
+            ReadResult.Parsed(parse(json))
+        } catch (e: Exception) {
+            ReadResult.Unreadable(json)
+        }
 }

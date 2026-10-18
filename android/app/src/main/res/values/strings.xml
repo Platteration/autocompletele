@@ -33,4 +33,6 @@
     <string name="export_done">Exported %1$d shorthand(s).</string>
     <string name="export_failed">Could not write that file: %1$s</string>
     <string name="export_file_name">shorthands.json</string>
+    <string name="saved_list_unreadable">Your saved shorthands could not be read. They were kept aside unchanged, and the list started empty.</string>
+    <string name="save_refused_unreadable">Not saved. Your earlier shorthands could not be read or copied aside, so they were left as they are.</string>
 </resources>
