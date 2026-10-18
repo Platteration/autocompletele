@@ -435,7 +435,7 @@ test("Firefox: glyph animation modes preserve the real editing transaction", { t
     assert.equal(effect.background, null);
     assert.equal(effect.frame, true);
     assert.ok(effect.outline.opacity > 0 && effect.outline.width > 0 && effect.outline.height > 0, "The native caret scroll must preserve a visible outline");
-    assert.equal(effect.outline.border, "rgb(35, 87, 215)");
+    assert.equal(effect.outline.border, "rgb(26, 95, 208)");
     assert.deepEqual(await driver.executeScript(() => {
       const element = document.getElementById("inp");
       return [element.selectionStart, element.selectionEnd];

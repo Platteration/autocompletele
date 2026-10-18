@@ -467,7 +467,7 @@ test("Chrome animation modes preserve the real editing transaction", { timeout: 
     assert.equal(effect.background, null);
     assert.equal(effect.frame, true);
     assert.ok(effect.outline.opacity > 0 && effect.outline.width > 0 && effect.outline.height > 0, "The native caret scroll must preserve a visible outline");
-    assert.equal(effect.outline.border, "rgb(35, 87, 215)");
+    assert.equal(effect.outline.border, "rgb(26, 95, 208)");
     assert.deepEqual(await page.locator("#inp").evaluate((element) => [element.selectionStart, element.selectionEnd]), [prefix.length + 10, prefix.length + 10]);
     const visible = await page.evaluate(async () => {
       document.getElementById("inp").scrollLeft = 0;

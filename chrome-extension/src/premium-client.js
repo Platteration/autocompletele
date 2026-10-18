@@ -49,25 +49,28 @@
         right: 12px !important; bottom: 12px !important; z-index: 2147483647 !important;
         display: block !important; width: 350px !important; max-width: calc(100vw - 24px) !important;
         margin: 0 !important; padding: 0 !important; border: 0 !important;
-        color-scheme: light dark; --panel: #fff; --text: #172033; --muted: #526078;
-        --control: #7d8ba1; --accent: #2357d7; --soft: #eaf0ff; --pressed: #dce6ff; }
-      .notice { box-sizing: border-box; padding: 16px; border: 1px solid var(--control);
-        border-radius: 14px; background: var(--panel); color: var(--text);
-        box-shadow: 0 12px 32px rgb(13 19 32 / 20%);
-        font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-      .brand { color: var(--accent); font-weight: 750; font-size: 14px; }
-      .message { margin: 7px 0 14px; overflow-wrap: anywhere; }
-      .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-      button { font: 600 12px/1.4 system-ui, sans-serif; color: var(--accent);
-        background: var(--panel); border: 1px solid var(--control); border-radius: 8px;
-        min-height: 36px; padding: 7px 11px; cursor: pointer; }
-      button:hover { background: var(--soft); }
-      button:active { background: var(--pressed); }
-      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-      button:disabled { color: var(--muted); cursor: wait; background: var(--soft); }
+        color-scheme: light dark; --bg: #fff; --sunken: #eceef1; --ink: #1b1f24; --muted: #59636e;
+        --line: #d3d8de; --control: #7a838e; --accent: #1a5fd0; --frame: #1b1f24;
+        --shadow: 0 4px 16px rgb(0 0 0 / 12%); }
+      .notice { box-sizing: border-box; padding: 0; border: 1px solid var(--frame);
+        border-radius: 0; background: var(--bg); color: var(--ink);
+        box-shadow: var(--shadow);
+        font: 13px/20px system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .brand { padding: 8px 16px; border-bottom: 1px solid var(--line); color: var(--muted);
+        font: 650 11px/16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        letter-spacing: .08em; text-transform: uppercase; }
+      .message { margin: 12px 16px 16px; overflow-wrap: anywhere; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 16px; }
+      button { font: 650 12px/16px system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink);
+        background: transparent; border: 1px solid var(--control); border-radius: 2px;
+        min-height: 36px; padding: 8px 12px; cursor: pointer; }
+      button:hover { background: var(--sunken); }
+      button:active { background: var(--line); }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      button:disabled { color: var(--muted); cursor: wait; background: var(--sunken); }
       @media (prefers-color-scheme: dark) {
-        :host { --panel: #151d2c; --text: #eef2f7; --muted: #a7b4c8;
-          --control: #7f8da5; --accent: #a4bdff; --soft: #233354; --pressed: #30446c; }
+        :host { --bg: #0f1115; --sunken: #1c2026; --ink: #e7eaee; --muted: #a2aab4;
+          --line: #2e343c; --control: #7d8691; --accent: #7aa7ff; --frame: #7d8691; --shadow: none; }
       }
       @media (forced-colors: active) {
         .notice, button { border-color: ButtonText; }
