@@ -326,6 +326,16 @@ namespace ShorthandExpander.Tests
                 Check(FileHolds(store.ShorthandsPath, beforeFail) && store.Shorthands.Count == 1 && store.Shorthands[0].Trigger == "imported/",
                     "a failed pre-import copy leaves shorthands.json and the list unchanged");
 
+                // If another program takes the chosen name after the numbering loop picked it, that file is not written over.
+                var raceAt = new DateTime(2026, 10, 18, 16, 0, 0);
+                string raceName = Path.Combine(importDir, "shorthands.before-import-20261018-160000.json");
+                byte[] otherBytes = Encoding.UTF8.GetBytes("{\"version\": 1, \"shorthands\": []}");
+                bool refused = false;
+                try { store.KeepCopyBeforeImport(raceAt, chosen => File.WriteAllBytes(chosen, otherBytes)); }
+                catch (IOException) { refused = true; }
+                Check(refused && FileHolds(raceName, otherBytes) && !File.Exists(raceName + ".bak"),
+                    "a pre-import copy whose name is taken just before the write refuses, leaving that file as it was");
+
                 // The public overload uses the clock and still lands beside shorthands.json.
                 string dated = store.KeepCopyBeforeImport();
                 Check(Path.GetDirectoryName(dated) == importDir && Path.GetFileName(dated).StartsWith("shorthands.before-import-", StringComparison.Ordinal) &&

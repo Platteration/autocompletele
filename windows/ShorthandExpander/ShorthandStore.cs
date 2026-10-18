@@ -211,7 +211,9 @@ namespace ShorthandExpander
         /// </summary>
         public string KeepCopyBeforeImport() => KeepCopyBeforeImport(DateTime.Now);
 
-        internal string KeepCopyBeforeImport(DateTime now)
+        /// <param name="beforeWrite">Called with the chosen name just before the copy is written; tests use it to stage
+        /// another program taking that name after the numbering loop picked it.</param>
+        internal string KeepCopyBeforeImport(DateTime now, Action<string>? beforeWrite = null)
         {
             string contents = Serialize(Shorthands);
             System.IO.Directory.CreateDirectory(Directory);
@@ -219,6 +221,7 @@ namespace ShorthandExpander
                 now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
             string copy = stem + ".json";
             for (int n = 2; File.Exists(copy); n++) copy = stem + "-" + n + ".json";
+            beforeWrite?.Invoke(copy);
             WriteAtomically(copy, contents, replace: false);
             return copy;
         }

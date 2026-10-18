@@ -43,8 +43,11 @@ The executable lands in `ShorthandExpander\bin\Release\net8.0-windows\win-x64\pu
   current list is saved as `shorthands.before-import-<date>-<time>.json` next
   to `shorthands.json`, in the same file format. An earlier copy is never
   overwritten. The app tells you the copy's name after the import; to go back,
-  import that file. If the copy cannot be written, the app asks whether to
-  import anyway, and nothing changes unless you choose Yes.
+  import that file and answer Yes to replace your list (merging would keep the
+  imported shorthands). If the copy cannot be written, the app asks whether to
+  import anyway, and nothing changes unless you choose Yes. The copies are
+  never deleted automatically, so a shorthand you delete later is still in
+  them; delete the copies yourself when you no longer need them.
 * Saves are written to `shorthands.json.tmp` first and then swapped in, keeping
   the previous version as `shorthands.json.bak` (`settings.json` works the same
   way). If a save was interrupted and only those files are left, the app puts

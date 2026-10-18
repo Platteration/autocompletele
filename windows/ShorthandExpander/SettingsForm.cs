@@ -307,7 +307,7 @@ namespace ShorthandExpander
             if (saved && copy != null)
             {
                 MessageBox.Show(this,
-                    $"Imported {importedCount} shorthand(s).\n\nYour previous list was saved as:\n{copy}\n\nTo bring it back, choose Import JSON… and open that file.",
+                    $"Imported {importedCount} shorthand(s).\n\nYour previous list was saved as:\n{copy}\n\nTo bring it back, choose Import JSON…, open that file and answer Yes (replace, not merge).",
                     Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
