@@ -161,7 +161,8 @@
       entries.push({
         id, trigger, expansion,
         order: Number.isFinite(order) ? order : 0,
-        deletedAt: Number.isFinite(deletedAt) ? deletedAt : null,
+        // A Date holds at most 8.64e15 ms either side of 1970; the page shows it as one.
+        deletedAt: Number.isFinite(deletedAt) && Math.abs(deletedAt) <= 8.64e15 ? deletedAt : null,
       });
     }
     return entries;
@@ -174,6 +175,12 @@
 
   function writeTrash(entries) {
     return entries.length ? chrome.storage.local.set({ [TRASH_KEY]: entries }) : chrome.storage.local.remove(TRASH_KEY);
+  }
+
+  // An id alone does not say which words a shorthand held: the examples use
+  // fixed ids, and sync can bring an id back with other text.
+  function sameText(record, entry) {
+    return String(record.trigger || "") === entry.trigger && String(record.expansion || "") === entry.expansion;
   }
 
   // The copy is written before the record is removed. When it cannot be,
@@ -194,7 +201,9 @@
             id, trigger, expansion: String(value.expansion || ""),
             order: typeof value.order === "number" ? value.order : 0, deletedAt: Date.now(),
           };
-          await writeTrash([entry, ...before.filter((old) => old.id !== id)].slice(0, TRASH_LIMIT));
+          // An older copy under this id with other text stays, under an id of its own.
+          const older = before.flatMap((old) => old.id !== id ? [old] : sameText(old, entry) ? [] : [{ ...old, id: newId() }]);
+          await writeTrash([entry, ...older].slice(0, TRASH_LIMIT));
         } catch (cause) {
           const error = new Error(trigger + " could not be kept in Recently deleted: " + (cause && cause.message ? cause.message : cause));
           error.code = "NOT_KEPT";
@@ -213,22 +222,27 @@
     });
   }
 
-  // Puts a Recently deleted shorthand back under its original id and order.
-  // A refusal keeps the entry and returns the message for the page to show.
+  // Puts a Recently deleted shorthand back under its original id and order
+  // (a new id when that one came back holding other text). A refusal keeps
+  // the entry and returns the message for the page to show.
   async function restoreDeleted(id) {
     return withWriteLock(async () => {
       await recoverImport();
       const trash = await getTrash();
       const entry = trash.find((item) => item.id === id);
       const rest = trash.filter((item) => item.id !== id);
-      const key = PREFIX + id;
       const existing = await dataStore.get(null);
-      if (existing[key] && typeof existing[key] === "object") {
+      const current = existing[PREFIX + id];
+      const taken = !!current && typeof current === "object";
+      if (taken && (!entry || sameText(current, entry))) {
         // Already back, for example synced from another device: drop the copy.
         if (entry) await writeTrash(rest);
-        return { restored: true, alreadyThere: true, trigger: String(existing[key].trigger || "") };
+        return { restored: true, alreadyThere: true, id, trigger: String(current.trigger || "") };
       }
       if (!entry) return { restored: false, message: "That shorthand is no longer in Recently deleted." };
+      // The id came back holding other text: this copy returns as a shorthand
+      // of its own rather than being dropped or overwriting that one.
+      const key = PREFIX + (taken ? newId() : id);
       if (Object.values(records(existing)).some((value) => value && value.trigger === entry.trigger)) {
         return { restored: false, trigger: entry.trigger, message: entry.trigger + " is already in your library. Rename or delete that one first." };
       }
@@ -239,10 +253,10 @@
           message: entry.trigger + " would exceed the " + reason + ", so it stays in Recently deleted. Delete or shorten another shorthand first." };
       }
       await dataStore.set({ [key]: value });
-      // A copy left behind by a failed cleanup is harmless: restoring it
-      // again finds the id in the library and only drops the copy.
+      // A copy left behind by a failed cleanup is harmless: while the
+      // restored shorthand is unchanged, restoring it again only drops the copy.
       await writeTrash(rest).catch(() => {});
-      return { restored: true, trigger: entry.trigger };
+      return { restored: true, id: key.slice(PREFIX.length), trigger: entry.trigger };
     });
   }
 

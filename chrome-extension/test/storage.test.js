@@ -7,7 +7,7 @@ const vm = require("node:vm");
 // mutation, as sync storage does for quota failures. Browser tests cover the
 // actual API's per-item quota separately. The import journal and backup live in
 // storage.local, which on Firefox is the library's own area.
-function storageWith(initial, { rejectSet, rejectRemove, rejectLocalSet, firefox = false, limits = {} } = {}) {
+function storageWith(initial, { rejectSet, rejectRemove, rejectLocalSet, afterGet, firefox = false, limits = {} } = {}) {
   const items = structuredClone(initial);
   const local = {};
   const calls = [];
@@ -15,7 +15,13 @@ function storageWith(initial, { rejectSet, rejectRemove, rejectLocalSet, firefox
   function area(data, library) {
     return {
       ...(library ? limits : {}),
-      async get(key) { return structuredClone(key ? { [key]: data[key] } : data); },
+      // afterGet may hold a read that has already been taken, as a slow
+      // storage call would while another writer runs.
+      async get(key) {
+        const result = structuredClone(key ? { [key]: data[key] } : data);
+        if (afterGet) await afterGet(key);
+        return result;
+      },
       async set(payload) {
         (library ? calls : localCalls).push({ operation: "set", payload: structuredClone(payload) });
         if (library && rejectSet) rejectSet(payload, data);
@@ -439,11 +445,29 @@ test("Recently deleted keeps the 50 newest, newest first", async () => {
   assert.deepEqual(plain(trash.slice(1).map((entry) => entry.id)), older.slice(0, 49).map((entry) => entry.id), "only the oldest is dropped");
 });
 
-test("deleting the same id again replaces its older copy instead of listing it twice", async () => {
+test("deleting the same id again replaces an identical older copy instead of listing it twice", async () => {
   const app = storageWith(initial);
-  app.local[TRASH] = [{ id: "sig", trigger: "sig/", expansion: "Older text", order: 1, deletedAt: 5 }];
+  app.local[TRASH] = [{ id: "sig", trigger: "sig/", expansion: "Original signature", order: 1, deletedAt: 5 }];
   await app.storage.deleteShorthand("sig");
-  assert.deepEqual(withoutTime(await app.storage.getTrash()), [{ id: "sig", trigger: "sig/", expansion: "Original signature", order: 1 }]);
+  // The stored list itself, not only getTrash(), which also skips repeated ids.
+  assert.deepEqual(withoutTime(app.local[TRASH]), [{ id: "sig", trigger: "sig/", expansion: "Original signature", order: 1 }]);
+  assert.notEqual(app.local[TRASH][0].deletedAt, 5, "the newer deletion is the one kept");
+});
+
+test("an older copy under the same id with other text is kept under a new id, not replaced", async () => {
+  // Seeded examples use fixed ids and sync can bring an id back with other
+  // text, so a second copy under one id can hold different words.
+  const app = storageWith(initial);
+  app.local[TRASH] = [{ id: "sig", trigger: "sig/", expansion: "My own signature", order: 1, deletedAt: 5 }];
+  await app.storage.deleteShorthand("sig");
+  const stored = app.local[TRASH];
+  assert.equal(stored.length, 2);
+  assert.deepEqual(withoutTime([stored[0]]), [{ id: "sig", trigger: "sig/", expansion: "Original signature", order: 1 }]);
+  const { id, ...older } = stored[1];
+  assert.deepEqual(older, { trigger: "sig/", expansion: "My own signature", order: 1, deletedAt: 5 });
+  assert.ok(typeof id === "string" && id && id !== "sig", "the older copy has an id of its own");
+  assert.deepEqual(plain(await app.storage.restoreDeleted(id)), { restored: true, id, trigger: "sig/" });
+  assert.equal(app.items["sh:" + id].expansion, "My own signature");
 });
 
 test("when the copy cannot be kept nothing is deleted, unless the person agrees to delete without it", async () => {
@@ -491,7 +515,7 @@ test("restore puts the shorthand back under its id and order and drops its copy,
   for (const firefox of [false, true]) {
     const app = storageWith(initial, { firefox });
     await app.storage.deleteShorthand("sig");
-    assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, trigger: "sig/" });
+    assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, id: "sig", trigger: "sig/" });
     assert.deepEqual(app.items["sh:sig"], initial["sh:sig"]);
     assert.deepEqual(plain((await app.storage.getAll()).shorthands).map((sh) => sh.trigger), ["local/", "sig/"]);
     assert.deepEqual(plain(await app.storage.getTrash()), []);
@@ -529,16 +553,118 @@ test("copies in Recently deleted do not count toward the sync quota", async () =
   const app = storageWith(initial, { limits: { QUOTA_BYTES: 400 } });
   app.local[TRASH] = [{ id: "big", trigger: "big/", expansion: "x".repeat(5000), order: 9, deletedAt: 1 }];
   await app.storage.deleteShorthand("sig");
-  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, trigger: "sig/" });
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, id: "sig", trigger: "sig/" });
 });
 
-test("restoring an id that is already back in the library only drops the copy", async () => {
+test("restoring an id that is already back in the library with the same text only drops the copy", async () => {
   const app = storageWith(initial);
   await app.storage.deleteShorthand("sig");
-  app.items["sh:sig"] = { trigger: "sig/", expansion: "Synced back from another device", order: 1 };
-  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, alreadyThere: true, trigger: "sig/" });
-  assert.equal(app.items["sh:sig"].expansion, "Synced back from another device", "the library record is not overwritten");
+  // Synced back from another device, at another place in the list.
+  app.items["sh:sig"] = { trigger: "sig/", expansion: "Original signature", order: 7 };
+  const writes = app.calls.length;
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, alreadyThere: true, id: "sig", trigger: "sig/" });
+  assert.deepEqual(app.items["sh:sig"], { trigger: "sig/", expansion: "Original signature", order: 7 }, "the library record is not overwritten");
+  assert.equal(app.calls.length, writes, "nothing is written to the library");
   assert.deepEqual(plain(await app.storage.getTrash()), []);
+});
+
+test("a copy whose id came back with other text is kept, and restores as a shorthand of its own once its trigger is free", async () => {
+  // For example: the person edited the example sig/ and deleted it, then a
+  // new device seeded the default example under the same fixed id.
+  const app = storageWith(initial);
+  await app.storage.deleteShorthand("sig");
+  const synced = { trigger: "sig/", expansion: "Synced back from another device", order: 1 };
+  app.items["sh:sig"] = synced;
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), {
+    restored: false, trigger: "sig/", message: "sig/ is already in your library. Rename or delete that one first.",
+  });
+  assert.deepEqual(withoutTime(await app.storage.getTrash()), [{ id: "sig", trigger: "sig/", expansion: "Original signature", order: 1 }], "the copy stays");
+  assert.deepEqual(app.items["sh:sig"], synced);
+
+  app.items["sh:sig"] = { ...synced, trigger: "sig2/" };
+  const result = plain(await app.storage.restoreDeleted("sig"));
+  assert.ok(result.id && result.id !== "sig", "it does not overwrite the record under its old id");
+  assert.deepEqual(result, { restored: true, id: result.id, trigger: "sig/" });
+  assert.deepEqual(app.items["sh:" + result.id], initial["sh:sig"]);
+  assert.deepEqual(app.items["sh:sig"], { ...synced, trigger: "sig2/" });
+  assert.deepEqual(plain(await app.storage.getTrash()), []);
+});
+
+test("a restore whose library write fails keeps its copy", async () => {
+  const app = storageWith(initial, { rejectSet(payload) { if ("sh:sig" in payload) throw new Error("MAX_WRITE_OPERATIONS_PER_MINUTE"); } });
+  await app.storage.deleteShorthand("sig");
+  await assert.rejects(app.storage.restoreDeleted("sig"), /MAX_WRITE_OPERATIONS_PER_MINUTE/);
+  assert.equal(app.items["sh:sig"], undefined);
+  assert.deepEqual(withoutTime(await app.storage.getTrash()), [{ id: "sig", trigger: "sig/", expansion: "Original signature", order: 1 }]);
+});
+
+// Holds the first read of Recently deleted, after it was taken, until the
+// test releases it, so a second action can run in between unless the write
+// lock makes it wait.
+function holdFirstTrashRead() {
+  let release, reached;
+  const held = new Promise((resolve) => { release = resolve; });
+  const reachedPromise = new Promise((resolve) => { reached = resolve; });
+  let done = false;
+  return {
+    afterGet(key) {
+      if (key !== TRASH || done) return undefined;
+      done = true;
+      reached();
+      return held;
+    },
+    reached: reachedPromise,
+    release,
+  };
+}
+
+test("Recently deleted changes wait for each other under the write lock", async () => {
+  const lib = { ...initial, "sh:z": { trigger: "z/", expansion: "Zed", order: 5 } };
+  const copy = (id) => ({ id, trigger: id + "/", expansion: id, order: 9, deletedAt: 1 });
+  async function race(trash, first, second) {
+    const hold = holdFirstTrashRead();
+    const app = storageWith(lib, { afterGet: hold.afterGet });
+    app.local[TRASH] = trash;
+    const one = first(app.storage);
+    await hold.reached;
+    const two = second(app.storage);
+    await new Promise((resolve) => setImmediate(resolve));
+    hold.release();
+    await Promise.all([one, two]);
+    return { app, ids: (app.local[TRASH] || []).map((entry) => entry.id) };
+  }
+
+  let { app, ids } = await race([copy("x")], (s) => s.restoreDeleted("x"), (s) => s.deleteShorthand("z"));
+  assert.deepEqual(ids, ["z"], "a restore does not write back a list read before another tab's delete");
+  assert.equal(app.items["sh:z"], undefined);
+  assert.equal(app.items["sh:x"].expansion, "x");
+
+  ({ ids } = await race([copy("a"), copy("b")], (s) => s.forgetDeleted("a"), (s) => s.deleteShorthand("z")));
+  assert.deepEqual(ids, ["z", "b"], "Delete for good does not drop a copy kept meanwhile");
+
+  ({ ids } = await race([copy("a")], (s) => s.deleteShorthand("z"), (s) => s.emptyTrash()));
+  assert.deepEqual(ids, [], "Empty is not undone by a delete that read the list before it");
+});
+
+test("delete and restore first finish an interrupted import", async () => {
+  const imported = { trigger: "sig/", expansion: "Imported signature", order: 1 };
+  const deleting = storageWith({ ...initial, "sh:sig": imported });
+  deleting.local["shorthand-import-journal"] = { before: library, payload: { ...library, "sh:sig": imported }, committed: false };
+  await deleting.storage.deleteShorthand("sig");
+  assert.deepEqual(withoutTime(await deleting.storage.getTrash()), [{ id: "sig", trigger: "sig/", expansion: "Original signature", order: 1 }],
+    "the copy is of the record the import had not yet replaced");
+  assert.equal(deleting.items["sh:sig"], undefined);
+  assert.equal(deleting.local["shorthand-import-journal"], undefined);
+
+  const restoring = storageWith(initial);
+  await restoring.storage.deleteShorthand("sig");
+  const clash = { trigger: "sig/", expansion: "From the unfinished import", order: 5 };
+  restoring.items["sh:imp"] = clash;
+  restoring.local["shorthand-import-journal"] = { before: { "sh:local": initial["sh:local"] }, payload: { "sh:local": initial["sh:local"], "sh:imp": clash }, committed: false };
+  assert.deepEqual(plain(await restoring.storage.restoreDeleted("sig")), { restored: true, id: "sig", trigger: "sig/" },
+    "the unfinished import's sig/ is rolled back before the trigger is checked");
+  assert.equal(restoring.items["sh:imp"], undefined);
+  assert.deepEqual(restoring.items["sh:sig"], initial["sh:sig"]);
 });
 
 test("a restore whose copy cannot be dropped still reports the restore, and the next restore drops it", async () => {
@@ -547,11 +673,11 @@ test("a restore whose copy cannot be dropped still reports the restore, and the 
   await app.storage.deleteShorthand("local");
   await app.storage.deleteShorthand("sig");
   failCleanup = true;
-  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, trigger: "sig/" });
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, id: "sig", trigger: "sig/" });
   assert.deepEqual(app.items["sh:sig"], initial["sh:sig"]);
   assert.deepEqual(plain((await app.storage.getTrash()).map((entry) => entry.id)), ["sig", "local"], "the stale copy is still listed");
   failCleanup = false;
-  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, alreadyThere: true, trigger: "sig/" });
+  assert.deepEqual(plain(await app.storage.restoreDeleted("sig")), { restored: true, alreadyThere: true, id: "sig", trigger: "sig/" });
   assert.deepEqual(plain((await app.storage.getTrash()).map((entry) => entry.id)), ["local"]);
 });
 
@@ -588,10 +714,17 @@ test("Recently deleted ignores malformed entries", async () => {
     { id: "obj", trigger: "e/", expansion: { html: "<b>x</b>" } },
     { id: "ok", trigger: "dup/", expansion: "a second entry for the same id" },
     { id: "loose", trigger: "loose/", expansion: "", order: "2", deletedAt: "yesterday" },
+    // Finite, but outside what a Date can hold: the page could not show it.
+    { id: "far", trigger: "far/", expansion: "x", order: 4, deletedAt: 1e16 },
+    { id: "past", trigger: "past/", expansion: "x", order: 5, deletedAt: -8.64e15 - 1 },
+    { id: "edge", trigger: "edge/", expansion: "x", order: 6, deletedAt: 8.64e15 },
   ];
   assert.deepEqual(plain(await app.storage.getTrash()), [
     { id: "ok", trigger: "ok/", expansion: "Fine", order: 3, deletedAt: 5 },
     { id: "loose", trigger: "loose/", expansion: "", order: 0, deletedAt: null },
+    { id: "far", trigger: "far/", expansion: "x", order: 4, deletedAt: null },
+    { id: "past", trigger: "past/", expansion: "x", order: 5, deletedAt: null },
+    { id: "edge", trigger: "edge/", expansion: "x", order: 6, deletedAt: 8.64e15 },
   ]);
   for (const value of [{ not: "a list" }, "text", null, 3]) {
     app.local[TRASH] = value;

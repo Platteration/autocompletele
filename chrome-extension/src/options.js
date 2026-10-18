@@ -45,6 +45,10 @@
   // Re-rendering replaces these buttons; the maps let focus stay on the same action.
   const listButtons = new Map();
   const trashButtons = new Map();
+  // Ids with a delete or restore under way. A second click before it ends
+  // (a double-click) is ignored; running it again would replace its outcome
+  // and Undo with "already deleted" or "already back".
+  const busy = new Set();
   let pendingImport = null;
   let writable = true;
   let skippedImportItems = 0;
@@ -256,7 +260,7 @@
       del.className = "danger small";
       del.textContent = "Delete";
       del.disabled = !writable;
-      del.addEventListener("click", () => deleteFromLibrary(sh));
+      del.addEventListener("click", () => once(sh.id, () => deleteFromLibrary(sh)));
 
       listButtons.set("edit:" + sh.id, edit);
       listButtons.set("delete:" + sh.id, del);
@@ -265,6 +269,16 @@
       tbody.appendChild(tr);
     }
     focusButton(listButtons, focused);
+  }
+
+  async function once(id, action) {
+    if (busy.has(id)) return;
+    busy.add(id);
+    try {
+      await action();
+    } finally {
+      busy.delete(id);
+    }
   }
 
   // After a row disappears, focus the row now in its place, else the one
@@ -325,7 +339,7 @@
     }
     tellLibrary(result.alreadyThere ? `${result.trigger} is already back in your library.` : `Restored ${result.trigger}.`);
     if (fromUndo) {
-      if (!focusButton(listButtons, "edit:" + id)) searchEl.focus();
+      if (!focusButton(listButtons, "edit:" + (result.id || id))) searchEl.focus();
     } else focusTrashAt(index);
   }
 
@@ -391,9 +405,10 @@
       actions.className = "trash-actions";
       actions.append(
         trashButton("Restore", "secondary small", "restore:" + entry.id, `Restore ${entry.trigger}`,
-          () => restoreFromTrash(entry.id, false)),
+          () => once(entry.id, () => restoreFromTrash(entry.id, false))),
         " ",
-        trashButton("Delete for good", "danger small", "forget:" + entry.id, `Delete ${entry.trigger} for good`,
+        // The accessible name starts with the visible label, for speech input.
+        trashButton("Delete for good", "danger small", "forget:" + entry.id, `Delete for good: ${entry.trigger}`,
           () => forgetFromTrash(entry)));
       li.append(trigger, actions, preview, when);
       trashListEl.appendChild(li);
@@ -551,7 +566,10 @@
   });
 
   cancelBtn.addEventListener("click", resetForm);
-  undoBtn.addEventListener("click", () => (undoId ? restoreFromTrash(undoId, true) : undefined));
+  undoBtn.addEventListener("click", () => {
+    const id = undoId;
+    return id ? once(id, () => restoreFromTrash(id, true)) : undefined;
+  });
   emptyTrashBtn.addEventListener("click", async () => {
     const count = trash.length;
     if (!count || !window.confirm(`Empty Recently deleted? The ${count === 1 ? "shorthand" : count + " shorthands"} in it will be deleted for good.`)) return;

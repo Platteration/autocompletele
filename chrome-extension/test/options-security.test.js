@@ -20,9 +20,9 @@ async function options(recoveryError = null, conflicts = [], readError = null, d
   const nodes = new Map(), created = [], downloads = [], listeners = [], calls = [], confirms = [];
   let reads = 0;
   function element(tag = "div") {
-    const node = { tag, value: "", textContent: "", disabled: false, hidden: false, classList: { toggle() {}, add() {}, remove() {} }, handlers: {}, children: [],
+    const node = { tag, value: "", textContent: "", disabled: false, hidden: false, classList: { toggle() {}, add() {}, remove() {} }, handlers: {}, children: [], attributes: {},
       addEventListener(event, fn) { const previous = this.handlers[event]; this.handlers[event] = previous ? (...args) => { previous(...args); return fn(...args); } : fn; }, append(...children) { this.children.push(...children); },
-      appendChild(child) { this.children.push(child); }, replaceChildren() { this.children = []; }, setAttribute() {}, click() {}, remove() {}, focus() { document.activeElement = this; },
+      appendChild(child) { this.children.push(child); }, replaceChildren() { this.children = []; }, setAttribute(name, value) { this.attributes[name] = String(value); }, click() {}, remove() {}, focus() { document.activeElement = this; }, scrollIntoView() {},
       querySelectorAll() { return ["editId", "trigger", "expansion", "saveBtn", "cancelBtn"].map(get); },
     };
     created.push(node); return node;
@@ -45,7 +45,7 @@ async function options(recoveryError = null, conflicts = [], readError = null, d
     ...storageOverrides,
   };
   const sandbox = { self: { ShorthandStorage: storage, ShorthandExpander: require("../src/expander.js"), ShorthandTemplate: require("../src/template.js"),
-    ShorthandImportPlan: {}, ShorthandConflicts: { byTrigger() { return new Map(); } } }, document, Blob,
+    ShorthandImportPlan: require("../src/import-plan.js"), ShorthandConflicts: { byTrigger() { return new Map(); } } }, document, Blob,
     URL: { createObjectURL(blob) { downloads.push(blob); return "blob:test"; }, revokeObjectURL() {} },
     chrome: { storage: { onChanged: { addListener(fn) { listeners.push(fn); } } } }, setTimeout() {},
     window: { confirm(message) { confirms.push(message); return confirmAnswer; } },
@@ -57,7 +57,8 @@ async function options(recoveryError = null, conflicts = [], readError = null, d
   async function storageChanged(changes, area) { for (const fn of listeners) fn(changes, area); await settle(); }
   // The newest button with this text: a re-render replaces the old ones.
   const button = (text) => created.filter((node) => node.tag === "button" && node.textContent === text).pop();
-  return { get, created, downloads, document, storageChanged, settle, button, calls, confirms, reads: () => reads, setDraft(text) { draft = text; }, draft: () => draft };
+  const named = (label) => created.filter((node) => node.tag === "button" && node.attributes["aria-label"] === label).pop();
+  return { get, created, downloads, document, storageChanged, settle, button, named, calls, confirms, reads: () => reads, setDraft(text) { draft = text; }, draft: () => draft };
 }
 
 const deletedEntry = { id: "gone", trigger: "gone/", expansion: "Deleted\n  earlier", order: 2, deletedAt: Date.UTC(2026, 9, 18, 12) };
@@ -253,6 +254,9 @@ test("Recently deleted lists each entry with Restore and Delete for good, built 
   assert.ok(page.created.some((node) => node.className === "trash-trigger" && node.textContent === "gone/"));
   assert.ok(page.created.some((node) => node.className === "trash-preview" && node.textContent === "Deleted earlier"), "one line");
   assert.ok(page.created.some((node) => node.className === "trash-time" && /^Deleted .*2026/.test(node.textContent)));
+  // Each accessible name starts with the visible label (WCAG 2.5.3), so speech input finds it.
+  assert.equal(page.button("Restore").attributes["aria-label"], "Restore gone/");
+  assert.equal(page.button("Delete for good").attributes["aria-label"], "Delete for good: gone/");
   await page.button("Delete for good").handlers.click();
   assert.deepEqual(forgotten, ["gone"]);
   assert.equal(page.get("libraryMsg").textContent, "Deleted gone/ for good.");
@@ -295,4 +299,148 @@ test("an unreadable Recently deleted says so instead of looking empty", async ()
   assert.equal(page.get("trashEmpty").hidden, false);
   assert.equal(page.get("trashCount").hidden, true);
   assert.equal(page.get("shorthandCount").textContent, "1", "the library still loads");
+});
+
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+test("a second click on Delete while it runs is ignored, so its message and Undo stay", async () => {
+  let deletes = 0;
+  const page = await options(null, [], null, "", {
+    storageOverrides: {
+      async deleteShorthand() {
+        const n = ++deletes;
+        await tick();
+        return n === 1 ? { deleted: true, kept: true, trigger: "old/" } : { deleted: false, kept: false };
+      },
+    },
+  });
+  const del = page.button("Delete");
+  await Promise.all([del.handlers.click(), del.handlers.click()]);
+  assert.equal(deletes, 1);
+  assert.equal(page.get("libraryMsg").textContent, "Deleted old/.");
+  assert.equal(page.get("undoBtn").hidden, false);
+  assert.equal(page.document.activeElement, page.get("undoBtn"));
+});
+
+test("a second click on Restore while it runs is ignored", async () => {
+  let restores = 0;
+  let trash = [deletedEntry];
+  const page = await options(null, [], null, "", {
+    trash: () => trash,
+    storageOverrides: {
+      async restoreDeleted(id) {
+        const n = ++restores;
+        await tick();
+        if (n > 1) return { restored: true, alreadyThere: true, id, trigger: "gone/" };
+        trash = [];
+        return { restored: true, id, trigger: "gone/" };
+      },
+    },
+  });
+  const restore = page.button("Restore");
+  await Promise.all([restore.handlers.click(), restore.handlers.click()]);
+  assert.equal(restores, 1);
+  assert.equal(page.get("libraryMsg").textContent, "Restored gone/.");
+});
+
+test("Delete and Restore say when there was nothing left to do", async () => {
+  const page = await options(null, [], null, "", {
+    trash: [deletedEntry],
+    storageOverrides: {
+      async deleteShorthand() { return { deleted: false, kept: false }; },
+      async restoreDeleted(id) { return { restored: true, alreadyThere: true, id, trigger: "gone/" }; },
+    },
+  });
+  await page.button("Delete").handlers.click();
+  assert.equal(page.get("libraryMsg").textContent, "old/ was already deleted.");
+  assert.equal(page.get("undoBtn").hidden, true);
+  await page.button("Restore").handlers.click();
+  assert.equal(page.get("libraryMsg").textContent, "gone/ is already back in your library.");
+});
+
+test("after Restore, focus moves to the next entry in Recently deleted", async () => {
+  const later = { id: "b", trigger: "b/", expansion: "Bee", order: 3, deletedAt: deletedEntry.deletedAt - 1000 };
+  let trash = [deletedEntry, later];
+  const page = await options(null, [], null, "", {
+    trash: () => trash,
+    storageOverrides: { async restoreDeleted(id) { trash = trash.filter((entry) => entry.id !== id); return { restored: true, id, trigger: "gone/" }; } },
+  });
+  await page.named("Restore gone/").handlers.click();
+  assert.equal(page.get("libraryMsg").textContent, "Restored gone/.");
+  assert.equal(page.document.activeElement, page.named("Restore b/"));
+});
+
+test("Undo of a copy restored under a new id focuses that row", async () => {
+  // The id came back holding other text, so the copy returned under "two".
+  let shorthands = library;
+  const page = await options(null, [], null, "", {
+    storageOverrides: {
+      async getAll() { return { shorthands, settings: { enabled: true, excludedHosts: [] } }; },
+      async restoreDeleted() {
+        shorthands = [{ ...library[0], expansion: "other text" }, { id: "two", trigger: "old/", expansion: "keep me", order: 1 }];
+        return { restored: true, id: "two", trigger: "old/" };
+      },
+    },
+  });
+  await page.button("Delete").handlers.click();
+  await page.get("undoBtn").handlers.click();
+  const edits = page.created.filter((node) => node.tag === "button" && node.textContent === "Edit");
+  assert.equal(page.document.activeElement, edits[edits.length - 1], "the row of the restored copy, not the row under the old id");
+  assert.notEqual(page.document.activeElement, edits[edits.length - 2]);
+});
+
+test("Empty Recently deleted counts the shorthands it will delete", async () => {
+  const page = await options(null, [], null, "", {
+    trash: [deletedEntry, { ...deletedEntry, id: "b", trigger: "b/" }], confirmAnswer: false,
+  });
+  await page.get("emptyTrashBtn").handlers.click();
+  assert.deepEqual(page.confirms, ["Empty Recently deleted? The 2 shorthands in it will be deleted for good."]);
+});
+
+test("the Undo offer clears as soon as Delete for good, Empty or an import starts", async () => {
+  const pending = [];
+  const wait = () => new Promise((resolve) => pending.push(resolve));
+  const page = await options(null, [], null, "", {
+    trash: [deletedEntry],
+    storageOverrides: {
+      async forgetDeleted() { await wait(); },
+      async emptyTrash() { await wait(); },
+      async replaceAll() { return { skipped: [] }; },
+    },
+  });
+  const undoOffered = async () => {
+    await page.button("Delete").handlers.click();
+    assert.equal(page.get("undoBtn").hidden, false);
+  };
+
+  await undoOffered();
+  const forgetting = page.button("Delete for good").handlers.click();
+  assert.equal(page.get("undoBtn").hidden, true, "Delete for good is the next library action");
+  pending.shift()();
+  await forgetting;
+  assert.equal(page.get("libraryMsg").textContent, "Deleted gone/ for good.");
+
+  await undoOffered();
+  const emptying = page.get("emptyTrashBtn").handlers.click();
+  assert.equal(page.get("undoBtn").hidden, true, "Empty is the next library action");
+  pending.shift()();
+  await emptying;
+  assert.equal(page.get("libraryMsg").textContent, "Emptied Recently deleted.");
+
+  await undoOffered();
+  await page.get("importFile").handlers.change({ target: { value: "", files: [{ text: async () => JSON.stringify({ shorthands: [{ trigger: "new/", expansion: "New" }] }) }] } });
+  await page.get("mergeBtn").handlers.click();
+  assert.match(page.get("ioMsg").textContent, /^Merged 1 shorthand/);
+  assert.equal(page.get("undoBtn").hidden, true, "an import is the next library action");
+  assert.equal(page.get("libraryMsg").textContent, "");
+});
+
+test("Recently deleted is still listed, read-only, when the library itself cannot be read", async () => {
+  const page = await options("recovery interrupted", [], "sync storage unavailable", "", { trash: [deletedEntry] });
+  assert.equal(page.get("trashCount").textContent, "1");
+  assert.equal(page.get("trashEmpty").hidden, true);
+  const buttons = page.created.filter((node) => node.tag === "button");
+  assert.deepEqual(buttons.map((node) => node.textContent), ["Restore", "Delete for good"]);
+  assert.ok(buttons.every((node) => node.disabled));
+  assert.equal(page.get("emptyTrashBtn").disabled, true);
 });

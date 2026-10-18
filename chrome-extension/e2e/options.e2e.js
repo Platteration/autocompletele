@@ -234,7 +234,7 @@ test("Recently deleted", async (t) => {
   await t.test("Delete for good", async () => {
     await libraryRow(page, "cool/").locator("button.danger").click();
     await libraryMsg(page, "Deleted cool/.");
-    await trashEntry(page, "cool/").getByRole("button", { name: "Delete cool/ for good" }).click();
+    await trashEntry(page, "cool/").getByRole("button", { name: "Delete for good: cool/", exact: true }).click();
     await libraryMsg(page, "Deleted cool/ for good.");
     assert.equal(await page.locator("#trashList li").count(), 0);
     assert.deepEqual(await triggers(page), ["brb/", "addr/"]);
@@ -294,7 +294,7 @@ test("Recently deleted", async (t) => {
     assert.deepEqual(await focusedRow("li"), ["Restore", "brb/"], "Recently deleted was rebuilt around the focused button");
     await page.keyboard.press("Enter");
     await libraryMsg(page, "Restored brb/.");
-    await trashEntry(page, "other/").getByRole("button", { name: "Delete other/ for good" }).click();
+    await trashEntry(page, "other/").getByRole("button", { name: "Delete for good: other/", exact: true }).click();
     await libraryMsg(page, "Deleted other/ for good.");
     assert.deepEqual(await triggers(page), ["addr/", "brb/"]);
   });

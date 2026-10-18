@@ -73,8 +73,12 @@ recent are kept; deleting another drops the oldest. **Restore** puts one back,
 **Delete for good** removes one copy, and **Empty Recently deleted** (after a
 confirmation) removes them all. Restore is refused, and the copy kept, while
 another shorthand uses the same trigger or when the shorthand would no longer
-fit in Chrome's sync storage. If the copy cannot be saved, the page asks
-before deleting the shorthand without one.
+fit in Chrome's sync storage. If sync has already brought the shorthand back
+with the same text, Restore only removes the copy. If it came back with other
+text, the copy is never dropped for it: Restore adds the copy as a separate
+shorthand once its trigger is free, and deleting the one that came back keeps
+both copies. If the copy cannot be saved, the page asks before deleting the
+shorthand without one.
 
 In Chrome, the deletion itself still syncs to your other devices; only the
 device where you deleted it has the copy.
