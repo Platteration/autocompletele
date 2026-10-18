@@ -78,7 +78,7 @@ input[type=text], textarea, select {
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 input[type=text]:hover:not(:disabled, :focus), textarea:hover:not(:disabled, :focus), select:hover:not(:disabled, :focus) { border-color: var(--ink); }
 input[type=text]:focus, textarea:focus, select:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
-input[type=text]:disabled, textarea:disabled, select:disabled { opacity: .55; cursor: not-allowed; }
+input[type=text]:disabled, textarea:disabled, select:disabled { background: var(--sunken); border-color: var(--line); color: var(--muted); cursor: not-allowed; }
 textarea { resize: vertical; }
 textarea, #templatePreview { scrollbar-color: var(--control) var(--bg); scrollbar-width: thin; }
 #trigger, #pickerTrigger, #excluded { font-family: var(--mono); }
@@ -121,7 +121,8 @@ button.ghost:hover:not(:disabled) { background: var(--sunken); border-color: var
 button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
 button.danger:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); }
 button.small { padding: 8px 12px; min-height: 36px; font-size: 12px; line-height: 18px; }
-button:disabled { cursor: not-allowed; opacity: .55; }
+/* Disabled stays readable: some buttons (the Forever license) are disabled for a long time. */
+button:disabled, #cancelBtn:disabled { cursor: not-allowed; background: var(--sunken); border-color: var(--line); color: var(--muted); }
 button:focus-visible, a:focus-visible, input[type=checkbox]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .msg { color: var(--success); display: inline-block; overflow-wrap: anywhere; font-size: 12px; line-height: 18px; }
 .msg:empty { display: none; }
