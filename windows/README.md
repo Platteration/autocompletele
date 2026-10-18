@@ -37,6 +37,14 @@ The executable lands in `ShorthandExpander\bin\Release\net8.0-windows\win-x64\pu
   same format used by the Chrome extension and the Android app
   (see `../shared/SPEC.md`), so you can copy the file between devices or use
   the Import / Export buttons.
+* **Delete** asks before it removes a shorthand (No is the default).
+* Before **Import JSON…** replaces or merges into a list that is not empty
+  (merging also overwrites the expansions of triggers you already have), the
+  current list is saved as `shorthands.before-import-<date>-<time>.json` next
+  to `shorthands.json`, in the same file format. An earlier copy is never
+  overwritten. The app tells you the copy's name after the import; to go back,
+  import that file. If the copy cannot be written, the app asks whether to
+  import anyway, and nothing changes unless you choose Yes.
 * Saves are written to `shorthands.json.tmp` first and then swapped in, keeping
   the previous version as `shorthands.json.bak` (`settings.json` works the same
   way). If a save was interrupted and only those files are left, the app puts

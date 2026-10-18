@@ -221,6 +221,9 @@ namespace ShorthandExpander
         private void DeleteSelected()
         {
             if (_editingIndex < 0 || _editingIndex >= _items.Count) return;
+            var answer = MessageBox.Show(this, $"Delete {_items[_editingIndex].Trigger}?", Text,
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return;
             _items.RemoveAt(_editingIndex);
             Persist();
             ClearEditor();
@@ -267,6 +270,7 @@ namespace ShorthandExpander
                 MessageBox.Show(this, "No shorthands were found in that file.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
+            int importedCount = list.Count;
             if (_items.Count > 0)
             {
                 var answer = MessageBox.Show(this,
@@ -280,10 +284,32 @@ namespace ShorthandExpander
                     list = merged;
                 }
             }
+            // Replace and Merge both change the list, so a copy of it is kept first.
+            string? copy = null;
+            if (_items.Count > 0)
+            {
+                try
+                {
+                    copy = _store.KeepCopyBeforeImport();
+                }
+                catch (Exception ex)
+                {
+                    var goOn = MessageBox.Show(this,
+                        $"Your current shorthands could not be copied before the import ({ex.Message}). Import anyway?",
+                        Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                    if (goOn != DialogResult.Yes) return;
+                }
+            }
             _items.Clear();
             _items.AddRange(list);
-            Persist();
+            bool saved = Persist();
             ClearEditor();
+            if (saved && copy != null)
+            {
+                MessageBox.Show(this,
+                    $"Imported {importedCount} shorthand(s).\n\nYour previous list was saved as:\n{copy}\n\nTo bring it back, choose Import JSON… and open that file.",
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
         }
 
         private void Export()

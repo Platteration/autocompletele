@@ -278,6 +278,64 @@ namespace ShorthandExpander.Tests
                 try { Directory.Delete(safeDir, true); } catch { /* ignore */ }
             }
 
+            Console.WriteLine("Store before import");
+            string importDir = Path.Combine(Path.GetTempPath(), "ShorthandExpanderTests-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var store = new ShorthandStore(importDir);
+                store.Load();
+                var current = new[] { new Shorthand("a/", "Alpha\nline two"), new Shorthand("b/", "{date} Grüße") };
+                store.SaveShorthands(current);
+                byte[] savedBytes = File.ReadAllBytes(store.ShorthandsPath);
+                var at = new DateTime(2026, 10, 18, 14, 30, 5);
+                string expectedName = Path.Combine(importDir, "shorthands.before-import-20261018-143005.json");
+
+                string copy = store.KeepCopyBeforeImport(at);
+                Equal(expectedName, copy, "the pre-import copy is named shorthands.before-import-<date>-<time>.json beside shorthands.json");
+                var copied = File.Exists(copy) ? ShorthandStore.ParseFile(File.ReadAllText(copy)) : new List<Shorthand>();
+                Check(copied.Count == 2 && copied[0].Trigger == "a/" && copied[0].Expansion == "Alpha\nline two" &&
+                      copied[1].Trigger == "b/" && copied[1].Expansion == "{date} Grüße", "the pre-import copy parses back to the list in use");
+                Check(File.Exists(copy) && File.ReadAllText(copy).Contains("\"version\": 1"), "the pre-import copy uses the shared file format");
+                Check(FileHolds(store.ShorthandsPath, savedBytes) && store.Shorthands.Count == 2, "keeping the copy leaves shorthands.json and the list alone");
+                Equal(0, Directory.GetFiles(importDir, "*.tmp").Length, "the pre-import copy leaves no temp file behind");
+
+                // A copy made in the same second never overwrites the earlier one: it takes the next numbered name.
+                byte[] firstCopy = File.ReadAllBytes(copy);
+                store.SaveShorthands(new[] { new Shorthand("imported/", "I") });
+                string second = store.KeepCopyBeforeImport(at);
+                Equal(Path.Combine(importDir, "shorthands.before-import-20261018-143005-2.json"), second, "a taken name gets a numbered copy");
+                Check(FileHolds(copy, firstCopy), "a later pre-import copy never overwrites an earlier one");
+                var secondList = File.Exists(second) ? ShorthandStore.ParseFile(File.ReadAllText(second)) : new List<Shorthand>();
+                Check(secondList.Count == 1 && secondList[0].Trigger == "imported/", "the numbered copy holds the list in use at that time");
+                string third = store.KeepCopyBeforeImport(at);
+                Check(third.EndsWith("-3.json", StringComparison.Ordinal) && FileHolds(copy, firstCopy) && File.Exists(second),
+                    "numbering continues past every taken name");
+
+                // A copy that cannot be written (its temp file's name is taken by a folder) is reported, and nothing changes.
+                var failAt = new DateTime(2026, 10, 18, 15, 0, 0);
+                string failName = Path.Combine(importDir, "shorthands.before-import-20261018-150000.json");
+                Directory.CreateDirectory(failName + ".tmp");
+                byte[] beforeFail = File.ReadAllBytes(store.ShorthandsPath);
+                int copiesBefore = Directory.GetFiles(importDir, "shorthands.before-import-*.json").Length;
+                bool copyFailed = false;
+                try { store.KeepCopyBeforeImport(failAt); }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { copyFailed = true; }
+                Check(copyFailed, "a pre-import copy that cannot be written reports the failure");
+                Check(!File.Exists(failName) && Directory.GetFiles(importDir, "shorthands.before-import-*.json").Length == copiesBefore,
+                    "a failed pre-import copy leaves no copy file");
+                Check(FileHolds(store.ShorthandsPath, beforeFail) && store.Shorthands.Count == 1 && store.Shorthands[0].Trigger == "imported/",
+                    "a failed pre-import copy leaves shorthands.json and the list unchanged");
+
+                // The public overload uses the clock and still lands beside shorthands.json.
+                string dated = store.KeepCopyBeforeImport();
+                Check(Path.GetDirectoryName(dated) == importDir && Path.GetFileName(dated).StartsWith("shorthands.before-import-", StringComparison.Ordinal) &&
+                      File.Exists(dated), "KeepCopyBeforeImport() writes a dated copy beside shorthands.json");
+            }
+            finally
+            {
+                try { Directory.Delete(importDir, true); } catch { /* ignore */ }
+            }
+
             Conformance.Run(Check, name => Console.WriteLine(name));
 
             Console.WriteLine();

@@ -203,8 +203,31 @@ namespace ShorthandExpander
             $"{Path.GetFileName(path)} could not be read or copied aside when Shorthand Expander started, so it is not being saved over. " +
             "Restart Shorthand Expander once the file can be read.";
 
-        /// <summary>Writes to a temp file beside the target, then swaps it in, so a crash mid-write cannot truncate the target.</summary>
-        private static void WriteAtomically(string path, string contents)
+        /// <summary>
+        /// Before an import changes the list: writes the list in use, in the shared file format, to
+        /// "shorthands.before-import-yyyyMMdd-HHmmss.json" beside shorthands.json (a numbered name when that one is taken),
+        /// so Import can bring it back. An earlier copy is never overwritten. Returns the copy's path; throws, leaving the
+        /// list and shorthands.json unchanged, when the copy cannot be written.
+        /// </summary>
+        public string KeepCopyBeforeImport() => KeepCopyBeforeImport(DateTime.Now);
+
+        internal string KeepCopyBeforeImport(DateTime now)
+        {
+            string contents = Serialize(Shorthands);
+            System.IO.Directory.CreateDirectory(Directory);
+            string stem = Path.Combine(Directory, Path.GetFileNameWithoutExtension(ShorthandsPath) + ".before-import-" +
+                now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
+            string copy = stem + ".json";
+            for (int n = 2; File.Exists(copy); n++) copy = stem + "-" + n + ".json";
+            WriteAtomically(copy, contents, replace: false);
+            return copy;
+        }
+
+        /// <summary>
+        /// Writes to a temp file beside the target, then swaps it in, so a crash mid-write cannot truncate the target.
+        /// With replace false, an existing target is never overwritten: the swap throws instead.
+        /// </summary>
+        private static void WriteAtomically(string path, string contents, bool replace = true)
         {
             string temp = path + ".tmp";
             using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -214,7 +237,7 @@ namespace ShorthandExpander
                 writer.Flush();
                 stream.Flush(flushToDisk: true);
             }
-            if (File.Exists(path)) File.Replace(temp, path, path + ".bak", ignoreMetadataErrors: true);
+            if (replace && File.Exists(path)) File.Replace(temp, path, path + ".bak", ignoreMetadataErrors: true);
             else File.Move(temp, path);
         }
 
