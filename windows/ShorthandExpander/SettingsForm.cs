@@ -310,7 +310,15 @@ namespace ShorthandExpander
         private void SaveSettings()
         {
             if (_loadingSettings) return;
-            _store.SaveSettings(new AppSettings { Enabled = _enabled.Checked, ShiftEnterForNewlines = _shiftEnter.Checked });
+            try
+            {
+                _store.SaveSettings(new AppSettings { Enabled = _enabled.Checked, ShiftEnterForNewlines = _shiftEnter.Checked });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Could not save settings:\n" + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LoadSettings(); // show what the store actually holds
+            }
         }
 
         private void ApplyStartup()

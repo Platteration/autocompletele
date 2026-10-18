@@ -55,6 +55,10 @@ namespace ShorthandExpander
             }
 
             UpdateTrayState();
+            if (_store.LoadProblem != null)
+            {
+                MessageBox.Show(_store.LoadProblem, "Shorthand Expander", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
             if (_store.Shorthands.Count == 0) ShowSettings();
             else _tray.ShowBalloonTip(3000, "Shorthand Expander is running",
                 "Type a trigger such as cool/ in any app to expand it. Double-click the tray icon to manage shorthands.",
@@ -76,7 +80,15 @@ namespace ShorthandExpander
         {
             var s = _store.Settings;
             s.Enabled = !s.Enabled;
-            _store.SaveSettings(s);
+            try
+            {
+                _store.SaveSettings(s);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Could not save settings:\n" + ex.Message, "Shorthand Expander",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void UpdateTrayState()

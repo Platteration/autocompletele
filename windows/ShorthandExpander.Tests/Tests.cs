@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 
 namespace ShorthandExpander.Tests
 {
@@ -20,6 +21,9 @@ namespace ShorthandExpander.Tests
             bool ok = EqualityComparer<T>.Default.Equals(expected, actual);
             Check(ok, ok ? name : $"{name} (expected '{expected}', got '{actual}')");
         }
+
+        private static bool FileHolds(string path, byte[] expected) =>
+            File.Exists(path) && File.ReadAllBytes(path).AsSpan().SequenceEqual(expected);
 
         private static int Main()
         {
@@ -99,6 +103,112 @@ namespace ShorthandExpander.Tests
             finally
             {
                 try { Directory.Delete(dir, true); } catch { /* ignore */ }
+            }
+
+            Console.WriteLine("Store safety");
+            string safeDir = Path.Combine(Path.GetTempPath(), "ShorthandExpanderTests-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                // An unreadable shorthands.json (here cut off mid-write) is copied aside before anything can save over it.
+                string brokenDir = Path.Combine(safeDir, "broken");
+                Directory.CreateDirectory(brokenDir);
+                var broken = new ShorthandStore(brokenDir);
+                byte[] original = Encoding.UTF8.GetBytes("{\"version\":1,\"shorthands\":[{\"trigger\":\"keep/\",\"expansion\":\"Grüße\"},{\"trig");
+                File.WriteAllBytes(broken.ShorthandsPath, original);
+                broken.Load();
+                string[] copies = Directory.GetFiles(brokenDir, "shorthands.unreadable-*.json");
+                string copy = copies.Length == 1 ? copies[0] : "(none)";
+                Equal(1, copies.Length, "unreadable shorthands.json is copied aside");
+                Check(FileHolds(copy, original), "the copy is byte-for-byte identical");
+                Equal(0, broken.Shorthands.Count, "unreadable shorthands.json loads as an empty list");
+                Check(broken.LoadProblem != null && broken.LoadProblem.Contains(copy), "LoadProblem names the copy");
+                Check(!broken.ShorthandsSaveBlocked, "saving is allowed once the copy exists");
+                Check(FileHolds(broken.ShorthandsPath, original), "Load leaves the unreadable file in place");
+                broken.Load();
+                Equal(2, Directory.GetFiles(brokenDir, "shorthands.unreadable-*.json").Length, "a second copy never overwrites the first");
+                broken.SaveShorthands(new[] { new Shorthand("new/", "fresh") });
+                Check(FileHolds(copy, original), "the copy still holds the original bytes after a save");
+                var saved = ShorthandStore.ParseFile(File.ReadAllText(broken.ShorthandsPath));
+                Check(saved.Count == 1 && saved[0].Trigger == "new/", "the save writes the new list");
+
+                // A missing file still seeds the defaults, with no copy and no problem reported.
+                string freshDir = Path.Combine(safeDir, "fresh");
+                var fresh = new ShorthandStore(freshDir);
+                fresh.Load();
+                Equal(ShorthandStore.DefaultShorthands().Count, fresh.Shorthands.Count, "a missing file seeds the defaults");
+                Check(fresh.LoadProblem == null && !fresh.ShorthandsSaveBlocked && !fresh.SettingsSaveBlocked, "a missing file is not a load problem");
+                Equal(0, Directory.GetFiles(freshDir, "*.unreadable-*").Length, "a missing file makes no copy");
+
+                // Saves go through a temp file that is swapped in, keeping the previous file as .bak.
+                fresh.SaveShorthands(new[] { new Shorthand("a/", "Alpha\nline two"), new Shorthand("b/", "{date}") });
+                Equal(0, Directory.GetFiles(freshDir, "*.tmp").Length, "a save leaves no temp file behind");
+                var back = ShorthandStore.ParseFile(File.ReadAllText(fresh.ShorthandsPath));
+                Check(back.Count == 2 && back[0].Trigger == "a/" && back[0].Expansion == "Alpha\nline two" &&
+                      back[1].Trigger == "b/" && back[1].Expansion == "{date}", "the saved file parses back to the saved list");
+                byte[] before = File.ReadAllBytes(fresh.ShorthandsPath);
+                Check(before.Length > 0 && before[0] == (byte)'{', "the saved file has no byte-order mark");
+                fresh.SaveShorthands(new[] { new Shorthand("c/", "C") });
+                Check(FileHolds(fresh.ShorthandsPath + ".bak", before), "replacing keeps the previous file as .bak");
+                fresh.SaveSettings(new AppSettings { Enabled = false, ShiftEnterForNewlines = true });
+                fresh.SaveSettings(new AppSettings { Enabled = false, ShiftEnterForNewlines = false });
+                Equal(0, Directory.GetFiles(freshDir, "*.tmp").Length, "settings saves leave no temp file behind");
+                var reopened = new ShorthandStore(freshDir);
+                reopened.Load();
+                Check(reopened.LoadProblem == null && reopened.Shorthands.Count == 1 && !reopened.Settings.Enabled &&
+                      !reopened.Settings.ShiftEnterForNewlines, "saved files load back without problems");
+
+                // A save that cannot finish (its temp file's name is taken by a folder) leaves the previous file intact.
+                byte[] kept = File.ReadAllBytes(fresh.ShorthandsPath);
+                Directory.CreateDirectory(fresh.ShorthandsPath + ".tmp");
+                bool failed = false;
+                try { fresh.SaveShorthands(new[] { new Shorthand("lost/", "x") }); }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { failed = true; }
+                Check(failed, "a save that cannot write its temp file reports the failure");
+                Check(FileHolds(fresh.ShorthandsPath, kept), "a failed save leaves the previous file intact");
+                Directory.Delete(fresh.ShorthandsPath + ".tmp");
+
+                // An unreadable settings.json is copied aside too, and the defaults are used.
+                string settingsDir = Path.Combine(safeDir, "settings");
+                Directory.CreateDirectory(settingsDir);
+                var odd = new ShorthandStore(settingsDir);
+                byte[] badSettings = Encoding.UTF8.GetBytes("{\"enabled\": fals");
+                File.WriteAllBytes(odd.SettingsPath, badSettings);
+                odd.Load();
+                string[] settingsCopies = Directory.GetFiles(settingsDir, "settings.unreadable-*.json");
+                string settingsCopy = settingsCopies.Length == 1 ? settingsCopies[0] : "(none)";
+                Check(FileHolds(settingsCopy, badSettings), "unreadable settings.json is copied aside unchanged");
+                Check(odd.Settings.Enabled && !odd.Settings.ShiftEnterForNewlines, "unreadable settings fall back to the defaults");
+                Check(odd.LoadProblem != null && odd.LoadProblem.Contains(settingsCopy), "LoadProblem names the settings copy");
+
+                // A file that can be neither read nor copied (another handle holds it exclusively) is never saved over,
+                // until a later Load succeeds.
+                string lockedDir = Path.Combine(safeDir, "locked");
+                Directory.CreateDirectory(lockedDir);
+                var locked = new ShorthandStore(lockedDir);
+                byte[] mine = Encoding.UTF8.GetBytes("{\"version\":1,\"shorthands\":[{\"trigger\":\"mine/\",\"expansion\":\"M\"}]}");
+                byte[] mySettings = Encoding.UTF8.GetBytes("{\"enabled\":false}");
+                File.WriteAllBytes(locked.ShorthandsPath, mine);
+                File.WriteAllBytes(locked.SettingsPath, mySettings);
+                using (new FileStream(locked.ShorthandsPath, FileMode.Open, FileAccess.Read, FileShare.None))
+                using (new FileStream(locked.SettingsPath, FileMode.Open, FileAccess.Read, FileShare.None))
+                {
+                    locked.Load();
+                }
+                Check(locked.ShorthandsSaveBlocked && locked.SettingsSaveBlocked, "files that cannot be read or copied block saving");
+                Check(locked.LoadProblem != null, "LoadProblem reports the blocked files");
+                bool refused = false;
+                try { locked.SaveShorthands(new[] { new Shorthand("x/", "X") }); } catch (InvalidOperationException) { refused = true; }
+                Check(refused && FileHolds(locked.ShorthandsPath, mine), "SaveShorthands refuses and leaves the file untouched");
+                refused = false;
+                try { locked.SaveSettings(new AppSettings()); } catch (InvalidOperationException) { refused = true; }
+                Check(refused && FileHolds(locked.SettingsPath, mySettings), "SaveSettings refuses and leaves the file untouched");
+                locked.Load();
+                Check(!locked.ShorthandsSaveBlocked && !locked.SettingsSaveBlocked && locked.LoadProblem == null, "a later successful Load lifts the block");
+                Check(locked.Shorthands.Count == 1 && !locked.Settings.Enabled, "the untouched files load once they are readable");
+            }
+            finally
+            {
+                try { Directory.Delete(safeDir, true); } catch { /* ignore */ }
             }
 
             Conformance.Run(Check, name => Console.WriteLine(name));
