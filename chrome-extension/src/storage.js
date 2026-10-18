@@ -125,6 +125,23 @@
     });
   }
 
+  // First-install examples: add-only, and only while the library is still empty
+  // under the write lock. On Chrome a synced library can arrive at any moment;
+  // replacing here would delete it. Fixed ids make two devices that both seed
+  // write the same records instead of duplicates.
+  async function seedExamples(list) {
+    return withWriteLock(async () => {
+      await recoverImport();
+      if (Object.keys(records(await dataStore.get(null))).length) return false;
+      const payload = {};
+      list.forEach((sh, order) => {
+        payload[PREFIX + "example-" + sh.trigger.replace(/[^a-z0-9]/gi, "")] = { trigger: sh.trigger, expansion: sh.expansion, order };
+      });
+      await dataStore.set(payload);
+      return true;
+    });
+  }
+
   async function deleteShorthand(id) {
     return withWriteLock(async () => {
       await recoverImport();
@@ -319,6 +336,7 @@
     recoverPendingImport,
     getImportBackup,
     saveSettings,
+    seedExamples,
     getUsageCounts,
     recordUse,
     savePendingDraft,

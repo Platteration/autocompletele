@@ -23,6 +23,18 @@ A trigger fires only when you typed it (or pasted it). A page can read whatever
 lands in its own fields, so text a page's script writes into a field, input
 events it dispatches and keys it fakes in the search overlay never produce an
 expansion; otherwise any site could try `addr/` and read your address back.
+Correcting a typo with Backspace keeps the rest of the word trusted, and a
+trigger typed at the start of a new line in a rich editor expands too.
+
+On a fresh install the three examples (`cool/`, `sig/`, `td/`) are added only
+while the library is still empty, and never replace anything. On Chrome a
+library synced from another device can still arrive after them; delete the
+examples you do not want.
+
+After actle is updated, reloaded, turned off or removed, Chrome keeps the old
+copy running in pages that were already open, cut off from your current
+library and settings. Those pages stop expanding: the first time you type a
+saved trigger there, a note asks you to reload the page.
 
 ## Toolbar command palette
 

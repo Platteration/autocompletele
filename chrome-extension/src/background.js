@@ -44,8 +44,7 @@ createSelectionMenu();
 chrome.runtime.onInstalled.addListener(async (details) => {
   createSelectionMenu();
   if (details.reason === "install") {
-    const { shorthands } = await storage.getAll();
-    if (shorthands.length === 0) await storage.replaceAll(EXAMPLES);
+    await storage.seedExamples(EXAMPLES);
     chrome.runtime.openOptionsPage();
   }
   updateBadge();

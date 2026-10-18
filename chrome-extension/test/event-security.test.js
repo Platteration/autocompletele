@@ -13,7 +13,7 @@ function previewClient() {
   });
 }
 
-async function content({ premium = previewClient(), config = premiumConfig, storage, form, feedback } = {}) {
+async function content({ premium = previewClient(), config = premiumConfig, storage, form, feedback, runtime = { id: "actle-test" } } = {}) {
   const listeners = {}, opened = [];
   const document = { activeElement: null, addEventListener(name, fn) { listeners[name] = fn; }, execCommand() { return false; } };
   const sandbox = {
@@ -28,7 +28,7 @@ async function content({ premium = previewClient(), config = premiumConfig, stor
       ShorthandStorage: storage || { DEFAULT_SETTINGS: { pickerTrigger: ";;", animationMode: "expand" }, async getAll() { return { shorthands: [{ trigger: "secret/", expansion: "private snippet" }], settings: {} }; } },
       ShorthandPicker: { isOpen() { return false; }, show(opts) { opened.push(opts); return true; } },
     },
-    document, window: { addEventListener() {} }, location: { hostname: "page.example" }, chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {},
+    document, window: { addEventListener() {} }, location: { hostname: "page.example" }, chrome: { runtime, storage: { onChanged: { addListener() {} } } }, Event: class {},
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/content.js"), "utf8"), sandbox);
@@ -58,6 +58,31 @@ test("fabricated input cannot expand a known snippet or open the library picker"
   assert.equal(c.field.value, "secret/");
   c.input(";;", false);
   assert.equal(c.opened.length, 0);
+});
+
+test("a page left open after actle is updated or removed stops expanding and asks once for a reload", async () => {
+  // Chrome keeps the old script running in open pages, cut off from storage:
+  // its cached library and pause or site choices may no longer be true.
+  const notices = [];
+  const premium = require("../src/premium-client.js").createClient({
+    config: premiumConfig, chrome: { runtime: {} }, notice(message) { notices.push(message); },
+  });
+  const runtime = { id: "actle-test" };
+  const c = await content({ premium, runtime });
+  delete runtime.id;
+  c.input("secret/", true);
+  assert.equal(c.field.value, "secret/", "a disconnected script inserts nothing");
+  c.input(";;", true);
+  assert.equal(c.opened.length, 0, "nor opens the library picker");
+  assert.deepEqual(notices, ["actle was updated or turned off. Reload this page to use your shortcuts here."]);
+  c.input("x secret/", true);
+  assert.equal(notices.length, 1, "the reload message appears once per page");
+
+  const quiet = [];
+  const unrelated = await content({ premium: require("../src/premium-client.js").createClient({
+    config: premiumConfig, chrome: { runtime: {} }, notice(message) { quiet.push(message); } }), runtime: {} });
+  unrelated.input("hello there", true);
+  assert.deepEqual(quiet, [], "ordinary typing in a stale page shows nothing");
 });
 
 test("browser-trusted scripted edits also need a preceding trusted user edit", async () => {
@@ -271,7 +296,7 @@ async function richContent() {
       ShorthandExpansionFeedback: { show() {}, clear() {} },
     },
     document, window: { getSelection() { return selection; }, addEventListener() {} }, location: { hostname: "page.example" },
-    chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {}, InputEvent: class {}, Node: { TEXT_NODE: 3 },
+    chrome: { runtime: { id: "actle-test" }, storage: { onChanged: { addListener() {} } } }, Event: class {}, InputEvent: class {}, Node: { TEXT_NODE: 3 },
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/content.js"), "utf8"), sandbox);
@@ -290,7 +315,20 @@ async function richContent() {
     textNode = { nodeType: 3, textContent: text, isConnected: true, parentElement: root, parentNode: root };
     if (!keepOld) old.isConnected = false;
   }
-  return { get textNode() { return textNode; }, type, redraw };
+  // A Backspace key press; the browser then leaves `resulting` with the caret
+  // `removed` characters further left. `trusted` false models a page's own key.
+  function erase(resulting, removed = 1, trusted = true) {
+    listeners.keydown({ target: root, type: "keydown", isTrusted: trusted, key: "Backspace" });
+    textNode.textContent = resulting;
+    selStart = selEnd = selStart - removed;
+    listeners.input({ target: root, isTrusted: true, inputType: "deleteContentBackward", data: null });
+  }
+  // Text the page itself wrote, with the caret placed after it.
+  function prefill(text) {
+    textNode.textContent = text;
+    selStart = selEnd = text.length;
+  }
+  return { get textNode() { return textNode; }, type, redraw, erase, prefill };
 }
 
 test("a trigger typed after a space in a rich editor still expands despite the browser's nbsp rewriting", async () => {
@@ -322,6 +360,54 @@ test("a redraw continues typing only when the typed node left the page with its 
   changed.redraw("c");
   for (const [key, text] of [["o", "co"], ["o", "coo"], ["l", "cool"], ["/", "cool/"]]) changed.type(key, text);
   assert.equal(changed.textNode.textContent, "cool/", "a page-written first character is not typed text");
+});
+
+test("a typo corrected with Backspace still lets the trigger expand", async () => {
+  const c = await richContent();
+  for (const [key, text] of [["c", "c"], ["o", "co"], ["x", "cox"]]) c.type(key, text);
+  c.erase("co");
+  for (const [key, text] of [["o", "coo"], ["l", "cool"], ["/", "cool/"]]) c.type(key, text);
+  assert.equal(c.textNode.textContent, "That is really cool!");
+});
+
+test("only a physical Backspace that removed exactly one character keeps the typed run", async () => {
+  const fabricated = await richContent();
+  for (const [key, text] of [["c", "c"], ["o", "co"], ["x", "cox"]]) fabricated.type(key, text);
+  fabricated.erase("co", 1, false);
+  for (const [key, text] of [["o", "coo"], ["l", "cool"], ["/", "cool/"]]) fabricated.type(key, text);
+  assert.equal(fabricated.textNode.textContent, "cool/", "a page's own Backspace event grants nothing");
+
+  const extra = await richContent();
+  for (const [key, text] of [["c", "c"], ["o", "co"], ["o", "coo"], ["x", "coox"]]) extra.type(key, text);
+  extra.erase("co", 2);
+  for (const [key, text] of [["o", "coo"], ["l", "cool"], ["/", "cool/"]]) extra.type(key, text);
+  assert.equal(extra.textNode.textContent, "cool/", "a key press cannot cover a page deleting more than one character");
+});
+
+test("a page cannot swap in its own text during a physical Backspace in a text field", async () => {
+  const c = await content();
+  const key = (k, value) => {
+    c.document.activeElement = c.field;
+    c.listeners.keydown({ target: c.field, type: "keydown", isTrusted: true, key: k });
+    c.field.value = value; c.field.selectionStart = c.field.selectionEnd = value.length;
+    c.listeners.input({ target: c.field, isTrusted: true, inputType: k === "Backspace" ? "deleteContentBackward" : "insertText", data: k === "Backspace" ? null : k });
+  };
+  let typed = "";
+  for (const k of "zzzzzz") key(k, typed += k);
+  key("Backspace", "secre"); // the caret moved back one, but the page rewrote the rest
+  key("t", "secret");
+  key("/", "secret/");
+  assert.equal(c.field.value, "secret/", "page-written letters never become a trusted trigger");
+});
+
+test("Backspace cannot stretch the typed run over text the page wrote", async () => {
+  const c = await richContent();
+  c.prefill("co");
+  c.type("x", "cox");
+  c.erase("co");
+  c.erase("c");
+  for (const [key, text] of [["o", "co"], ["o", "coo"], ["l", "cool"], ["/", "cool/"]]) c.type(key, text);
+  assert.equal(c.textNode.textContent, "cool/", "the page-written c stays outside the trusted run");
 });
 
 test("the nbsp allowance does not let a page swap in different text for a keystroke", async () => {

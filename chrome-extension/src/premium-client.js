@@ -11,6 +11,7 @@
   let errorText = "";
   let noticeHost = null;
   let noticeText = null;
+  let noticeManage = true;
   const STALE = "That field changed before actle could insert the text. Try the shortcut again.";
   const FAILED = "actle couldn’t insert this text. Try the shortcut again.";
   const UNSAVED = "Text inserted, but today’s usage could not be saved. Open Manage plan to check your usage.";
@@ -28,14 +29,16 @@
     noticeText = null;
   }
 
-  function showNotice(message) {
+  function showNotice(message, manageButton = true) {
     if (notice) { notice(message); return; }
     const document = root.document;
     if (!document || !document.documentElement) return;
-    if (noticeHost && noticeHost.isConnected) {
+    if (noticeHost && noticeHost.isConnected && noticeManage === manageButton) {
       noticeText.textContent = message;
       return;
     }
+    closeNotice();
+    noticeManage = manageButton;
     noticeHost = document.createElement("div");
     noticeHost.id = "actle-usage-notice";
     const shadow = noticeHost.attachShadow({ mode: "closed" });
@@ -103,7 +106,8 @@
         manage.disabled = false;
       }
     });
-    actions.append(manage, dismiss);
+    if (manageButton) actions.append(manage);
+    actions.append(dismiss);
     panel.append(brand, noticeText, actions);
     shadow.append(panel);
     document.documentElement.append(noticeHost);
@@ -220,6 +224,8 @@
     openCheckout,
     execute,
     lastError: () => errorText,
+    // A page message without the plan button, for notices about the page itself.
+    notify: (message) => { try { showNotice(message, false); } catch (_) { /* Best effort. */ } },
     closeNotice,
   };
 });

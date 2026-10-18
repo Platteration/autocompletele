@@ -27,6 +27,7 @@
   let templateTarget = null; // original insertion point while a fill-in form has focus
   let inputGrant = null;
   const trustedEdits = new WeakMap();
+  const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
   const TEXT_INPUT_TYPES = new Set(["text", "search", "url", "email", "tel", ""]);
   const IGNORE_ATTR = "data-shorthand-ignore";
@@ -66,7 +67,14 @@
     if (node !== range.endContainer || !el.contains(node)) return null;
     if (isIgnored(node.nodeType === Node.TEXT_NODE ? node.parentElement : node)) return null;
     if (node.nodeType !== Node.TEXT_NODE) {
-      return el.textContent === "" && sel.isCollapsed ? { value: "", start: 0, end: 0, node: null, rootValue: "", offset: 0 } : null;
+      // A caret on an empty line (an empty editor, or the <div><br></div> or
+      // <p><br></p> that Enter leaves) has no text node yet. The first typed
+      // character creates one; consumeEdit then checks the whole editor.
+      if (!sel.isCollapsed || node.textContent !== "") return null;
+      const preceding = document.createRange();
+      preceding.selectNodeContents(el);
+      preceding.setEnd(node, range.startOffset);
+      return { value: "", start: 0, end: 0, node: null, rootValue: el.textContent, offset: preceding.toString().length };
     }
     const before = document.createRange();
     before.selectNodeContents(el);
@@ -98,6 +106,11 @@
       if (!data) return;
       if (isTextInput(el)) data = data.replace(/\r\n?/g, "\n");
       inputType = ev.type === "paste" ? "insertFromPaste" : "insertFromDrop";
+    } else if (ev.key === "Backspace") {
+      // Correcting a typo keeps the rest of the word trusted: consumeEdit
+      // accepts only the removal of the one character before the caret.
+      data = "";
+      inputType = "deleteContentBackward";
     } else {
       if (!ev.key || Array.from(ev.key).length !== 1) return;
       data = ev.key;
@@ -120,6 +133,7 @@
     // Browser-trusted execCommand input must not substitute another edit for a physical key,
     // paste or drop. Text, original selection and the resulting value must all agree.
     if (grant.inputType === "insertText" && ev.data !== grant.data) return false;
+    if (grant.inputType === "deleteContentBackward") return consumeBackspace(grant, el);
     const before = grant.before;
     const expected = before.value.slice(0, before.start) + grant.data + before.value.slice(before.end);
     const live = editSnapshot(el);
@@ -141,6 +155,34 @@
     const end = continuing ? previous.end + grant.data.length - (before.end - before.start) : live.start;
     trustedEdits.set(el, { value: live.value, node: live.node, offset: live.offset, start, end });
     return true;
+  }
+
+  // A physical Backspace inside the typed run removed one code point or one
+  // grapheme before the caret, and nothing else; the run shrinks by that much.
+  // Any other deletion (selected text, a page's own edit) ends the run.
+  function consumeBackspace(grant, el) {
+    const before = grant.before;
+    const previous = trustedEdits.get(el);
+    if (before.start !== before.end || !previous || previous.node !== before.node || previous.value !== before.value
+        || before.start > previous.end) return false;
+    const head = before.value.slice(0, before.start);
+    const graphemes = Array.from(graphemeSegmenter.segment(head));
+    const lastGrapheme = graphemes.length ? graphemes[graphemes.length - 1].segment.length : 0;
+    const lastCodePoint = head.length ? Array.from(head).pop().length : 0;
+    const live = editSnapshot(el);
+    if (!live || live.start !== live.end || (before.node && live.node !== before.node)) return false;
+    for (const removed of new Set([lastCodePoint, lastGrapheme])) {
+      if (!removed || before.start - removed < previous.start || live.start !== before.start - removed) continue;
+      const expected = head.slice(0, -removed) + before.value.slice(before.start);
+      if (!sameText(live.value, expected)) continue;
+      if (isEditable(el)) {
+        const at = before.offset + before.start;
+        if (!sameText(el.textContent, before.rootValue.slice(0, at - removed) + before.rootValue.slice(at))) continue;
+      }
+      trustedEdits.set(el, { value: live.value, node: live.node, offset: live.offset, start: previous.start, end: previous.end - removed });
+      return true;
+    }
+    return false;
   }
 
   function typedTrigger(el, start, end, node = null) {
@@ -329,6 +371,7 @@
       actionLabel: "Insert text",
       anchorEl: target.el,
       async onSubmit(result) {
+        if (!connected()) return STALE_MESSAGE;
         let settings;
         try {
           ({ settings } = await storage.getAll());
@@ -556,6 +599,7 @@
 
   function acceptSuggestion(sh, target) {
     closeSuggestions();
+    if (!connected()) return;
     if (!activeSuggestion(target) || !shorthands.some((saved) => saved.id === sh.id
         && saved.trigger === sh.trigger && saved.expansion === sh.expansion)) return;
     const chosen = target.phrase ? { ...sh, expansion: suggestions.keepTypedCase(target.trigger, sh.expansion) } : sh;
@@ -606,6 +650,31 @@
 
   // ---- wiring ---------------------------------------------------------------
 
+  // Chrome leaves this script running in open pages after actle is updated,
+  // reloaded, disabled or removed, cut off from storage. It must not keep
+  // expanding with a stale library and stale pause or site choices; once a
+  // saved trigger is typed it says the page needs a reload.
+  const STALE_MESSAGE = "actle was updated or turned off. Reload this page to use your shortcuts here.";
+  let staleNoticeShown = false;
+
+  function connected() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function noteStaleTrigger(el) {
+    if (staleNoticeShown || !enabled || hostExcluded) return;
+    const snapshot = editSnapshot(el);
+    if (!snapshot || snapshot.start == null) return;
+    const match = findMatch(snapshot.value.slice(0, snapshot.end), shorthands);
+    if (!match || !typedTrigger(el, match.start, snapshot.end, snapshot.node)) return;
+    staleNoticeShown = true;
+    premium.notify(STALE_MESSAGE);
+  }
+
   function onInput(ev) {
     // dispatchEvent() on a page-owned field must never release stored text.
     if (suppress || !ev.isTrusted) return;
@@ -623,6 +692,7 @@
       return;
     }
     if (self.ShorthandPicker && self.ShorthandPicker.isOpen()) return;
+    if (!connected()) { noteStaleTrigger(el); return; }
     if (!enabled || hostExcluded || shorthands.length === 0) return;
     if (ev.isComposing) return; // IME composition in progress
     const t = ev.inputType;
@@ -655,7 +725,9 @@
         || (self.ShorthandPicker && self.ShorthandPicker.isOpen())) return;
     const altGraph = ev.getModifierState && ev.getModifierState("AltGraph");
     inputGrant = null;
-    if ((!ev.ctrlKey && !ev.metaKey && !ev.altKey || altGraph) && !ev.isComposing && Array.from(ev.key).length === 1) grantUserInput(ev);
+    const plainBackspace = ev.key === "Backspace" && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.shiftKey;
+    if ((!ev.ctrlKey && !ev.metaKey && !ev.altKey || altGraph) && !ev.isComposing
+        && (Array.from(ev.key).length === 1 || plainBackspace)) grantUserInput(ev);
     const u = lastExpansion;
     if (!u) return;
     if (ev.key !== "Backspace" || ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) {
@@ -723,7 +795,7 @@
   }
 
   function expandInGoogleDocs(typed, frame) {
-    if (!enabled || hostExcluded || templateTarget || templateForm.isOpen()) return;
+    if (!connected() || !enabled || hostExcluded || templateTarget || templateForm.isOpen()) return;
     const match = findMatch(typed, shorthands);
     if (!match) return;
     const shorthand = match.shorthand;

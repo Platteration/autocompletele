@@ -371,3 +371,32 @@ test("paragraph completion defaults to three words, accepts off and two to six, 
   }
   assert.deepEqual(app.items["sh:sig"], initial["sh:sig"], "the library is untouched");
 });
+
+const EXAMPLES = [
+  { trigger: "cool/", expansion: "That is really cool, thanks for sharing!" },
+  { trigger: "sig/", expansion: "Best regards,\n{cursor}" },
+  { trigger: "td/", expansion: "{date}" },
+];
+
+test("first-install examples seed an empty library under fixed ids, in both browsers", async () => {
+  for (const firefox of [false, true]) {
+    const app = storageWith({}, { firefox });
+    assert.equal(await app.storage.seedExamples(EXAMPLES), true);
+    assert.deepEqual(Object.keys(app.items).sort(), ["sh:example-cool", "sh:example-sig", "sh:example-td"]);
+    assert.deepEqual(plain((await app.storage.getAll()).shorthands.map((sh) => sh.trigger)), ["cool/", "sig/", "td/"]);
+    assert.ok(app.calls.every((call) => call.operation === "set"), "seeding never removes");
+    assert.equal(await app.storage.seedExamples(EXAMPLES), false, "a second device's seed finds the same records and adds nothing");
+  }
+});
+
+test("a library that is already there when the examples would be written is never replaced", async () => {
+  // Chrome sync can deliver a library between install and seeding; the old
+  // replace-mode seed removed every record it did not list.
+  for (const firefox of [false, true]) {
+    const synced = { "sh:mine": { trigger: "addr/", expansion: "1 Main Street", order: 0 } };
+    const app = storageWith(synced, { firefox });
+    assert.equal(await app.storage.seedExamples(EXAMPLES), false);
+    assert.deepEqual(app.items, synced);
+    assert.deepEqual(app.calls, []);
+  }
+});
