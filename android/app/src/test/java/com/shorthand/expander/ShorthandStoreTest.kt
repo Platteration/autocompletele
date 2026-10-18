@@ -4,8 +4,10 @@ import android.content.SharedPreferences
 import com.shorthand.expander.ShorthandStore.Companion.KEY_JSON
 import com.shorthand.expander.ShorthandStore.Companion.KEY_UNREADABLE
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -22,10 +24,14 @@ class ShorthandStoreTest {
 
         assertEquals(emptyList<Shorthand>(), store.shorthands)
         assertEquals(KEY_UNREADABLE, store.unreadableCopyKey)
+        assertTrue(store.savedListUnreadable)
         assertEquals(listOf("commit $KEY_UNREADABLE"), prefs.writes)
 
         store.shorthands = edited
         assertEquals(edited, store.shorthands)
+        // Once the saved list reads normally again, the store no longer reports it as unreadable.
+        assertNull(store.unreadableCopyKey)
+        assertFalse(store.savedListUnreadable)
         assertEquals(unreadable, prefs.values[KEY_UNREADABLE])
         assertEquals(listOf("commit $KEY_UNREADABLE", "commit $KEY_UNREADABLE", "apply $KEY_JSON"), prefs.writes)
     }
@@ -67,6 +73,8 @@ class ShorthandStoreTest {
 
         assertEquals(emptyList<Shorthand>(), store.shorthands)
         assertNull(store.unreadableCopyKey)
+        // The activity still warns when the copy failed.
+        assertTrue(store.savedListUnreadable)
         assertThrows(IllegalStateException::class.java) { store.shorthands = edited }
         assertEquals(unreadable, prefs.values[KEY_JSON])
         assertEquals(listOf("commit $KEY_UNREADABLE", "commit $KEY_UNREADABLE"), prefs.writes)
@@ -83,6 +91,7 @@ class ShorthandStoreTest {
         val store = ShorthandStore(prefs)
 
         assertEquals(edited, store.shorthands)
+        assertFalse(store.savedListUnreadable)
         store.shorthands = listOf(Shorthand("b/", "B"))
         assertNull(store.unreadableCopyKey)
         assertEquals(listOf("apply $KEY_JSON"), prefs.writes)

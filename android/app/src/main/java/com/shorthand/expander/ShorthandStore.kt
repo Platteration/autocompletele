@@ -16,12 +16,21 @@ class ShorthandStore internal constructor(private val prefs: SharedPreferences) 
     var unreadableCopyKey: String? = null
         private set
 
+    /** Whether the last read of [shorthands] found a saved list it could not read, copied aside or not. */
+    var savedListUnreadable = false
+        private set
+
     var shorthands: List<Shorthand>
         get() {
             val json = prefs.getString(KEY_JSON, null) ?: return emptyList()
             return when (val result = ShorthandJson.read(json)) {
-                is ShorthandJson.ReadResult.Parsed -> result.shorthands
+                is ShorthandJson.ReadResult.Parsed -> {
+                    savedListUnreadable = false
+                    unreadableCopyKey = null
+                    result.shorthands
+                }
                 is ShorthandJson.ReadResult.Unreadable -> {
+                    savedListUnreadable = true
                     keepUnreadable(result.raw)
                     emptyList()
                 }

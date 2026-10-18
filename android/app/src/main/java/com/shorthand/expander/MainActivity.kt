@@ -55,7 +55,9 @@ class MainActivity : Activity() {
         enabledSwitch.setOnCheckedChangeListener { _, checked -> store.enabled = checked }
 
         refresh()
-        if (store.unreadableCopyKey != null) toast(getString(R.string.saved_list_unreadable))
+        if (store.savedListUnreadable) {
+            toast(getString(if (store.unreadableCopyKey != null) R.string.saved_list_unreadable else R.string.saved_list_unreadable_not_copied))
+        }
     }
 
     override fun onResume() {
@@ -84,13 +86,17 @@ class MainActivity : Activity() {
         emptyText.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
     }
 
-    private fun persist() {
-        try {
+    /** Saves [items]; returns false, after telling the user, when the save was refused. */
+    private fun persist(): Boolean {
+        val saved = try {
             store.shorthands = ArrayList(items)
+            true
         } catch (e: IllegalStateException) {
             toast(getString(R.string.save_refused_unreadable))
+            false
         }
         refresh()
+        return saved
     }
 
     private fun updateServiceStatus() {
@@ -209,8 +215,7 @@ class MainActivity : Activity() {
             items.removeAll { it.trigger in triggers }
         }
         items.addAll(imported)
-        persist()
-        toast(getString(R.string.import_done, imported.size))
+        if (persist()) toast(getString(R.string.import_done, imported.size))
     }
 
     private fun exportTo(uri: Uri) {

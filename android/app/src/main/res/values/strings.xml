@@ -34,5 +34,6 @@
     <string name="export_failed">Could not write that file: %1$s</string>
     <string name="export_file_name">shorthands.json</string>
     <string name="saved_list_unreadable">Your saved shorthands could not be read. They were kept aside unchanged, and the list started empty.</string>
+    <string name="saved_list_unreadable_not_copied">Your saved shorthands could not be read, and a copy could not be made. They were left unchanged, and nothing will be saved over them until a copy can be made.</string>
     <string name="save_refused_unreadable">Not saved. Your earlier shorthands could not be read or copied aside, so they were left as they are.</string>
 </resources>
