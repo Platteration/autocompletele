@@ -214,6 +214,42 @@ test("Chrome template variable forms and editor", { timeout: 120000 }, async (t)
     assert.deepEqual(await app.worker.evaluate(async () => (await self.ShorthandStorage.getAll()).shorthands.map(({ trigger, expansion }) => ({ trigger, expansion }))), TEMPLATES);
   });
 
+  await t.test("a clicked answer keeps its focus border under the pointer, and forced colors outline the pronoun and message panels", async () => {
+    await start(app, "pron/");
+    const borders = (selector) => formRead(page, function (selector) {
+      const element = this.querySelector(selector);
+      const style = getComputedStyle(element);
+      return { active: this.activeElement === element, hovered: element.matches(":hover"), border: style.borderTopColor, ring: style.outlineColor };
+    }, selector);
+    await page.mouse.move(1, 1);
+    const resting = await borders("#template-pronouns");
+    await formClick(page, "#template-field-0");
+    const clicked = await borders("#template-field-0");
+    assert.equal(clicked.active && clicked.hovered, true, "The pointer stays on the answer it focused");
+    assert.equal(clicked.border, clicked.ring, "Hover must not replace the focused answer's border colour");
+    const point = await formRead(page, function () {
+      const select = this.querySelector("#template-pronouns");
+      select.scrollIntoView({ block: "center" });
+      const rect = select.getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    });
+    await page.mouse.move(point.x, point.y);
+    const hovered = await borders("#template-pronouns");
+    assert.equal(hovered.hovered && !hovered.active, true);
+    assert.notEqual(hovered.border, resting.border, "An unfocused control still shows its hover border");
+    await page.emulateMedia({ forcedColors: "active" });
+    try {
+      const outlines = await formRead(page, function () {
+        return [".pronouns", ".inline-message"].map((selector) => {
+          const style = getComputedStyle(this.querySelector(selector));
+          return [style.borderTopStyle, style.borderTopWidth, style.borderTopColor !== "rgba(0, 0, 0, 0)"];
+        });
+      });
+      assert.deepEqual(outlines, [["solid", "1px", true], ["solid", "1px", true]], "Forced colors must keep both panels outlined");
+    } finally { await page.emulateMedia({ forcedColors: "none" }); }
+    await page.keyboard.press("Escape");
+  });
+
   await t.test("the toolbar copies the completed repeated-pronoun script to the real clipboard", async () => {
     const popup = await app.context.newPage();
     await popup.goto(`chrome-extension://${app.extensionId}/src/popup.html`);

@@ -58,13 +58,13 @@
       font: 400 14px/22px system-ui, -apple-system, "Segoe UI", sans-serif;
     }
     input::placeholder { color: var(--muted); opacity: 1; }
-    input:hover:not(:disabled), select:hover:not(:disabled) { border-color: var(--ink); }
+    input:hover:not(:disabled, :focus), select:hover:not(:disabled, :focus) { border-color: var(--ink); }
     input:focus, select:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
     input:disabled, select:disabled { background: var(--surface); color: var(--muted); }
-    .pronouns { margin-bottom: 24px; padding: 16px; border: 0; border-radius: 0; background: var(--surface); }
+    .pronouns { margin-bottom: 24px; padding: 16px; border: 1px solid transparent; border-radius: 0; background: var(--surface); }
     .pronouns .hint, .message-hint, .no-fields { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 18px; }
     .custom-pronouns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
-    .inline-message { margin-top: 12px; padding: 16px; border: 0; border-radius: 0; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 2.6; }
+    .inline-message { margin-top: 12px; padding: 16px; border: 1px solid transparent; border-radius: 0; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 2.6; }
     .inline-message input { display: inline-block; width: auto; min-width: 5ch; max-width: 100%; padding: 2px 8px; border-color: var(--accent); border-radius: 2px; background: var(--soft); color: var(--accent); font: inherit; line-height: 1.6; vertical-align: baseline; }
     .inline-message input::placeholder { color: var(--accent); }
     .field-table td input:disabled, .inline-message input:disabled { background: var(--surface); border-color: var(--line); color: var(--muted); }
