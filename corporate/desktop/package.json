@@ -4,6 +4,7 @@
   "private": true,
   "description": "Desktop shell for the actle business edition: a tray app that expands shortcuts in every application and shows keystrokes and time saved.",
   "author": "actle contributors",
+  "homepage": "https://github.com/Platteration/autocompletele",
   "main": "main.js",
   "engines": { "node": ">=22.2.0" },
   "scripts": {
