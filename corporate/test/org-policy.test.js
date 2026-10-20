@@ -54,3 +54,49 @@ test("bad input degrades with warnings instead of refusing", () => {
   assert.ok(policy.warnings.some((w) => /nope\//.test(w)));
   assert.ok(policy.warnings.some((w) => /\/none/.test(w)));
 });
+
+test("layers merge field by field, team rules first, shortcuts and rules by key", () => {
+  const merged = orgPolicy.merge([
+    {
+      organization: "Org", serial: 3, typing: { charsPerMinute: 200, secondsPerAttachment: 20 },
+      capture: { defaultMode: "triggers", apps: [{ id: "mail", match: { process: "outlook" }, mode: "learn" }] },
+      library: { version: 1, shorthands: [{ trigger: "sig/", expansion: "Org sig" }, { trigger: "hrs/", expansion: "9-5" }] },
+      keywordRules: [{ id: "returns", keywords: ["refund"], insert: "Org returns text" }],
+      documents: { shortcuts: [{ trigger: "/hr", documents: [{ path: "S:/hr.pdf" }] }] },
+    },
+    null,
+    {
+      typing: { charsPerMinute: 260 },
+      capture: { apps: [{ id: "chat", match: { process: "teams" }, mode: "off" }] },
+      library: [{ trigger: "sig/", expansion: "Team sig" }],
+      keywordRules: [{ id: "returns", keywords: ["return"], insert: "Team returns text" }, { keywords: ["hello"], insert: "x" }],
+      documents: { shortcuts: [{ trigger: "/sld", documents: [{ path: "S:/sld.pdf" }] }] },
+    },
+  ]);
+  assert.equal(merged.organization, "Org");
+  assert.deepEqual(merged.typing, { charsPerMinute: 260, secondsPerAttachment: 20 });
+  assert.equal(merged.capture.defaultMode, "triggers");
+  assert.deepEqual(merged.capture.apps.map((a) => a.id), ["chat", "mail"]);
+  assert.deepEqual(merged.library.shorthands.map((s) => [s.trigger, s.expansion]), [["sig/", "Team sig"], ["hrs/", "9-5"]]);
+  assert.deepEqual(merged.keywordRules.map((r) => r.insert), ["Team returns text", "x"]);
+  assert.deepEqual(merged.documents.shortcuts.map((s) => s.trigger), ["/hr", "/sld"]);
+  assert.equal(merged.serial, undefined, "serials belong to each signed layer, not the merge");
+  const policy = orgPolicy.parse(merged);
+  assert.deepEqual(policy.warnings, []);
+  assert.equal(policy.typing.charsPerMinute, 260);
+  assert.deepEqual(orgPolicy.merge([]), {});
+  assert.deepEqual(orgPolicy.merge("nope"), {});
+});
+
+test("the kill switch pauses from any layer and carries a message", () => {
+  assert.deepEqual(orgPolicy.parse({}).paused, { active: false, message: "" });
+  assert.deepEqual(orgPolicy.parse({ paused: true }).paused, { active: true, message: "" });
+  assert.deepEqual(orgPolicy.parse({ paused: { message: " Under review " } }).paused, { active: true, message: "Under review" });
+  assert.deepEqual(orgPolicy.parse({ paused: { active: false, message: "x" } }).paused, { active: false, message: "" });
+  assert.deepEqual(orgPolicy.parse({ paused: "yes" }).paused, { active: false, message: "" });
+  const merged = orgPolicy.merge([{ paused: { message: "Org-wide pause" } }, { paused: { active: false } }]);
+  assert.deepEqual(orgPolicy.parse(merged).paused, { active: true, message: "Org-wide pause" });
+  assert.equal(orgPolicy.parse(orgPolicy.merge([{}, { paused: true }])).paused.active, true);
+  assert.equal(orgPolicy.parse({ serial: 12 }).serial, 12);
+  assert.equal(orgPolicy.parse({ serial: -1 }).serial, null);
+});

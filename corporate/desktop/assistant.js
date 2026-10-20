@@ -23,8 +23,30 @@ function createAssistant(options) {
   const log = typeof settings.log === "function" ? settings.log : () => {};
 
   let userSettings = store.loadSettings();
-  let rawPolicy = store.loadPolicy();
-  if (rawPolicy == null && settings.policyFile) {
+
+  // A desk is "managed" when IT installed a deployment file naming signed
+  // policy sources. Then only signed layers apply; an unsigned local policy
+  // file is ignored, so it cannot override what the organisation signed.
+  const deploymentRaw = settings.deployment !== undefined ? settings.deployment : store.loadDeployment();
+  const policySource = deploymentRaw ? core.policySource.createPolicySource({
+    deployment: deploymentRaw,
+    cache: { load: store.loadPolicyCache, save: store.savePolicyCache },
+    fetch: settings.fetch,
+    readFile: settings.readFile,
+    now: settings.now,
+  }) : null;
+  const managed = !!(policySource && policySource.deployment.sources.length);
+  if (policySource && !managed) warnings.push(...policySource.deployment.warnings);
+  let sourceReport = { sources: [], warnings: [] };
+
+  let rawPolicy = managed ? null : store.loadPolicy();
+  if (managed) {
+    sourceReport = policySource.loadCached();
+    rawPolicy = core.orgPolicy.merge(sourceReport.layers);
+    if (store.loadPolicy() != null || settings.policyFile) {
+      warnings.push("a local policy file is ignored because this desk receives a signed policy from its deployment settings");
+    }
+  } else if (rawPolicy == null && settings.policyFile) {
     const text = readPolicyFile(settings.policyFile);
     if (text == null) {
       warnings.push("policy file " + settings.policyFile + " could not be read; running without an organisation policy");
@@ -36,7 +58,7 @@ function createAssistant(options) {
       }
     }
   }
-  if (rawPolicy == null && settings.policy) rawPolicy = settings.policy;
+  if (!managed && rawPolicy == null && settings.policy) rawPolicy = settings.policy;
 
   function buildPolicy() {
     const policy = core.orgPolicy.parse(rawPolicy == null ? {} : rawPolicy);
@@ -48,7 +70,6 @@ function createAssistant(options) {
   }
 
   let policy = buildPolicy();
-  warnings.push(...policy.warnings);
 
   const ledger = core.metrics.createLedger({ now: settings.now, charsPerMinute: policy.typing.charsPerMinute });
   ledger.load(store.loadMetrics());
@@ -65,9 +86,67 @@ function createAssistant(options) {
     swallowsTriggerKey: settings.swallowsTriggerKey,
   });
   engine.setEnabled(userSettings.enabled);
+  recordPolicyAudit("start");
 
   let cachedCandidates = null;
   const listeners = { session: [], candidates: [] };
+
+  function audit(entry) {
+    store.appendAudit(Object.assign({ at: settings.now() }, entry));
+  }
+
+  function sourceStatusKey(source) {
+    if (source.status === "failed") return "failed: " + (source.error || "");
+    if (source.error) return "cached: " + source.error;
+    return "ok";
+  }
+
+  // Record what the organisation changed, and when a policy source starts or
+  // stops failing. Never typed text: hashes, serials, labels and statuses.
+  function recordPolicyAudit(origin) {
+    const hash = core.policySigning.sha256(JSON.stringify(rawPolicy == null ? {} : rawPolicy));
+    const state = store.loadPolicyState() || {};
+    const previous = state.sourceStatus && typeof state.sourceStatus === "object" ? state.sourceStatus : {};
+    const sourceStatus = {};
+    for (const source of sourceReport.sources) {
+      const key = sourceStatusKey(source);
+      sourceStatus[source.id] = key;
+      const before = previous[source.id] || "ok";
+      if (key !== before) {
+        audit({ event: key === "ok" ? "policy-source-recovered" : "policy-source-problem", source: source.label, location: source.location, status: source.status, error: source.error || null });
+      }
+    }
+    if (state.hash !== hash) {
+      audit({
+        event: "policy-applied",
+        origin,
+        hash,
+        previousHash: state.hash || null,
+        organization: policy.organization,
+        paused: policy.paused.active,
+        sources: sourceReport.sources.map((source) => ({ label: source.label, status: source.status, serial: source.serial || null, keyId: source.keyId || null })),
+        warnings: policy.warnings.length,
+      });
+    }
+    store.savePolicyState({ hash, appliedAt: settings.now(), sourceStatus });
+  }
+
+  function applyPolicy(origin) {
+    policy = buildPolicy();
+    engine.setPolicy(policy);
+    engine.setEnabled(userSettings.enabled);
+    cachedCandidates = null;
+    recordPolicyAudit(origin);
+  }
+
+  /** Fetch the signed policy layers again (managed desks only). */
+  async function refreshPolicy() {
+    if (!managed) return { ok: false, managed: false, sources: [], warnings: [] };
+    sourceReport = await policySource.refresh();
+    rawPolicy = core.orgPolicy.merge(sourceReport.layers);
+    applyPolicy("refresh");
+    return { ok: true, managed: true, sources: sourceReport.sources.slice(), warnings: sourceReport.warnings.slice(), paused: policy.paused.active };
+  }
 
   function emit(name, value) {
     for (const listener of listeners[name]) listener(value);
@@ -151,8 +230,12 @@ function createAssistant(options) {
 
   function saveSettings(next) {
     const merged = Object.assign({}, userSettings, next || {});
+    const before = JSON.stringify(userSettings.captureApps || []);
     store.saveSettings(merged);
     userSettings = store.loadSettings();
+    if (JSON.stringify(userSettings.captureApps || []) !== before) {
+      audit({ event: "capture-rules-changed", by: "person", rules: userSettings.captureApps.map((rule) => ({ label: rule.label || null, mode: rule.mode || null, match: rule.match || { process: rule.process, title: rule.title, bundleId: rule.bundleId } })) });
+    }
     policy = buildPolicy();
     engine.setPolicy(policy);
     engine.setEnabled(userSettings.enabled);
@@ -175,6 +258,10 @@ function createAssistant(options) {
       organizationLibrary: policy.library.slice(),
       learning: Object.assign({}, policy.learning),
       retention: Object.assign({}, policy.retention),
+      paused: Object.assign({}, policy.paused),
+      managed,
+      refreshMinutes: managed ? policySource.deployment.refreshMinutes : null,
+      sources: sourceReport.sources.map((source) => Object.assign({}, source)),
     };
   }
 
@@ -208,7 +295,11 @@ function createAssistant(options) {
     summary: (query) => ledger.summary(query),
     series: (query) => ledger.series(query),
     byApp: (query) => ledger.byApp(query),
-    warnings: () => warnings.concat(store.warnings()),
+    warnings: () => warnings.concat(sourceReport.warnings, policy.warnings, store.warnings()),
+    refreshPolicy,
+    audit: (limit) => store.loadAudit(limit),
+    get managed() { return managed; },
+    get paused() { return policy.paused.active; },
     log,
   };
 }

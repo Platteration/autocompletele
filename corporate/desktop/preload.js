@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("actle", {
   importLibrary: invoke("library:import"),
   exportLibrary: invoke("library:export"),
   getPolicyInfo: invoke("policy:info"),
+  refreshPolicy: invoke("policy:refresh"),
+  getAudit: invoke("policy:audit"),
   getSettings: invoke("settings:get"),
   saveSettings: invoke("settings:save"),
   setEnabled: invoke("settings:enabled"),

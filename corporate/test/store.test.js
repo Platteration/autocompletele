@@ -72,3 +72,26 @@ test("settings, policy and learned decisions persist", () => {
   store.saveLearned({ dismissed: ["a phrase"] });
   assert.deepEqual(store.loadLearned(), { dismissed: ["a phrase"] });
 });
+
+test("deployment, policy cache, policy state and audit log persist", () => {
+  const store = createStore(temp());
+  assert.equal(store.loadDeployment(), null);
+  fs.writeFileSync(path.join(store.root, FILES.deployment), JSON.stringify({ policySources: [] }), "utf8");
+  assert.deepEqual(store.loadDeployment(), { policySources: [] });
+  assert.equal(store.loadPolicyCache("abc123"), null);
+  store.savePolicyCache("abc123", { serial: 2, envelope: "{}" });
+  assert.deepEqual(store.loadPolicyCache("abc123"), { serial: 2, envelope: "{}" });
+  assert.ok(fs.existsSync(path.join(store.root, "policy-cache", "abc123.json")));
+  store.savePolicyCache("../../escape", { serial: 1 });
+  assert.ok(fs.existsSync(path.join(store.root, "policy-cache", "escape.json")), "ids cannot leave the cache folder");
+  assert.deepEqual(store.loadPolicyState(), {});
+  store.savePolicyState({ hash: "h1" });
+  assert.deepEqual(store.loadPolicyState(), { hash: "h1" });
+  store.appendAudit({ event: "a", at: 1 });
+  store.appendAudit({ event: "b" });
+  store.appendAudit({ event: "c" });
+  assert.deepEqual(store.loadAudit().map((e) => e.event), ["a", "b", "c"]);
+  assert.equal(store.loadAudit()[0].at, 1);
+  assert.equal(typeof store.loadAudit()[1].at, "number");
+  assert.deepEqual(store.loadAudit(2).map((e) => e.event), ["b", "c"]);
+});

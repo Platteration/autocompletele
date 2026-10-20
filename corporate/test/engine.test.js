@@ -171,3 +171,21 @@ test("setLibrary and setPolicy take effect immediately", () => {
   assert.notEqual(engine.session, null);
   assert.deepEqual(engine.type("cool/"), [], "the organisation library is gone too");
 });
+
+test("an organisation pause turns everything off until the policy lifts it", () => {
+  const engine = make();
+  engine.focusChanged({ process: "outlook.exe" });
+  assert.equal(engine.mode, "learn");
+  engine.setPolicy(orgPolicy.parse({ paused: { message: "Paused by IT" }, capture: { defaultMode: "learn" }, library: [{ trigger: "x/", expansion: "X" }] }));
+  assert.equal(engine.paused, true);
+  assert.equal(engine.mode, "off");
+  assert.equal(engine.session, null, "no learning while paused");
+  assert.deepEqual(engine.type("cool/ x/ refund "), []);
+  assert.equal(engine.focusChanged({ process: "notepad" }).reason, "paused by the organisation");
+  engine.setEnabled(true);
+  assert.equal(engine.mode, "off", "the person cannot override an organisation pause");
+  engine.setPolicy(orgPolicy.parse({ library: [{ trigger: "x/", expansion: "X" }] }));
+  assert.equal(engine.paused, false);
+  assert.equal(engine.mode, "triggers");
+  assert.equal(engine.type("x/")[0].text, "X");
+});

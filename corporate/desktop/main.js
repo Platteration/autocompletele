@@ -78,7 +78,9 @@ function setOwnWindow(focused) {
 function updateTray() {
   if (!tray) return;
   const enabled = assistant.settings().enabled;
-  tray.setToolTip("actle Corporate: " + (enabled ? (listenerStatus.available ? "on" : "listener unavailable") : "paused"));
+  const state = assistant.paused ? "paused by your organisation"
+    : enabled ? (listenerStatus.available ? "on" : "listener unavailable") : "paused";
+  tray.setToolTip("actle Corporate: " + state);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open dashboard", click: openDashboard },
     { label: "Enabled", type: "checkbox", checked: enabled, click: (item) => { assistant.setEnabled(item.checked); updateTray(); broadcast({ settings: true }); } },
@@ -183,6 +185,34 @@ async function submitPopover(payload) {
   return { ok: true };
 }
 
+// Signed policy layers are fetched at start and then every refreshMinutes.
+// A failed fetch keeps the last good copy (the assistant warns and audits it).
+let refreshTimer = null;
+async function refreshPolicy() {
+  const wasPaused = assistant.paused;
+  let result;
+  try {
+    result = await assistant.refreshPolicy();
+  } catch (error) {
+    result = { ok: false, error: String(error && error.message || error) };
+    assistant.log("policy refresh failed: " + result.error);
+  }
+  if (assistant.paused !== wasPaused) {
+    const message = assistant.policyInfo().paused.message;
+    notify(assistant.paused ? "Paused by your organisation" + (message ? ": " + message : ".") : "Your organisation resumed actle.");
+  }
+  updateTray();
+  broadcast({ settings: true, status: true, policy: true });
+  return result;
+}
+
+function schedulePolicyRefresh() {
+  if (!assistant.managed) return;
+  refreshPolicy();
+  const minutes = assistant.policyInfo().refreshMinutes || 60;
+  refreshTimer = setInterval(refreshPolicy, minutes * 60 * 1000);
+}
+
 function registerIpc() {
   const handle = (channel, fn) => ipcMain.handle(channel, (event, payload) => fn(payload));
   handle("metrics:summary", (q) => assistant.summary(q || {}));
@@ -199,6 +229,8 @@ function registerIpc() {
     return { ok: true, path: result.filePath };
   });
   handle("policy:info", () => assistant.policyInfo());
+  handle("policy:refresh", () => refreshPolicy());
+  handle("policy:audit", () => assistant.audit(100));
   handle("settings:get", () => assistant.settings());
   handle("settings:save", (next) => { const r = assistant.saveSettings(next || {}); updateTray(); broadcast({ settings: true }); return r; });
   handle("settings:enabled", (value) => { const r = assistant.setEnabled(value !== false); updateTray(); broadcast({ settings: true }); return r; });
@@ -211,6 +243,8 @@ function registerIpc() {
     warnings: assistant.warnings(),
     dataDir: assistant.store.root,
     mode: assistant.engine.mode,
+    paused: assistant.paused,
+    pausedMessage: assistant.policyInfo().paused.message,
     context: lastContext,
     version: app.getVersion(),
   }));
@@ -254,6 +288,7 @@ function start() {
   listener.start();
   if (!sender.isAvailable()) notify("Expansions cannot be typed into other applications: " + sender.unavailableReason());
   for (const warning of assistant.warnings()) notify(warning);
+  schedulePolicyRefresh();
   openDashboard();
 }
 
@@ -266,6 +301,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  if (refreshTimer) clearInterval(refreshTimer);
   if (listener) listener.stop();
   if (assistant) assistant.endSession();
 });

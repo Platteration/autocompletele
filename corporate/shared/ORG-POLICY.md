@@ -11,6 +11,8 @@ skipped with a warning shown on the dashboard, never a refusal.
 | Field | Meaning |
 | ----- | ------- |
 | `version` | `1`. A newer number is accepted with a warning; unknown fields are ignored. |
+| `serial` | Positive integer, required for a signed policy. Raise it every time the policy changes; desks refuse a signed policy whose serial is lower than the one they already accepted, or the same serial with different content. |
+| `paused` | Kill switch. `true` or `{ "message": "…" }` pauses every desk that receives the policy: nothing is expanded, offered or learned, and the person cannot resume it. Nothing is deleted. Remove it (or set `{ "active": false }`) to resume. |
 | `organization` | Name shown on the dashboard. |
 | `typing.charsPerMinute` | Typing-speed assumption behind "time saved" (default 200, which is 40 words per minute). Changing it re-estimates history. |
 | `typing.secondsPerAttachment` | Time credited for each document attached through a shortcut (default 20). |
@@ -23,6 +25,50 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `learning.minLength`, `learning.minWords` | Smallest text worth proposing (defaults 20 characters, 4 words). |
 | `retention.metricsDays` | Days of statistics kept on disk (default 365). |
 | `retention.corpusDays` | Days of learning text kept on disk (default 90). |
+
+## Central distribution (signed policies)
+
+On a managed desk, IT installs `deployment.json` in the app's data folder:
+
+```json
+{
+  "policySources": [
+    { "label": "Organisation", "url": "https://intranet.example/actle/org.signed.json" },
+    { "label": "Shipping team", "path": "S:/IT/actle/shipping.signed.json" }
+  ],
+  "publicKeys": ["-----BEGIN PUBLIC KEY-----\n…\n-----END PUBLIC KEY-----\n"],
+  "refreshMinutes": 60
+}
+```
+
+* Sources are layers, most general first. Later layers win field by field;
+  shortcuts merge by trigger, keyword rules by `id`, document sets by
+  trigger, and a later layer's capture rules are tried before an earlier
+  one's. A pause in any layer pauses the desk.
+* Every source must be signed with a key listed in `publicKeys`. Only
+  `https://` URLs and file paths are accepted; plain `http://` is refused.
+* The desk fetches at start and every `refreshMinutes` (minimum 5, default
+  60). A source that cannot be fetched, fails its signature or carries an
+  older serial keeps its last good copy, with a warning on the dashboard. A
+  source with no good copy yet is left out; the other layers still apply.
+* On a managed desk, a local unsigned `policy.json` is ignored.
+* Policy changes, failing or recovering sources, and changes to the person's
+  own capture rules are written to `audit.jsonl` in the data folder and shown
+  on the dashboard's Policy tab. Typed text is never written there.
+
+Sign with the admin tool (no dependencies):
+
+```
+cd corporate
+node admin/actle-admin.js keygen ./keys          # once; keep policy-signing.key private
+node admin/actle-admin.js validate org.json
+node admin/actle-admin.js layers org.json shipping.json
+node admin/actle-admin.js sign org.json --key keys/policy-signing.key --serial 2 --out org.signed.json
+node admin/actle-admin.js verify org.signed.json --pub keys/policy-signing.pub
+```
+
+`sign` refuses a policy that has warnings unless `--allow-warnings` is
+given, and `keygen` refuses to overwrite an existing key.
 
 ## Capture modes
 

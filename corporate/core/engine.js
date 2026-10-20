@@ -56,6 +56,12 @@ function createEngine(options) {
   let pendingRecord = null;
   let enabled = true;
 
+  function decideMode() {
+    if (policy.paused && policy.paused.active) return { mode: "off", reason: "paused by the organisation", rule: null };
+    if (!enabled) return { mode: "off", reason: "paused", rule: null };
+    return capture.decide(context, policy.capture);
+  }
+
   function appName() {
     return capture.baseName(context.process) || String(context.app || "").trim() || "";
   }
@@ -102,7 +108,7 @@ function createEngine(options) {
     keywordState.reset();
     const ended = flushSession();
     context = nextContext && typeof nextContext === "object" ? Object.assign({}, nextContext) : {};
-    decision = enabled ? capture.decide(context, policy.capture) : { mode: "off", reason: "paused", rule: null };
+    decision = decideMode();
     if (decision.mode === "learn") startSession();
     return { mode: decision.mode, reason: decision.reason, session: ended };
   }
@@ -247,7 +253,7 @@ function createEngine(options) {
     policy = next && Array.isArray(next.keywordRules) ? next : orgPolicy.parse(next);
     library = mergeLibraries(personal, policy.library);
     ledger.setCharsPerMinute(policy.typing.charsPerMinute);
-    decision = enabled ? capture.decide(context, policy.capture) : decision;
+    decision = decideMode();
     if (decision.mode !== "learn") session = null;
     else if (!session) startSession();
   }
@@ -267,6 +273,7 @@ function createEngine(options) {
     setEnabled,
     ledger,
     get enabled() { return enabled; },
+    get paused() { return !!(policy.paused && policy.paused.active); },
     get mode() { return decision.mode; },
     get decision() { return decision; },
     get context() { return Object.assign({}, context); },

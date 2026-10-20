@@ -21,6 +21,7 @@
     <button role="tab" data-tab="apps" aria-selected="false">Applications</button>
     <button role="tab" data-tab="keywords" aria-selected="false">Keywords</button>
     <button role="tab" data-tab="documents" aria-selected="false">Documents</button>
+    <button role="tab" data-tab="policy" aria-selected="false">Policy</button>
   </nav>
   <main>
     <div class="banner" id="banner" hidden role="alert"></div>
@@ -97,6 +98,19 @@
     <section id="tab-documents" role="tabpanel" hidden>
       <p class="hint">Type a document shortcut in any application to list its files; the paths are copied so they can be pasted into an attachment area.</p>
       <div id="documents"></div>
+    </section>
+
+    <section id="tab-policy" role="tabpanel" hidden>
+      <p class="hint" id="policy-mode"></p>
+      <div class="toolbar">
+        <button class="plain" id="policy-refresh">Check for policy updates</button>
+        <span class="hint" id="policy-refresh-result"></span>
+      </div>
+      <h2>Policy sources</h2>
+      <table><thead><tr><th>Source</th><th>Status</th><th class="num">Serial</th><th>Key</th><th>Note</th></tr></thead><tbody id="policy-sources"></tbody></table>
+      <h2 class="mt">Change log</h2>
+      <p class="hint">Policy changes, policy sources that failed or recovered, and changes to your own capture rules. Typed text is never recorded here.</p>
+      <table><thead><tr><th>When</th><th>Event</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table>
     </section>
   </main>
 

@@ -286,9 +286,66 @@
     if (!policy.documents.length) docs.append(el("p", { class: "hint", text: "No document shortcuts in the policy." }));
   }
 
+  // Policy sources and the change log
+  function auditDetail(entry) {
+    switch (entry.event) {
+      case "policy-applied":
+        return (entry.organization || "policy") + (entry.paused ? ", PAUSED" : "") + "; sources: "
+          + (entry.sources || []).map((s) => s.label + " #" + (s.serial == null ? "-" : s.serial)).join(", ")
+          + (entry.warnings ? "; " + entry.warnings + " warning(s)" : "");
+      case "policy-source-problem":
+        return entry.source + ": " + (entry.error || entry.status);
+      case "policy-source-recovered":
+        return entry.source + " is reachable again";
+      case "capture-rules-changed":
+        return (entry.rules || []).map((r) => (r.label || JSON.stringify(r.match)) + " = " + r.mode).join(", ") || "all own rules removed";
+      default:
+        return "";
+    }
+  }
+
+  async function renderPolicy() {
+    const info = await api.getPolicyInfo();
+    text($("policy-mode"), info.managed
+      ? "This desk receives a signed policy from your organisation and checks for updates every " + info.refreshMinutes + " minutes."
+      : "This desk is not centrally managed; it uses a local policy file if one is installed.");
+    $("policy-refresh").hidden = !info.managed;
+    const sources = $("policy-sources");
+    sources.textContent = "";
+    for (const source of info.sources || []) {
+      sources.append(el("tr", {}, [
+        el("td", { text: source.label }),
+        el("td", { text: source.status }),
+        el("td", { class: "num", text: source.serial == null ? "" : source.serial }),
+        el("td", { class: "mono", text: source.keyId || "" }),
+        el("td", { text: source.error || "" }),
+      ]));
+    }
+    if (!(info.sources || []).length) sources.append(el("tr", {}, [el("td", { colspan: "5", text: "No signed policy sources." })]));
+    const audit = $("audit");
+    audit.textContent = "";
+    const entries = (await api.getAudit()).slice().reverse();
+    for (const entry of entries) {
+      audit.append(el("tr", {}, [
+        el("td", { text: new Date(entry.at).toLocaleString() }),
+        el("td", { text: entry.event }),
+        el("td", { text: auditDetail(entry) }),
+      ]));
+    }
+    if (!entries.length) audit.append(el("tr", {}, [el("td", { colspan: "3", text: "No changes recorded yet." })]));
+  }
+
+  $("policy-refresh").addEventListener("click", async () => {
+    text($("policy-refresh-result"), "Checking…");
+    const result = await api.refreshPolicy();
+    text($("policy-refresh-result"), result && result.ok ? "Checked." : "Could not check: " + ((result && result.error) || "not managed"));
+    announce($("policy-refresh-result").textContent);
+  });
+
   async function renderStatus() {
     const status = await api.getStatus();
     const problems = [];
+    if (status.paused) problems.push("Paused by your organisation" + (status.pausedMessage ? ": " + status.pausedMessage : ".") + " Nothing is expanded, offered or learned until it is resumed.");
     if (!status.listener.available) problems.push("Keyboard listener unavailable: " + (status.listener.error || "unknown reason") + ". Shortcuts are not expanded until this is fixed.");
     if (!status.sender.available) problems.push("Cannot type into other applications: " + status.sender.reason + ".");
     for (const warning of status.warnings) problems.push(warning);
@@ -299,13 +356,14 @@
   }
 
   async function renderAll(change) {
-    const what = change || { metrics: true, library: true, learning: true, settings: true, status: true, context: true };
+    const what = change || { metrics: true, library: true, learning: true, settings: true, status: true, context: true, policy: true };
     if (what.status || what.context) await renderStatus();
     if (what.settings || what.library || what.learning) await renderPolicyTabs();
     if (what.metrics || what.settings) await renderOverview();
     if (what.library) await renderLibrary();
     if (what.learning || what.library) await renderLearning();
     if (what.settings) await renderApps();
+    if (what.settings || what.policy) await renderPolicy();
   }
 
   api.onChange((change) => { renderAll(change).catch(console.error); });

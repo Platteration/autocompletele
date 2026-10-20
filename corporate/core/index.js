@@ -13,6 +13,8 @@ module.exports = {
   keywordRules: require("./keyword-rules.js"),
   documents: require("./documents.js"),
   orgPolicy: require("./org-policy.js"),
+  policySigning: require("./policy-signing.js"),
+  policySource: require("./policy-source.js"),
   engine: require("./engine.js"),
   store: require("./store.js"),
 };

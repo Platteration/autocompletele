@@ -129,6 +129,48 @@ const sessions = assistant.store.loadSessions();
 print(`\nCorpus on disk: ${sessions.length} session(s); secrets scrubbed: ${sessions.some((s) => s.text.includes("[card]") && s.text.includes("[redacted]")) ? "yes" : "NO"}`);
 print("Store warnings: " + (assistant.store.warnings().join("; ") || "none"));
 
-console.log(out.join("\n"));
-fs.rmSync(dataDir, { recursive: true, force: true });
-process.exit(0);
+// Central distribution: IT signs the example policy plus a team overlay,
+// a managed desk fetches both from a file share, then IT pauses every desk.
+async function managedDesk() {
+  const signing = require("../core/policy-signing.js");
+  const keys = signing.generateKeyPair();
+  const share = new Map();
+  const base = fs.existsSync(POLICY_FILE) ? JSON.parse(fs.readFileSync(POLICY_FILE, "utf8")) : FALLBACK_POLICY;
+  const publish = (where, policy) => share.set(where, JSON.stringify(signing.signPolicy(policy, keys.privateKey)));
+  publish("S:/IT/actle/org.signed.json", Object.assign({}, base, { serial: 1 }));
+  publish("S:/IT/actle/shipping.signed.json", { serial: 1, library: [{ trigger: "eta/", expansion: "Estimated arrival is [[date]]." }] });
+  const deskDir = fs.mkdtempSync(path.join(os.tmpdir(), "actle-corporate-desk-"));
+  const desk = createAssistant({
+    dataDir: deskDir,
+    now,
+    deployment: {
+      policySources: [{ label: "Organisation", path: "S:/IT/actle/org.signed.json" }, { label: "Shipping team", path: "S:/IT/actle/shipping.signed.json" }],
+      publicKeys: [keys.publicKey],
+    },
+    readFile: async (where) => {
+      if (!share.has(where)) throw new Error("not found");
+      return share.get(where);
+    },
+  });
+  const report = (label, result) => print(`  ${label}: ${result.sources.map((s) => s.label + " " + s.status + (s.serial ? " #" + s.serial : "")).join(", ")}; paused: ${desk.paused ? "yes" : "no"}; shared shortcuts: ${desk.policyInfo().organizationLibrary.length}`);
+  print("\nSigned policy distribution");
+  report("first fetch", await desk.refreshPolicy());
+  publish("S:/IT/actle/org.signed.json", Object.assign({}, base, { serial: 2, paused: { message: "Paused for review" } }));
+  report("after IT pauses", await desk.refreshPolicy());
+  const tampered = JSON.parse(share.get("S:/IT/actle/org.signed.json"));
+  tampered.payload = tampered.payload.replace('"Paused for review"', '"Resumed"').replace('"serial": 2', '"serial": 3');
+  share.set("S:/IT/actle/org.signed.json", JSON.stringify(tampered));
+  report("after tampering", await desk.refreshPolicy());
+  print("  audit: " + desk.audit().map((e) => e.event).join(", "));
+  fs.rmSync(deskDir, { recursive: true, force: true });
+}
+
+managedDesk().then(() => {
+  console.log(out.join("\n"));
+  fs.rmSync(dataDir, { recursive: true, force: true });
+  process.exit(0);
+}, (error) => {
+  console.log(out.join("\n"));
+  console.error(error);
+  process.exit(1);
+});

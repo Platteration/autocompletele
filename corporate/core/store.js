@@ -16,6 +16,10 @@ const FILES = Object.freeze({
   metrics: "metrics.jsonl",
   corpus: "corpus.jsonl",
   learned: "learned.json",
+  deployment: "deployment.json",
+  policyState: "policy-state.json",
+  audit: "audit.jsonl",
+  policyCacheDir: "policy-cache",
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -71,6 +75,7 @@ function createStore(dir) {
   function writeJson(name, value) {
     ensureDir();
     const target = file(name);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
     const temp = target + ".tmp-" + process.pid;
     fs.writeFileSync(temp, JSON.stringify(value, null, 2) + "\n", "utf8");
     fs.renameSync(temp, target);
@@ -198,6 +203,43 @@ function createStore(dir) {
     writeJson(FILES.learned, { dismissed: Array.isArray(learned && learned.dismissed) ? learned.dismissed : [] });
   }
 
+  // Deployment settings written by IT (policy sources and pinned keys).
+  function loadDeployment() {
+    return readJson(FILES.deployment, null);
+  }
+
+  function cacheName(id) {
+    const safe = String(id).replace(/[^a-z0-9]/gi, "");
+    return path.join(FILES.policyCacheDir, (safe || "source") + ".json");
+  }
+
+  function loadPolicyCache(id) {
+    return readJson(cacheName(id), null);
+  }
+
+  function savePolicyCache(id, value) {
+    writeJson(cacheName(id), value);
+  }
+
+  function loadPolicyState() {
+    return readJson(FILES.policyState, {});
+  }
+
+  function savePolicyState(state) {
+    writeJson(FILES.policyState, state);
+  }
+
+  /** Audit trail of policy and capture-rule changes: what changed and when, never typed text. */
+  function appendAudit(entry) {
+    appendLine(FILES.audit, Object.assign({ at: Date.now() }, entry));
+  }
+
+  function loadAudit(limit) {
+    const all = readLines(FILES.audit);
+    const count = Math.floor(Number(limit));
+    return Number.isFinite(count) && count > 0 ? all.slice(-count) : all;
+  }
+
   function exportLibraryJson() {
     return JSON.stringify({ version: 1, shorthands: loadLibrary() }, null, 2) + "\n";
   }
@@ -249,6 +291,13 @@ function createStore(dir) {
     saveLearned,
     exportLibraryJson,
     importLibraryJson,
+    loadDeployment,
+    loadPolicyCache,
+    savePolicyCache,
+    loadPolicyState,
+    savePolicyState,
+    appendAudit,
+    loadAudit,
   };
 }
 
