@@ -90,6 +90,41 @@ function nameSlot(values, before, index, used) {
   return candidate;
 }
 
+// Text the person typed must stay literal in the saved template: a typed
+// "[[x]]" would otherwise become a blank and a typed "{date}" today's date.
+function escapeLiteral(text) {
+  return String(text)
+    .replace(/\{([a-z]+)\}/gi, "{{$1}}")
+    .replace(/\[\[(?=[^\[\]\r\n]*\]\])/g, "\\[[");
+}
+
+function validName(name) {
+  return typeof name === "string" && name.trim() !== "" && !/[\[\]\r\n]/.test(name);
+}
+
+/**
+ * Build the template text from overlay segments, optionally renaming blanks.
+ * Two blanks given the same name share one answer, as in any template.
+ * @param {Array} segments from detect()
+ * @param {object} [names] { originalName: newName }
+ * @returns {{ok:true, template:string}|{ok:false, error:string}}
+ */
+function templateFrom(segments, names) {
+  const renames = names && typeof names === "object" ? names : {};
+  let out = "";
+  for (const segment of Array.isArray(segments) ? segments : []) {
+    if (segment.type === "same") {
+      out += escapeLiteral(segment.text);
+      continue;
+    }
+    const wanted = Object.hasOwn(renames, segment.name) && String(renames[segment.name]).trim() !== ""
+      ? String(renames[segment.name]).trim() : segment.name;
+    if (!validName(wanted)) return { ok: false, error: "A blank's name cannot contain brackets or line breaks: " + JSON.stringify(wanted) };
+    out += "[[" + wanted + "]]";
+  }
+  return { ok: true, template: out };
+}
+
 /**
  * Detect variable slots across similar texts.
  * @returns {{template:string, slots:Array<{name:string,values:string[]}>, segments:Array, similarity:number}|null}
@@ -143,8 +178,8 @@ function detect(texts, options) {
     cursor = end;
   }
   if (cursor < anchor.length) segments.push({ type: "same", text: anchor.slice(cursor).join("") });
-  const template = segments.map((s) => s.type === "same" ? s.text : "[[" + s.name + "]]").join("");
+  const template = templateFrom(segments).template;
   return { template, slots: slotInfo, segments, similarity: minSimilarity, count: inputs.length };
 }
 
-module.exports = { DEFAULTS, cluster, detect };
+module.exports = { DEFAULTS, cluster, detect, templateFrom, escapeLiteral };

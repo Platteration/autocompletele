@@ -64,6 +64,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .overlay .slot { background: var(--slot); color: var(--slot-text); border-radius: 4px; padding: 0 4px; font-weight: 600; }
 .overlay .slot abbr { text-decoration: none; }
 .slots { margin: 0 0 8px; padding-left: 18px; color: var(--muted); }
+.slots li + li { margin-top: 4px; }
+.slots .slot-name { width: 12em; font-family: ui-monospace, monospace; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row input[type="text"] { flex: 1; min-width: 140px; }
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 20px; width: min(560px, 90vw); }

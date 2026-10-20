@@ -156,13 +156,14 @@
   });
 
   // Learning
-  function overlay(candidate) {
+  function overlay(candidate, names) {
     const box = el("div", { class: "overlay" });
     for (const segment of candidate.segments) {
       if (segment.type === "same") box.append(document.createTextNode(segment.text));
       else {
+        const name = (names && names[segment.name] && names[segment.name].trim()) || segment.name;
         const slot = el("span", { class: "slot", title: "Seen as: " + segment.values.join(", ") }, [
-          el("abbr", { title: "Seen as: " + segment.values.join(", "), text: "[[" + segment.name + "]]" }),
+          el("abbr", { title: "Seen as: " + segment.values.join(", "), text: "[[" + name + "]]" }),
         ]);
         box.append(slot);
       }
@@ -201,10 +202,22 @@
       const card = el("div", { class: "candidate" });
       const kind = candidate.kind === "template" ? "Template" : candidate.kind === "paragraph" ? "Paragraph" : candidate.kind === "sentence" ? "Sentence" : "Phrase";
       card.append(el("div", { class: "meta", text: kind + " seen in " + candidate.sessions + " messages" }));
+      const names = {};
       if (candidate.kind === "template") {
-        card.append(overlay(candidate));
+        let preview = overlay(candidate, names);
+        card.append(preview);
+        // Each blank can be renamed before saving; the overlay follows.
         const slots = el("ul", { class: "slots" });
-        for (const slot of candidate.slots) slots.append(el("li", { text: "[[" + slot.name + "]] seen as: " + slot.values.join(" | ") }));
+        for (const slot of candidate.slots) {
+          const input = el("input", { type: "text", value: slot.name, class: "slot-name", "aria-label": "Name for the blank seen as " + slot.values.join(", ") });
+          input.addEventListener("input", () => {
+            names[slot.name] = input.value;
+            const next = overlay(candidate, names);
+            preview.replaceWith(next);
+            preview = next;
+          });
+          slots.append(el("li", {}, [input, el("span", { text: " seen as: " + slot.values.join(" | ") })]));
+        }
         card.append(slots);
       } else {
         card.append(el("div", { class: "overlay", text: candidate.text }));
@@ -212,7 +225,9 @@
       const trigger = el("input", { type: "text", value: candidate.suggestedTrigger, "aria-label": "Trigger" });
       const accept = el("button", { class: "primary", text: "Save as shortcut" });
       accept.addEventListener("click", async () => {
-        const result = await api.acceptCandidate({ trigger: trigger.value, expansion: candidate.text });
+        const result = await api.acceptCandidate(candidate.kind === "template"
+          ? { trigger: trigger.value, template: candidate.template, names }
+          : { trigger: trigger.value, expansion: candidate.text });
         if (!result.ok) alert(result.error);
         else announce("Saved " + trigger.value);
       });

@@ -82,3 +82,23 @@ test("an insert that typed nothing in the field removes nothing from the learned
   const last = assistant.ledger.entries().pop();
   assert.equal(last.keystrokesSaved, 15 - 4);
 });
+
+test("a template proposal is saved from its segments with the person's names", () => {
+  const dataDir = fs.mkdtempSync(path.join(process.env.ACTLE_TEST_TMP || os.tmpdir(), "actle-accept-"));
+  fs.writeFileSync(path.join(dataDir, "policy.json"), JSON.stringify({ capture: { defaultMode: "learn" } }));
+  const keychain = { isEncryptionAvailable: () => true, encryptString: (t) => Buffer.from("K" + t), decryptString: (b) => Buffer.from(b).toString().slice(1) };
+  const assistant = createAssistant({ dataDir, keychain });
+  for (const [name, ref, day] of [["John", "A-1001", "Monday"], ["Mary", "A-1002", "Tuesday"], ["Priya", "A-1003", "Friday"]]) {
+    assistant.focusChanged({ process: "outlook" });
+    for (const ch of `Thanks ${name}, your order ${ref} ships on ${day} as agreed.`) assistant.keyTyped({ text: ch });
+  }
+  assistant.focusChanged({ process: "other" });
+  const proposal = assistant.candidates().find((c) => c.kind === "template");
+  assert.ok(proposal, "a template is proposed");
+  assert.equal(proposal.template, "Thanks [[name]], your order [[reference]] ships on [[date]] as agreed.");
+  const saved = assistant.acceptCandidate({ trigger: "conf/", template: proposal.template, names: { name: "customer" }, expansion: "ignored" });
+  assert.equal(saved.ok, true);
+  assert.equal(assistant.library().find((s) => s.trigger === "conf/").expansion, "Thanks [[customer]], your order [[reference]] ships on [[date]] as agreed.");
+  assert.match(assistant.acceptCandidate({ trigger: "x/", template: "no such proposal" }).error, /has changed/);
+  assert.match(assistant.acceptCandidate({ trigger: "y/", template: proposal.template, names: { name: "[bad]" } }).error, /brackets/);
+});

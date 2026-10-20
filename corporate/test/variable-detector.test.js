@@ -50,3 +50,25 @@ test("cluster groups similar texts and keeps unrelated ones apart", () => {
   assert.deepEqual(groups, [[0, 2], [1, 3]]);
   assert.deepEqual(detector.cluster([]), []);
 });
+
+test("blanks can be renamed before saving; invalid names are refused", () => {
+  const result = detector.detect(["Hi John, your order 12345 ships Monday.", "Hi Mary, your order 99881 ships Friday."]);
+  assert.equal(result.template, "Hi [[name]], your order [[reference]] ships [[date]].");
+  assert.deepEqual(detector.templateFrom(result.segments, { name: " customer ", date: "" }),
+    { ok: true, template: "Hi [[customer]], your order [[reference]] ships [[date]]." });
+  assert.deepEqual(detector.templateFrom(result.segments, { name: "who", reference: "who" }),
+    { ok: true, template: "Hi [[who]], your order [[who]] ships [[date]]." }, "the same name shares one answer");
+  assert.match(detector.templateFrom(result.segments, { name: "a]b" }).error, /cannot contain brackets/);
+  assert.match(detector.templateFrom(result.segments, { name: "a\nb" }).error, /line breaks/);
+  assert.equal(detector.templateFrom(result.segments, { unrelated: "x" }).template, result.template);
+});
+
+test("typed text that looks like a blank or a placeholder stays literal in the template", () => {
+  const { template } = require("../core/personal.js");
+  const texts = ["Dear Ann, use [[code]] and {date} literally.", "Dear Bob, use [[code]] and {date} literally."];
+  const result = detector.detect(texts);
+  assert.equal(result.template, "Dear [[name]], use \\[[code]] and {{date}} literally.");
+  assert.deepEqual(template.fields(result.template), [{ name: "name", label: "name" }], "only the detected blank asks for input");
+  const rendered = template.render(result.template, { name: "Ann" }, new Date(2026, 9, 20));
+  assert.equal(rendered.text, texts[0], "saving and expanding reproduces what was typed");
+});

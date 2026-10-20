@@ -244,7 +244,17 @@ function createAssistant(options) {
   }
 
   function acceptCandidate(candidate) {
-    const result = saveShorthand({ trigger: candidate && candidate.trigger, expansion: candidate && candidate.expansion });
+    let expansion = candidate && candidate.expansion;
+    // A template proposal is rebuilt here from its segments, with the
+    // person's names for its blanks, rather than trusting text from the page.
+    if (candidate && candidate.template != null) {
+      const found = candidates().find((c) => c.kind === "template" && c.template === candidate.template);
+      if (!found) return { ok: false, error: "This proposal has changed. Look at the Learning tab again." };
+      const built = core.variableDetector.templateFrom(found.segments, candidate.names);
+      if (!built.ok) return { ok: false, error: built.error };
+      expansion = built.template;
+    }
+    const result = saveShorthand({ trigger: candidate && candidate.trigger, expansion });
     if (result.ok) {
       ledger.record({ kind: "learned", trigger: candidate.trigger, keystrokesSaved: 0, app: "" });
     }
