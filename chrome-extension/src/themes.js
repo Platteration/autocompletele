@@ -195,6 +195,18 @@
         sidebarActiveText: "#0a0a0a", sidebarLine: "#f5f5f5", sidebarFocus: "#ff4d57", completion: "#ff4d57" },
     },
   ];
+  // The full flavors follow the browser's light or dark appearance; each also
+  // has an always-light version for a browser set to dark. It shares the
+  // flavor's layout (data-actle-flavor) and uses its light palette everywhere.
+  for (const [id, name] of [["paper", "Warm Paper · Light"], ["swiss", "Swiss Grid · Light"]]) {
+    const index = THEMES.findIndex((theme) => theme.id === id);
+    const base = THEMES[index];
+    base.flavor = id;
+    THEMES.splice(index + 1, 0, Object.assign({}, base, {
+      id: `${id}-light`, name, note: `${base.note} Always light, even when the browser is dark.`,
+      dark: undefined, shape: Object.assign({}, base.shape, { scheme: "light" }),
+    }));
+  }
   const DEFAULT = "classic";
   const byId = new Map(THEMES.map((theme) => [theme.id, theme]));
 
@@ -290,6 +302,9 @@
     }
     pageSheet.replaceSync(pageCss(themeId));
     doc.documentElement.dataset.actleTheme = themeId;
+    const flavor = byId.get(themeId).flavor;
+    if (flavor) doc.documentElement.dataset.actleFlavor = flavor;
+    else delete doc.documentElement.dataset.actleFlavor;
     if (remember) {
       try { doc.defaultView.localStorage.setItem(CACHE_KEY, themeId); } catch (_) {}
     }

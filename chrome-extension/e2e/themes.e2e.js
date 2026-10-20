@@ -234,3 +234,41 @@ test("Swiss Grid and Warm Paper restyle the library, overlays and focus as full 
     });
   }
 });
+
+test("the always-light flavors stay light in a dark browser, pages and overlays alike", async (t) => {
+  const app = await launch({ shorthands: ENTRIES });
+  t.after(() => app.close());
+  const expected = {
+    "swiss-light": { flavor: "swiss", page: "rgb(255, 255, 255)", panel: "rgb(255, 255, 255)" },
+    "paper-light": { flavor: "paper", page: "rgb(246, 241, 231)", panel: "rgb(255, 252, 246)" },
+  };
+  for (const [theme, want] of Object.entries(expected)) {
+    await t.test(theme, async () => {
+      await app.worker.evaluate((id) => self.ShorthandStorage.saveSettings({ theme: id }), theme);
+      const { page, errors } = await openPage(app, "options", "dark", 1280);
+      await page.setViewportSize({ width: 1280, height: 3000 });
+      const shell = await page.evaluate(() => ({
+        flavor: document.documentElement.dataset.actleFlavor,
+        page: getComputedStyle(document.body).backgroundColor,
+        scheme: getComputedStyle(document.documentElement).colorScheme,
+      }));
+      assert.deepEqual(shell, { flavor: want.flavor, page: want.page, scheme: "light" });
+      await assertReadable(page, ".hint, small, .eyebrow, .sidebar-nav a, td.trigger, td.expansion, #themeHint");
+
+      await page.evaluate(observeSuggestions);
+      await page.locator("#tryit").click();
+      await page.keyboard.type("th");
+      await page.waitForFunction(() => window.suggestionRoot && window.suggestionRoot.querySelector(".item")
+        && window.suggestionRoot.querySelector(".panel").isConnected);
+      assert.equal((await panelStyle(page)).background, want.panel);
+      await page.keyboard.press("Escape");
+
+      const popup = await openPage(app, "popup", "dark", 360);
+      assert.equal(await popup.page.inputValue("#theme"), theme);
+      assert.equal(await popup.page.evaluate(() => getComputedStyle(document.body).backgroundColor), want.page);
+      assert.deepEqual([...errors, ...popup.errors], []);
+      await popup.page.close();
+      await page.close();
+    });
+  }
+});

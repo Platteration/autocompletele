@@ -88,8 +88,12 @@ expansion outline, including ones already open on other pages:
   being edited, the selected suggestion (a solid red row) and the wordmark's
   block.
 
-Every style has light and dark colors (Dark Pro is always dark) that meet WCAG AA
-contrast. The style is saved with your other settings. Fonts come from your
+**Warm Paper · Light** and **Swiss Grid · Light** are the same two flavors kept
+light even when the browser is set to dark, on extension pages and webpages
+alike.
+
+Every style has light and dark colors (Dark Pro is always dark; the two · Light
+styles are always light) that meet WCAG AA contrast. The style is saved with your other settings. Fonts come from your
 computer: actle never downloads one, so a style's named typeface (IBM Plex,
 Fraunces, Nunito, Space Grotesk, Archivo) appears only if it is installed, and a
 similar system font is used otherwise. The toolbar icon keeps its blue tile in

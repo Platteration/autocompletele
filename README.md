@@ -11,8 +11,9 @@ or toolbar popup. Select the logo to replay it; reduced-motion preferences are
 respected. The companion Windows and Android apps retain their existing names.
 
 In Chrome and Firefox, **Settings → Style** (or the toolbar popup) switches the
-extension between seven looks: Classic, Quiet Grid, Quiet Utility, Warm Paper,
-Bright Playful, Dark Pro and Swiss Grid. See
+extension between Classic, Quiet Grid, Quiet Utility, Warm Paper, Bright
+Playful, Dark Pro and Swiss Grid, plus always-light versions of Warm Paper and
+Swiss Grid. See
 [styles](chrome-extension/README.md#your-shortcut-library).
 
 For shortcut text, choose Expand to fill letters around the shorthand, Casino

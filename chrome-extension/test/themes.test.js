@@ -37,9 +37,9 @@ test("unknown or missing styles fall back to Classic", () => {
   assert.equal(themes.DEFAULT, "classic");
 });
 
-test("the list offers Classic, Quiet Grid and the five mockup directions, once each", () => {
+test("the list offers Classic, Quiet Grid, the five mockup directions and two always-light flavors, once each", () => {
   assert.deepEqual(themes.THEMES.map((theme) => theme.id),
-    ["classic", "quiet-grid", "quiet", "paper", "playful", "pro", "swiss"]);
+    ["classic", "quiet-grid", "quiet", "paper", "paper-light", "playful", "pro", "swiss", "swiss-light"]);
   for (const theme of themes.THEMES) {
     assert.ok(theme.name && theme.note, `${theme.id} needs a name and a note`);
   }
@@ -195,7 +195,7 @@ test("Swiss Grid and Warm Paper restyle overlay structure; other styles only rec
   }
   assert.match(themes.overlayCss("swiss"), /\.item\[data-selected="true"\], \.item\[data-selected="true"\]:hover \{ background: #d7000f; \}/);
   assert.match(themes.overlayCss("paper"), /\.item\[data-selected="true"\]::after \{ content: "↵";/);
-  for (const theme of others.filter((entry) => !["swiss", "paper"].includes(entry.id))) {
+  for (const theme of others.filter((entry) => !entry.flavor)) {
     assert.doesNotMatch(themes.overlayCss(theme.id), /\.item|\.brand|\.heading/, `${theme.id} sets tokens only`);
   }
   // White on the selected Swiss row, in both appearances.
@@ -203,6 +203,8 @@ test("Swiss Grid and Warm Paper restyle overlay structure; other styles only rec
 });
 
 test("the page flavor sheet only styles Swiss Grid and Warm Paper", () => {
+  assert.deepEqual(themes.THEMES.filter((theme) => theme.flavor).map((theme) => [theme.id, theme.flavor]),
+    [["paper", "paper"], ["paper-light", "paper"], ["swiss", "swiss"], ["swiss-light", "swiss"]]);
   const css = fs.readFileSync(path.join(SRC, "themes.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const rules = [...css.matchAll(/([^{}]+)\{[^{}]*\}/g)].map((match) => match[1].trim());
   assert.ok(rules.length > 50);
@@ -217,8 +219,28 @@ test("the page flavor sheet only styles Swiss Grid and Warm Paper", () => {
     }
     parts.push(selector.slice(start));
     for (const part of parts) {
-      assert.match(part.trim(), /^(:root)?(\[data-actle-theme="(swiss|paper)"\]|:is\(\[data-actle-theme="swiss"\], \[data-actle-theme="paper"\]\))/,
+      assert.match(part.trim(), /^(:root)?(\[data-actle-(flavor|theme)="(swiss|paper)"\]|:is\(\[data-actle-flavor="swiss"\], \[data-actle-flavor="paper"\]\))/,
         `unscoped rule: ${part.trim()}`);
     }
   }
+});
+
+test("the always-light flavors keep their layout and never switch to dark", () => {
+  for (const id of ["swiss", "paper"]) {
+    const light = themes.THEMES.find((theme) => theme.id === `${id}-light`);
+    const base = themes.THEMES.find((theme) => theme.id === id);
+    assert.equal(light.flavor, id);
+    assert.equal(light.overlayRules, base.overlayRules);
+    for (const css of [themes.pageCss(light.id), themes.overlayCss(light.id)]) {
+      assert.doesNotMatch(css, /prefers-color-scheme/);
+      assert.match(css, /color-scheme: light !important/);
+    }
+    const body = (css) => css.slice(css.indexOf("{") + 1, css.indexOf("}")).replace("color-scheme: light !important; ", "");
+    assert.equal(body(themes.pageCss(light.id)), body(themes.pageCss(id)), "light tokens match the flavor's own light palette");
+  }
+  const { api, doc } = sandboxed();
+  api.applyPage(doc, "swiss-light");
+  assert.deepEqual({ ...doc.documentElement.dataset }, { actleTheme: "swiss-light", actleFlavor: "swiss" });
+  api.applyPage(doc, "quiet");
+  assert.deepEqual({ ...doc.documentElement.dataset }, { actleTheme: "quiet" });
 });
