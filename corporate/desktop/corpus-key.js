@@ -30,14 +30,17 @@ function loadCorpusKey(options) {
       key = null;
     }
     if (key && key.length === 32) return { key, status: "ok" };
-    // Without a box every sealed record reads as locked.
+    // Without a box every sealed record reads as locked. Remembered template
+    // answers count too: the key is never replaced while anything it protects exists.
     const sealed = store.corpusInfo().locked;
-    if (sealed > 0) {
+    const sealedThreads = typeof store.threadsInfo === "function" ? store.threadsInfo().locked : 0;
+    if (sealed > 0 || sealedThreads > 0) {
       return {
         key: null,
         status: "unreadable",
         message: "Learning is paused: the keychain could not unlock the key that protects learned text. The " + sealed
-          + " encrypted session(s) are kept untouched; they become usable again if the keychain is restored. Delete learned text on the Learning tab to start afresh.",
+          + " encrypted session(s)" + (sealedThreads ? " and " + sealedThreads + " remembered conversation(s)" : "")
+          + " are kept untouched; they become usable again if the keychain is restored. Delete learned text on the Learning tab to start afresh.",
       };
     }
     aside = store.moveCorpusKeyAside();

@@ -187,6 +187,7 @@ module.exports = {
   createPolicy,
   decide,
   isSensitiveContext,
+  ruleMatches,
   containsCardNumber,
   luhn,
   scrub,

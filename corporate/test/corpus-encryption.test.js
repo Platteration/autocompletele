@@ -201,3 +201,40 @@ test("a dismissed proposal stays dismissed, whether stored as text or digest", (
   assert.equal(learning.candidates({ sessions, library: [], dismissed: [target] }).some((c) => c.text === target), false);
   assert.equal(learning.candidates({ sessions, library: [], dismissed: [learning.dismissalKey(target)] }).some((c) => c.text === target), false);
 });
+
+test("remembered answers are sealed per conversation, locked records survive, and the key is never replaced while they exist", () => {
+  const dir = temp();
+  const store = createStore(dir);
+  assert.equal(store.saveThreads([{ app: "outlook", subject: "order 1234", answers: [{ name: "name", value: "Jo Bloggs", at: 1 }], pronouns: null, createdAt: 1, updatedAt: 1 }]), false, "without a key nothing is written");
+  assert.equal(fs.existsSync(path.join(dir, FILES.threads)), false);
+  const keyA = generateKey();
+  store.setCorpusBox(createBox(keyA));
+  assert.equal(store.saveThreads([{ app: "outlook", subject: "order 1234", answers: [{ name: "name", value: "Jo Bloggs", at: 1 }], pronouns: "she/her", createdAt: 1, updatedAt: 1 }]), true);
+  const raw = fs.readFileSync(path.join(dir, FILES.threads), "utf8");
+  for (const secret of ["Jo Bloggs", "order 1234", "outlook", "she/her"]) assert.equal(raw.includes(secret), false, secret + " is on disk in the clear");
+  assert.deepEqual(store.loadThreads().threads.map((t) => t.answers[0].value), ["Jo Bloggs"]);
+  assert.deepEqual(store.threadsInfo(), { count: 1, locked: 0, bytes: raw.length });
+  // Another key: the old record is locked but kept through a save.
+  store.setCorpusBox(createBox(generateKey()));
+  assert.deepEqual([store.loadThreads().threads.length, store.loadThreads().locked.length], [0, 1]);
+  assert.ok(store.warnings().some((w) => /1 remembered conversation\(s\) are encrypted with a key this desk cannot read/.test(w)));
+  store.saveThreads([{ app: "gmail", subject: "quote", answers: [{ name: "name", value: "Sam", at: 2 }], pronouns: null, createdAt: 2, updatedAt: 2 }]);
+  assert.equal(store.threadsInfo().locked, 1, "the locked record was carried over");
+  store.setCorpusBox(createBox(keyA));
+  assert.deepEqual([store.loadThreads().threads.length, store.loadThreads().locked.length], [1, 1], "the first key opens its record again");
+  // Corpus empty, one locked conversation: the unreadable key is not replaced.
+  const keyStore = createStore(temp());
+  const keychain = fakeKeychain();
+  const first = loadCorpusKey({ store: keyStore, keychain });
+  assert.equal(first.status, "created");
+  keyStore.setCorpusBox(createBox(first.key));
+  keyStore.saveThreads([{ app: "outlook", subject: "order 1", answers: [{ name: "a", value: "1", at: 1 }], pronouns: null, createdAt: 1, updatedAt: 1 }]);
+  keyStore.setCorpusBox(null);
+  assert.equal(keyStore.corpusInfo().locked, 0, "no learned text at all");
+  const broken = loadCorpusKey({ store: keyStore, keychain: fakeKeychain({ decryptString: () => { throw new Error("locked"); } }) });
+  assert.equal(broken.status, "unreadable", "the key file stays while a remembered conversation is sealed with it");
+  assert.match(broken.message, /1 remembered conversation\(s\)/);
+  assert.equal(loadCorpusKey({ store: keyStore, keychain }).status, "ok", "and opens again with the keychain back");
+  keyStore.clearThreads();
+  assert.deepEqual(keyStore.threadsInfo(), { count: 0, locked: 0, bytes: 0 });
+});
