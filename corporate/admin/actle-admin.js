@@ -2,7 +2,7 @@
 // Administrator tool for the business edition. No dependencies.
 //
 //   node admin/actle-admin.js keygen <dir>
-//   node admin/actle-admin.js sign <policy.json> --key <private.pem> [--serial N] [--out <file>] [--allow-warnings]
+//   node admin/actle-admin.js sign <policy.json> --key <private.pem> [--serial N] [--layer NAME] [--out <file>] [--allow-warnings]
 //   node admin/actle-admin.js verify <signed.json> --pub <public.pem> [--pub <other.pem>]
 //   node admin/actle-admin.js validate <policy.json | signed.json>
 //   node admin/actle-admin.js layers <org.json> [<team.json> ...]
@@ -20,7 +20,7 @@ const suggestions = require("../core/suggestions.js");
 const USAGE = `actle Corporate admin tool
 
   keygen <dir>                    create policy-signing.key (keep secret) and policy-signing.pub
-  sign <policy.json> --key <file> [--serial N] [--out <file>] [--allow-warnings]
+  sign <policy.json> --key <file> [--serial N] [--layer NAME] [--out <file>] [--allow-warnings]
                                   sign a policy for distribution
   verify <signed.json> --pub <file> [--pub <file>]
                                   check a signed policy against public keys
@@ -132,6 +132,8 @@ function run(argv, io) {
           if (!Number.isSafeInteger(serial) || serial < 1) throw new Error("--serial must be a positive integer");
           value.serial = serial;
         }
+        const layerFlag = one(args.flags, "layer");
+        if (layerFlag !== undefined) value.layer = layerFlag;
         const parsed = orgPolicy.parse(value);
         for (const warning of parsed.warnings) err("warning: " + warning);
         if (parsed.warnings.length && !args.flags["allow-warnings"]) {
@@ -142,7 +144,7 @@ function run(argv, io) {
         const target = one(args.flags, "out");
         if (target) {
           fs.writeFileSync(target, text, "utf8");
-          out("signed serial " + value.serial + " with key " + envelope.keyId + " -> " + target);
+          out("signed layer " + value.layer + " serial " + value.serial + " with key " + envelope.keyId + " -> " + target);
         } else {
           out(text.trimEnd());
         }
@@ -157,7 +159,7 @@ function run(argv, io) {
           err("NOT VALID: " + result.error);
           return 1;
         }
-        out("valid: serial " + result.serial + ", key " + result.keyId + ", sha256 " + result.hash);
+        out("valid: layer " + result.layer + ", serial " + result.serial + ", key " + result.keyId + ", sha256 " + result.hash);
         return 0;
       }
       case "validate": {

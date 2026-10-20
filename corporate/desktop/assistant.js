@@ -37,6 +37,11 @@ function createAssistant(options) {
   }
   const encryptedNow = store.encryptCorpus();
   if (encryptedNow) audit({ event: "corpus-encrypted", sessions: encryptedNow });
+  // Dismissals written as plain text by an earlier version become digests.
+  const dismissedBefore = store.loadLearned().dismissed;
+  if (dismissedBefore.some((entry) => !entry.startsWith("sha256:"))) {
+    store.saveLearned({ dismissed: [...new Set(dismissedBefore.map(learning.dismissalKey))] });
+  }
 
   // A desk is "managed" when IT installed a deployment file naming signed
   // policy sources. Then only signed layers apply; an unsigned local policy
@@ -145,10 +150,17 @@ function createAssistant(options) {
     store.savePolicyState({ hash, appliedAt: settings.now(), sourceStatus });
   }
 
+  // Apply a new policy without disturbing the field being typed in: the
+  // learning session and the field's rule state survive unless the policy
+  // itself ends learning there (then the session is stored).
+  function applyEngineSettings() {
+    persistSession(engine.setPolicy(policy));
+    if (engine.enabled !== userSettings.enabled) persistSession(engine.setEnabled(userSettings.enabled).session);
+  }
+
   function applyPolicy(origin) {
     policy = buildPolicy();
-    engine.setPolicy(policy);
-    engine.setEnabled(userSettings.enabled);
+    applyEngineSettings();
     cachedCandidates = null;
     recordPolicyAudit(origin);
   }
@@ -216,6 +228,10 @@ function createAssistant(options) {
   function clearLearning() {
     const before = store.corpusInfo();
     store.clearSessions();
+    // Everything derived from learned text goes too: dismissals and the
+    // suggestions not yet exported.
+    store.saveLearned({ dismissed: [] });
+    store.saveSuggestions([]);
     cachedCandidates = null;
     audit({ event: "corpus-deleted", by: "person", sessions: before.sessions + before.locked });
     emit("candidates", candidates());
@@ -264,7 +280,8 @@ function createAssistant(options) {
   function dismissCandidate(text) {
     const learned = store.loadLearned();
     const value = String(text == null ? "" : text);
-    if (value && !learned.dismissed.includes(value)) learned.dismissed.push(value);
+    const key = learning.dismissalKey(value);
+    if (value && !learned.dismissed.includes(key)) learned.dismissed.push(key);
     store.saveLearned(learned);
     cachedCandidates = null;
     return candidates();
@@ -279,8 +296,7 @@ function createAssistant(options) {
       audit({ event: "capture-rules-changed", by: "person", rules: userSettings.captureApps.map((rule) => ({ label: rule.label || null, mode: rule.mode || null, match: rule.match || { process: rule.process, title: rule.title, bundleId: rule.bundleId } })) });
     }
     policy = buildPolicy();
-    engine.setPolicy(policy);
-    engine.setEnabled(userSettings.enabled);
+    applyEngineSettings();
     cachedCandidates = null;
     return userSettings;
   }

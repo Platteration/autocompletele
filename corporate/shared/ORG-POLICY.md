@@ -11,8 +11,9 @@ skipped with a warning shown on the dashboard, never a refusal.
 | Field | Meaning |
 | ----- | ------- |
 | `version` | `1`. A newer number is accepted with a warning; unknown fields are ignored. |
-| `serial` | Positive integer, required for a signed policy. Raise it every time the policy changes; desks refuse a signed policy whose serial is lower than the one they already accepted, or the same serial with different content. |
-| `paused` | Kill switch. `true` or `{ "message": "…" }` pauses every desk that receives the policy: nothing is expanded, offered or learned, and the person cannot resume it. Nothing is deleted. Remove it (or set `{ "active": false }`) to resume. |
+| `serial` | Positive integer, required for a signed policy. Raise it every time the policy changes; desks refuse a signed policy whose serial is lower than the one they already accepted for that source, or the same serial with different content. |
+| `layer` | Required for a signed policy: the name of the layer it is for, matching the `layer` of the deployment source it is published at. A desk refuses a policy signed for another layer, so an old organisation policy cannot be replayed at a team's location. |
+| `paused` | Kill switch. `true` or `{ "message": "…" }` pauses every desk that receives the policy: nothing is expanded, offered or learned, and the dashboard and tray offer no way to resume it. Nothing is deleted. Remove it (or set `{ "active": false }`) to resume. It is an administrative control, not a security boundary: `deployment.json` lives in the person's own data folder, so someone who edits that file can leave central management. |
 | `organization` | Name shown on the dashboard. |
 | `typing.charsPerMinute` | Typing-speed assumption behind "time saved" (default 200, which is 40 words per minute). Changing it re-estimates history. |
 | `typing.secondsPerAttachment` | Time credited for each document attached through a shortcut (default 20). |
@@ -22,7 +23,7 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `keywordRules[]` | `keywords` (list), `match` (`any` default, or `all`), `caseSensitive` (default false) and `insert`: `{ "kind": "text", "text": ... }`, `{ "kind": "shorthand", "trigger": ... }` (must exist in `library`) or `{ "kind": "document", "shortcut": ... }` (must exist in `documents`). Each rule fires once per field. |
 | `keywordRules[].action` | `offer` (default) shows the insert. `warn` shows `message` (required) and offers `insert` as an optional fix: a compliance warning. |
 | `keywordRules[].detect` | Built-in detectors that must also fire. `card-number` finds a card number that passes the Luhn check. A rule may have `detect` instead of `keywords`. |
-| `keywordRules[].unless` | Phrases that stop the rule when any of them appears anywhere in the field (case and spacing ignored), for example the disclaimer itself. Only text typed in the field or inserted by actle is seen; a mail client's automatic signature or pasted text is not. |
+| `keywordRules[].unless` | Phrases that stop the rule when any of them appears in the field (case and spacing ignored), for example the disclaimer itself. What is seen is the text typed in the field, or inserted by actle, since the field last got the focus, up to the last 4,000 characters. Opening actle's search palette or dashboard counts as leaving the field. A mail client's automatic signature, pasted text and text further back are not seen, so the warning can appear although the phrase is there. |
 | `documents.shortcuts[]` | `trigger` (for example `/sld`), `label`, and `documents[]` with `title`, `path` (file path or URL), optional `tags` and `description`. Triggers follow the same boundary rule as text shortcuts and lose to a text shortcut with the same trigger. |
 | `learning.minCount` | Distinct messages a text must recur in before it is proposed (default 3, minimum 2). |
 | `learning.minLength`, `learning.minWords` | Smallest text worth proposing (defaults 20 characters, 4 words). |
@@ -40,8 +41,8 @@ On a managed desk, IT installs `deployment.json` in the app's data folder:
 ```json
 {
   "policySources": [
-    { "label": "Organisation", "url": "https://intranet.example/actle/org.signed.json" },
-    { "label": "Shipping team", "path": "S:/IT/actle/shipping.signed.json" }
+    { "layer": "organisation", "label": "Organisation", "url": "https://intranet.example/actle/org.signed.json" },
+    { "layer": "shipping", "label": "Shipping team", "path": "S:/IT/actle/shipping.signed.json" }
   ],
   "publicKeys": ["-----BEGIN PUBLIC KEY-----\n…\n-----END PUBLIC KEY-----\n"],
   "refreshMinutes": 60
@@ -52,9 +53,11 @@ On a managed desk, IT installs `deployment.json` in the app's data folder:
   shortcuts merge by trigger, keyword rules by `id`, document sets by
   trigger, and a later layer's capture rules are tried before an earlier
   one's. A pause in any layer pauses the desk.
-* Every source must be signed with a key listed in `publicKeys`. Only
-  `https://` URLs and file paths are accepted; plain `http://` is refused.
-* The desk fetches at start and every `refreshMinutes` (minimum 5, default
+* Every source names its `layer` and must be signed with a key listed in
+  `publicKeys`, for that layer. Only `https://` URLs and file paths are
+  accepted; plain `http://` sources are refused, and so is an https source
+  that redirects to plain http.
+* The desk fetches at start and every `refreshMinutes` (5 to 1440, default
   60). A source that cannot be fetched, fails its signature or carries an
   older serial keeps its last good copy, with a warning on the dashboard. A
   source with no good copy yet is left out; the other layers still apply.
@@ -70,7 +73,7 @@ cd corporate
 node admin/actle-admin.js keygen ./keys          # once; keep policy-signing.key private
 node admin/actle-admin.js validate org.json
 node admin/actle-admin.js layers org.json shipping.json
-node admin/actle-admin.js sign org.json --key keys/policy-signing.key --serial 2 --out org.signed.json
+node admin/actle-admin.js sign org.json --key keys/policy-signing.key --layer organisation --serial 2 --out org.signed.json
 node admin/actle-admin.js verify org.signed.json --pub keys/policy-signing.pub
 ```
 

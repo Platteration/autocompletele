@@ -218,7 +218,7 @@ test("compliance warnings see the whole field, across new lines, and fire once",
   assert.deepEqual(first.map((a) => a.type), ["warning"]);
   assert.equal(first[0].hits[0].rule.message, "Add the disclaimer.");
   assert.deepEqual(engine.type("contract again "), [], "once per field");
-  assert.deepEqual(engine.type("card 4111 1111 1111 1111 and office hours ").map((a) => a.type), ["warning", "keyword"]);
+  assert.deepEqual(engine.type("card 4111 1111 1111 1111 and office hours ").map((a) => a.type), ["warning", "keyword"], "different words, different actions");
 
   engine.focusChanged({ process: "notepad" });
   engine.type("disc/");
@@ -255,4 +255,16 @@ test("learning keeps what was typed, never what actle inserted, and undo restore
   const { session } = engine.focusChanged({ process: "notepad" });
   assert.equal(session.text, "Our signature: sig/ then \n\n and \n\nthe end of a long enough message");
   assert.equal(/Kind regards|Inserted refund/.test(session.text), false);
+});
+
+test("a warning and an offer on the same word arrive together, warning first", () => {
+  const engine = make({ policy: orgPolicy.parse({ keywordRules: [
+    { id: "offer", keywords: ["contract"], insert: "Contract template text" },
+    { id: "warn", action: "warn", keywords: ["contract"], message: "Add the disclaimer." },
+  ] }) });
+  engine.focusChanged({ process: "notepad" });
+  const actions = engine.type("the contract ");
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].type, "warning");
+  assert.deepEqual(actions[0].hits.map((h) => h.rule.id), ["warn", "offer"]);
 });

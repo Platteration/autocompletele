@@ -6,6 +6,7 @@
 "use strict";
 
 const { tokenize, isSpace, diff, similarity } = require("./diff.js");
+const { template: templates } = require("./personal.js");
 
 const DEFAULTS = Object.freeze({ threshold: 0.6, maxSlots: 4 });
 const GREETING = /^(?:hi|hello|hey|dear|good\s+(?:morning|afternoon|evening))$/i;
@@ -178,7 +179,32 @@ function detect(texts, options) {
     cursor = end;
   }
   if (cursor < anchor.length) segments.push({ type: "same", text: anchor.slice(cursor).join("") });
+  // "[" or "\\" right before a blank, or "]" right after it, would merge with
+  // the blank's own brackets ("[[[reference]]]") or escape it. Such a
+  // character moves into the blank, so every value carries it.
+  for (let i = 0; i < segments.length; i++) {
+    const slot = segments[i];
+    if (slot.type !== "slot") continue;
+    const before = segments[i - 1];
+    while (before && before.type === "same" && /[\[\\]$/.test(before.text)) {
+      const ch = before.text.slice(-1);
+      before.text = before.text.slice(0, -1);
+      slot.values = slot.values.map((value) => ch + value);
+    }
+    const after = segments[i + 1];
+    while (after && after.type === "same" && after.text.startsWith("]")) {
+      after.text = after.text.slice(1);
+      slot.values = slot.values.map((value) => value + "]");
+    }
+  }
+  const kept = segments.filter((segment) => segment.type === "slot" || segment.text !== "");
+  segments.length = 0;
+  segments.push(...kept);
+  for (const info of slotInfo) info.values = segments.find((segment) => segment.type === "slot" && segment.name === info.name).values;
   const template = templateFrom(segments).template;
+  // Backstop: the template must parse back into exactly these blanks.
+  const parsed = templates.fields(template).map((field) => field.name);
+  if (parsed.join("\n") !== slotInfo.map((info) => info.name).join("\n")) return null;
   return { template, slots: slotInfo, segments, similarity: minSimilarity, count: inputs.length };
 }
 

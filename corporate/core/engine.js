@@ -263,10 +263,11 @@ function createEngine(options) {
     // Keywords are checked when a word ends, so "invoices" is not offered on "inv".
     if (policy.keywordRules.length && !expander.isBoundary(buffer[buffer.length - 2]) && expander.isBoundary(text[text.length - 1])) {
       const hits = keywords.detect(fieldText, policy.keywordRules, keywordState);
+      // One action for all hits, warnings first: the shell shows one popover,
+      // so a warning is never replaced by an offer that fired on the same word.
       const warnings = hits.filter((hit) => hit.rule.action === "warn");
       const offers = hits.filter((hit) => hit.rule.action !== "warn");
-      if (warnings.length) actions.push({ type: "warning", hits: warnings });
-      if (offers.length) actions.push({ type: "keyword", hits: offers });
+      if (hits.length) actions.push({ type: warnings.length ? "warning" : "keyword", hits: warnings.concat(offers) });
     }
     return actions;
   }
@@ -304,8 +305,11 @@ function createEngine(options) {
     if (!tracksField()) fieldText = "";
     ledger.setCharsPerMinute(policy.typing.charsPerMinute);
     decision = decideMode();
-    if (decision.mode !== "learn") session = null;
+    // A session ended by the new policy is handed back to be stored, not dropped.
+    let ended = null;
+    if (decision.mode !== "learn") ended = flushSession();
     else if (!session) startSession();
+    return ended;
   }
 
   function setEnabled(value) {

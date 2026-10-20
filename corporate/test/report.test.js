@@ -92,3 +92,19 @@ test("CSV escapes quotes and neutralises spreadsheet formulas", () => {
   assert.ok(lines.some((l) => l.startsWith('shortcut,"\'=HYPERLINK(""x"")"')), csv);
   assert.equal(lines.some((l) => /^[^,]*,=/.test(l)), false);
 });
+
+test("odd values in other desks' reports are tolerated, not fatal", () => {
+  const good = report.buildReport(entries, { now: NOW, installId: "good", team: "Ops" });
+  const odd = Object.assign({}, good, {
+    installId: 42, team: null,
+    series: [null, { key: null, inserts: 1, keystrokesSaved: 2, secondsSaved: 3 }, "x"],
+    byShortcut: [{ trigger: null, kind: 7, inserts: 1 }, 5],
+    byApp: [{ app: null, inserts: 1 }],
+  });
+  const merged = report.mergeReports([good, odd]);
+  assert.equal(merged.desks, 2);
+  assert.ok(merged.byTeam.some((t) => t.team === "(no team)"));
+  assert.ok(merged.series.some((s) => s.key === ""));
+  assert.ok(merged.byShortcut.some((s) => s.kind === "7"));
+  assert.match(report.toCsv(merged), /^section,/);
+});

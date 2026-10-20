@@ -13,10 +13,11 @@
   const describe = (insert) => insert.kind === "text" ? insert.text.slice(0, 120)
     : insert.kind === "shorthand" ? "Insert shortcut " + insert.trigger : "List documents " + insert.shortcut;
   state.hits.forEach((hit, index) => {
+    const warns = hit.rule.action === "warn";
     const item = document.createElement("li");
-    if (state.warning) item.className = "warning";
+    if (warns) item.className = "warning";
     const label = document.createElement("div");
-    label.textContent = state.warning ? hit.rule.message : hit.rule.label + " (" + hit.matched.join(", ") + ")";
+    label.textContent = warns ? hit.rule.message : hit.rule.label + " (" + hit.matched.join(", ") + ")";
     item.append(label);
     if (hit.rule.insert) {
       const what = document.createElement("div");
@@ -25,7 +26,7 @@
       const button = document.createElement("button");
       button.className = "primary";
       button.type = "button";
-      button.textContent = state.warning ? "Insert fix" : "Insert";
+      button.textContent = warns ? "Insert fix" : "Insert";
       button.addEventListener("click", () => window.actle.submitPopover({ index }));
       item.append(what, button);
     }

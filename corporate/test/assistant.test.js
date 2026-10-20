@@ -22,7 +22,7 @@ function managedDesk(served, extra) {
   const assistant = createAssistant(Object.assign({
     dataDir,
     now: () => clock,
-    deployment: { policySources: [{ label: "Organisation", url: ORG }, { label: "Shipping", path: TEAM }], publicKeys: [pair.publicKey] },
+    deployment: { policySources: [{ layer: "org", label: "Organisation", url: ORG }, { layer: "team", label: "Shipping", path: TEAM }], publicKeys: [pair.publicKey] },
     fetch: async (url) => (url in served ? { ok: true, status: 200, text: async () => served[url] } : Promise.reject(new Error("offline"))),
     readFile: async (p) => (p in served ? served[p] : Promise.reject(new Error("ENOENT"))),
   }, extra));
@@ -33,8 +33,8 @@ const signed = (policy) => JSON.stringify(signing.signPolicy(policy, pair.privat
 
 test("a managed desk applies the signed layers, records the change and keeps working offline", async () => {
   const served = {
-    [ORG]: signed({ serial: 1, organization: "Example Ltd", library: [{ trigger: "sig/", expansion: "Org sig" }] }),
-    [TEAM]: signed({ serial: 1, library: [{ trigger: "sld/", expansion: "Shipping desk" }] }),
+    [ORG]: signed({ layer: "org", serial: 1, organization: "Example Ltd", library: [{ trigger: "sig/", expansion: "Org sig" }] }),
+    [TEAM]: signed({ layer: "team", serial: 1, library: [{ trigger: "sld/", expansion: "Shipping desk" }] }),
   };
   const { assistant, dataDir } = managedDesk(served);
   assert.equal(assistant.managed, true);
@@ -61,7 +61,7 @@ test("a managed desk applies the signed layers, records the change and keeps wor
   // Restart offline: the last good copies apply immediately.
   const restarted = createAssistant({
     dataDir,
-    deployment: { policySources: [{ label: "Organisation", url: ORG }, { label: "Shipping", path: TEAM }], publicKeys: [pair.publicKey] },
+    deployment: { policySources: [{ layer: "org", label: "Organisation", url: ORG }, { layer: "team", label: "Shipping", path: TEAM }], publicKeys: [pair.publicKey] },
     fetch: async () => { throw new Error("offline"); },
     readFile: async () => { throw new Error("offline"); },
   });
@@ -77,13 +77,13 @@ test("a managed desk applies the signed layers, records the change and keeps wor
 
 test("the organisation kill switch pauses the desk and the person cannot resume it", async () => {
   const served = {
-    [ORG]: signed({ serial: 1, library: [{ trigger: "sig/", expansion: "Org sig" }] }),
-    [TEAM]: signed({ serial: 1 }),
+    [ORG]: signed({ layer: "org", serial: 1, library: [{ trigger: "sig/", expansion: "Org sig" }] }),
+    [TEAM]: signed({ layer: "team", serial: 1 }),
   };
   const { assistant } = managedDesk(served);
   await assistant.refreshPolicy();
   assert.equal(assistant.paused, false);
-  served[ORG] = signed({ serial: 2, paused: { message: "Paused while IT reviews the rollout" }, library: [{ trigger: "sig/", expansion: "Org sig" }] });
+  served[ORG] = signed({ layer: "org", serial: 2, paused: { message: "Paused while IT reviews the rollout" }, library: [{ trigger: "sig/", expansion: "Org sig" }] });
   await assistant.refreshPolicy();
   assert.equal(assistant.paused, true);
   assert.equal(assistant.policyInfo().paused.message, "Paused while IT reviews the rollout");
@@ -94,7 +94,7 @@ test("the organisation kill switch pauses the desk and the person cannot resume 
   assert.deepEqual(actions, []);
   const applied = assistant.audit().filter((e) => e.event === "policy-applied");
   assert.equal(applied.pop().paused, true);
-  served[ORG] = signed({ serial: 3, library: [{ trigger: "sig/", expansion: "Org sig" }] });
+  served[ORG] = signed({ layer: "org", serial: 3, library: [{ trigger: "sig/", expansion: "Org sig" }] });
   await assistant.refreshPolicy();
   assert.equal(assistant.paused, false);
   assistant.focusChanged({ process: "notepad" });
@@ -105,7 +105,7 @@ test("the organisation kill switch pauses the desk and the person cannot resume 
 test("on a managed desk an unsigned local policy file is ignored with a warning", () => {
   const dataDir = temp();
   fs.writeFileSync(path.join(dataDir, "policy.json"), JSON.stringify({ capture: { defaultMode: "learn" } }), "utf8");
-  fs.writeFileSync(path.join(dataDir, "deployment.json"), JSON.stringify({ policySources: [{ url: ORG }], publicKeys: [pair.publicKey] }), "utf8");
+  fs.writeFileSync(path.join(dataDir, "deployment.json"), JSON.stringify({ policySources: [{ layer: "org", url: ORG }], publicKeys: [pair.publicKey] }), "utf8");
   const assistant = createAssistant({ dataDir, fetch: async () => { throw new Error("offline"); } });
   assert.equal(assistant.managed, true);
   assert.equal(assistant.policyInfo().capture.defaultMode, "triggers");
@@ -151,4 +151,29 @@ test("the usage report uses the policy's reporting settings and a stable desk id
   assert.equal(first.personal.inserts, 1);
   assert.equal(JSON.stringify(first).includes("secret"), false);
   assert.equal(assistant.usageReport().installId, first.installId, "the desk id is kept");
+});
+
+test("a policy refresh keeps the learning session and field state of the field being typed in", async () => {
+  const keychain = { isEncryptionAvailable: () => true, encryptString: (t) => Buffer.from("K" + t), decryptString: (b) => Buffer.from(b).toString().slice(1) };
+  const served = {
+    [ORG]: signed({ layer: "org", serial: 1, capture: { defaultMode: "learn" }, keywordRules: [{ id: "d", action: "warn", keywords: ["contract"], unless: ["CONFIDENTIAL"], message: "Add it." }] }),
+    [TEAM]: signed({ layer: "team", serial: 1 }),
+  };
+  const { assistant } = managedDesk(served, { keychain });
+  await assistant.refreshPolicy();
+  assistant.focusChanged({ process: "outlook" });
+  for (const ch of "CONFIDENTIAL. This message has more than twenty characters in it ") assistant.keyTyped({ text: ch });
+  served[ORG] = signed({ layer: "org", serial: 2, organization: "Changed", capture: { defaultMode: "learn" }, keywordRules: [{ id: "d", action: "warn", keywords: ["contract"], unless: ["CONFIDENTIAL"], message: "Add it." }] });
+  await assistant.refreshPolicy();
+  assert.equal(assistant.policyInfo().organization, "Changed");
+  assert.match(assistant.engine.session.text, /^CONFIDENTIAL\. This message/, "the session survived the refresh");
+  let actions = [];
+  for (const ch of "about the contract ") actions = actions.concat(assistant.keyTyped({ text: ch }));
+  assert.deepEqual(actions, [], "the disclaimer typed before the refresh still counts");
+
+  // A policy that stops learning in this application stores the session instead of dropping it.
+  served[ORG] = signed({ layer: "org", serial: 3, capture: { defaultMode: "triggers" } });
+  await assistant.refreshPolicy();
+  assert.equal(assistant.engine.session, null);
+  assert.equal(assistant.corpusInfo().sessions, 1);
 });

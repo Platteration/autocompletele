@@ -125,7 +125,8 @@ function squash(value) {
 /**
  * Find rules whose conditions hold: keywords in the recent text (if the rule
  * has keywords), a detector firing on the recent text (if it has detectors),
- * and none of its `unless` phrases anywhere in the field's text.
+ * and none of its `unless` phrases in the field text the engine holds (the
+ * last 4,000 characters typed or inserted since the field got the focus).
  * @returns {Array<{rule:object, matched:string[]}>}
  */
 function detect(text, rules, state, options) {

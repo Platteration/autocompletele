@@ -7,7 +7,10 @@
 // point at. Anyone who can alter the policy on its web server, file share or
 // in transit could otherwise switch learning on for every application or
 // point "/sld" at a malicious file. The signature stops that; the serial
-// stops an attacker replaying an older, validly signed policy.
+// stops an attacker replaying an older, validly signed policy; and the
+// layer name stops a policy signed for one layer (say the organisation's,
+// from before learning was restricted) being replayed at another layer's
+// location, where its serial would be compared with the wrong history.
 "use strict";
 
 const crypto = require("node:crypto");
@@ -50,6 +53,7 @@ function signPolicy(policy, privateKeyPem) {
   const parsed = JSON.parse(payload);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("the policy must be a JSON object");
   if (!Number.isSafeInteger(parsed.serial) || parsed.serial < 1) throw new Error("the policy needs a positive integer \"serial\"");
+  if (typeof parsed.layer !== "string" || !parsed.layer.trim()) throw new Error("the policy needs a \"layer\" name matching its deployment source");
   const privateKey = crypto.createPrivateKey(String(privateKeyPem));
   if (privateKey.asymmetricKeyType !== "ed25519") throw new Error("not an Ed25519 private key");
   const publicPem = crypto.createPublicKey(privateKey).export({ type: "spki", format: "pem" });
@@ -88,7 +92,8 @@ function verifyEnvelope(envelope, trustedPublicKeys) {
   const policy = safeParse(source.payload);
   if (!policy || typeof policy !== "object" || Array.isArray(policy)) return { ok: false, error: "the signed payload is not a JSON object" };
   if (!Number.isSafeInteger(policy.serial) || policy.serial < 1) return { ok: false, error: "the signed policy has no positive integer serial" };
-  return { ok: true, policy, keyId: match.id, serial: policy.serial, hash: sha256(source.payload) };
+  if (typeof policy.layer !== "string" || !policy.layer.trim()) return { ok: false, error: "the signed policy names no layer" };
+  return { ok: true, policy, keyId: match.id, serial: policy.serial, layer: policy.layer.trim(), hash: sha256(source.payload) };
 }
 
 function safeParse(text) {

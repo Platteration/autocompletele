@@ -4,7 +4,17 @@
 // slots, proposed as one [[name]] template. Pure; no Electron here.
 "use strict";
 
+const crypto = require("node:crypto");
 const { phraseMiner, variableDetector } = require("../core/index.js");
+
+// Dismissed proposals are remembered as digests, so learned.json holds no
+// readable learned text. Entries written by an earlier version as plain
+// text are still recognised.
+function dismissalKey(text) {
+  const value = String(text == null ? "" : text);
+  if (value.startsWith("sha256:")) return value;
+  return "sha256:" + crypto.createHash("sha256").update(phraseMiner.normalize(value), "utf8").digest("hex");
+}
 
 const DEFAULTS = Object.freeze({ clusterThreshold: 0.6, maxTemplates: 10 });
 
@@ -55,7 +65,7 @@ function candidates(input) {
   const sessions = (Array.isArray(input.sessions) ? input.sessions : []).filter((s) => s && typeof s.text === "string");
   const library = Array.isArray(input.library) ? input.library : [];
   const learning = Object.assign({ minCount: 3, minLength: 20, minWords: 4 }, input.learning || {});
-  const dismissed = new Set((Array.isArray(input.dismissed) ? input.dismissed : []).map((t) => phraseMiner.normalize(t)));
+  const dismissed = new Set((Array.isArray(input.dismissed) ? input.dismissed : []).map(dismissalKey));
   const existing = library.map((sh) => sh.expansion);
   const existingNormalized = existing.map(phraseMiner.normalize);
   const existingSet = new Set(existingNormalized);
@@ -65,7 +75,7 @@ function candidates(input) {
   const taken = library.map((sh) => sh.trigger);
 
   const templates = templateCandidates(sessions, learning)
-    .filter((c) => !dismissed.has(phraseMiner.normalize(c.template)) && !existingSet.has(phraseMiner.normalize(c.template)));
+    .filter((c) => !dismissed.has(dismissalKey(c.template)) && !existingSet.has(phraseMiner.normalize(c.template)));
   for (const candidate of templates) {
     candidate.suggestedTrigger = phraseMiner.suggestTrigger(candidate.segments.filter((s) => s.type === "same").map((s) => s.text).join(" "), taken);
     taken.push(candidate.suggestedTrigger);
@@ -78,7 +88,7 @@ function candidates(input) {
     minCount: learning.minCount,
     minLength: learning.minLength,
     minWords: learning.minWords,
-  }).filter((c) => !dismissed.has(phraseMiner.normalize(c.text)))
+  }).filter((c) => !dismissed.has(dismissalKey(c.text)))
     .filter((c) => !covered.some((parts) => parts.some((part) => part.includes(c.text))))
     .filter((c) => !insideExisting(c.text))
     .map((c) => Object.assign({ kind: c.kind }, c));
@@ -86,4 +96,4 @@ function candidates(input) {
   return templates.concat(phrases);
 }
 
-module.exports = { DEFAULTS, templateCandidates, candidates };
+module.exports = { DEFAULTS, templateCandidates, candidates, dismissalKey };

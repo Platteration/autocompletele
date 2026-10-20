@@ -115,8 +115,13 @@ function showPopover(name, state, size) {
   }, size)));
   popover.loadFile(path.join(__dirname, "renderer", name + ".html"));
   popover.once("ready-to-show", () => popover.show());
-  popover.on("blur", () => { if (state.kind === "keyword") closePopover(); });
-  popover.on("closed", () => { popover = null; popoverState = null; });
+  // Values typed into a template form are actle's own input: never expanded
+  // or learned (the keyword popover cannot take the focus at all).
+  popover.on("focus", () => setOwnWindow(true));
+  popover.on("blur", () => { setOwnWindow(false); if (state.kind === "keyword") closePopover(); });
+  // A window closed while focused may not emit "blur" first; never leave the
+  // engine believing actle's own window has the focus.
+  popover.on("closed", () => { popover = null; popoverState = null; setOwnWindow(!!BrowserWindow.getFocusedWindow()); });
 }
 
 function closePopover() {
@@ -172,7 +177,9 @@ async function submitPopover(payload) {
       await sender.replace({ backspaces: 0, text: insert.text, cursorOffset: insert.text.length });
       assistant.recordInsert({ kind: "keyword", trigger: hit.rule.id, inserted: insert.text, typed: "" });
     } else if (insert.kind === "shorthand") {
-      const sh = assistant.library().find((item) => item.trigger === insert.trigger);
+      // A keyword rule names an organisation shortcut; a person's own shortcut
+      // with the same trigger must not be inserted in its place.
+      const sh = assistant.policy().library.map((item) => Object.assign({ source: "organization" }, item)).find((item) => item.trigger === insert.trigger);
       if (sh) {
         if (personal.template.requiresInput(sh.expansion)) {
           handleAction({ type: "template", trigger: sh.trigger, expansion: sh.expansion, fields: personal.template.fields(sh.expansion), variables: personal.template.variables(sh.expansion), backspaces: 0, source: sh.source });
@@ -251,7 +258,7 @@ function openPalette() {
   // Typing a query must not expand or be learned.
   paletteWindow.on("focus", () => setOwnWindow(true));
   paletteWindow.on("blur", () => { setOwnWindow(false); closePalette(); });
-  paletteWindow.on("closed", () => { paletteWindow = null; });
+  paletteWindow.on("closed", () => { paletteWindow = null; setOwnWindow(!!BrowserWindow.getFocusedWindow()); });
 }
 
 function closePalette() {

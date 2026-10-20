@@ -175,3 +175,29 @@ test("with a keychain, an old plain corpus is sealed at start and the person can
   const deleted = assistant.audit().filter((e) => e.event === "corpus-deleted");
   assert.deepEqual(deleted.map((e) => [e.by, e.sessions]), [["person", 2]]);
 });
+
+test("dismissals are stored as digests, and deleting learned text clears dismissals and suggestions", () => {
+  const dataDir = temp();
+  fs.writeFileSync(path.join(dataDir, "learned.json"), JSON.stringify({ dismissed: ["Old plain dismissed sentence about a private matter."] }));
+  const assistant = createAssistant({ dataDir, keychain: fakeKeychain() });
+  const learned = JSON.parse(fs.readFileSync(path.join(dataDir, "learned.json"), "utf8"));
+  assert.deepEqual(learned.dismissed.map((d) => d.slice(0, 7)), ["sha256:"], "plain entries from an earlier version are converted");
+  assistant.dismissCandidate("Another proposal the person did not want.");
+  const raw = fs.readFileSync(path.join(dataDir, "learned.json"), "utf8");
+  assert.equal(/private matter|did not want/.test(raw), false);
+  fs.writeFileSync(path.join(dataDir, "suggestions.json"), JSON.stringify({ queued: [{ kind: "phrase", text: "queued text", trigger: "q/" }] }));
+  assistant.clearLearning();
+  assert.deepEqual(assistant.store.loadLearned().dismissed, []);
+  assert.deepEqual(assistant.suggestions(), []);
+});
+
+test("a dismissed proposal stays dismissed, whether stored as text or digest", () => {
+  const learning = require("../desktop/learning.js");
+  const sessions = ["We will get back to you within one business day.", "We will get back to you within one business day.", "We will get back to you within one business day."]
+    .map((text) => ({ text: "Hello there.\n\n" + text }));
+  const all = learning.candidates({ sessions, library: [], dismissed: [] });
+  assert.ok(all.length > 0);
+  const target = all[0].text;
+  assert.equal(learning.candidates({ sessions, library: [], dismissed: [target] }).some((c) => c.text === target), false);
+  assert.equal(learning.candidates({ sessions, library: [], dismissed: [learning.dismissalKey(target)] }).some((c) => c.text === target), false);
+});

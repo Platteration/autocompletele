@@ -5,8 +5,8 @@
 // others (safety nets degrade, they never refuse).
 //
 // deployment.json, written by IT at install time:
-//   { "policySources": [ { "label": "Organisation", "url": "https://…/org.signed.json" },
-//                        { "label": "Shipping", "path": "S:/IT/actle/shipping.signed.json" } ],
+//   { "policySources": [ { "layer": "organisation", "label": "Organisation", "url": "https://…/org.signed.json" },
+//                        { "layer": "shipping", "label": "Shipping", "path": "S:/IT/actle/shipping.signed.json" } ],
 //     "publicKeys": [ "-----BEGIN PUBLIC KEY-----…" ],
 //     "refreshMinutes": 60 }
 "use strict";
@@ -15,6 +15,10 @@ const fs = require("node:fs");
 const signing = require("./policy-signing.js");
 
 const DEFAULTS = Object.freeze({ refreshMinutes: 60, timeoutMs: 15000, maxBytes: 2 * 1024 * 1024 });
+// A timer delay above 2^31-1 ms (about 24.8 days) overflows to 1 ms in Node
+// and Electron, so the refresh interval is kept between 5 minutes and a day.
+const MIN_REFRESH_MINUTES = 5;
+const MAX_REFRESH_MINUTES = 1440;
 
 function asText(value) {
   return String(value == null ? "" : value).trim();
@@ -40,8 +44,13 @@ function normalizeDeployment(raw) {
     const url = asText(entry.url);
     const path = asText(entry.path);
     const location = url || path;
+    const layer = asText(entry.layer);
     if (!location) {
       warnings.push("deployment: policy source " + index + " ignored: no url or path");
+      return;
+    }
+    if (!layer) {
+      warnings.push("deployment: policy source " + location + " ignored: it names no layer");
       return;
     }
     if (url && !/^https:\/\//i.test(url)) {
@@ -54,6 +63,7 @@ function normalizeDeployment(raw) {
     seen.add(location);
     sources.push({
       id: signing.sha256(location).slice(0, 16),
+      layer,
       label: asText(entry.label) || location,
       url: url || null,
       path: url ? null : path,
@@ -67,25 +77,38 @@ function normalizeDeployment(raw) {
   return {
     sources,
     publicKeys,
-    refreshMinutes: Number.isFinite(minutes) && minutes >= 5 ? minutes : DEFAULTS.refreshMinutes,
+    refreshMinutes: Number.isFinite(minutes) && minutes >= MIN_REFRESH_MINUTES
+      ? Math.min(minutes, MAX_REFRESH_MINUTES) : DEFAULTS.refreshMinutes,
     warnings,
   };
 }
 
+// The size limit is checked before reading where the size is known (a file's
+// size, a Content-Length header) and again after reading, for a server that
+// sends no length.
 async function fetchText(source, options) {
   const maxBytes = options.maxBytes;
+  const tooBig = () => new Error("larger than " + maxBytes + " bytes");
   let text;
   if (source.url) {
     const doFetch = options.fetch || globalThis.fetch;
     if (typeof doFetch !== "function") throw new Error("this runtime cannot fetch URLs");
     const response = await doFetch(source.url, { signal: AbortSignal.timeout(options.timeoutMs), redirect: "follow" });
+    // Same reason plain http sources are refused: an https source must not
+    // hand the policy over plain http through a redirect.
+    if (response.url && !/^https:\/\//i.test(response.url)) throw new Error("redirected to a non-https address");
     if (!response.ok) throw new Error("HTTP " + response.status);
+    const length = Number(response.headers && typeof response.headers.get === "function" ? response.headers.get("content-length") : NaN);
+    if (Number.isFinite(length) && length > maxBytes) throw tooBig();
     text = await response.text();
+  } else if (options.readFile) {
+    text = String(await options.readFile(source.path));
   } else {
-    const read = options.readFile || ((p) => fs.promises.readFile(p, "utf8"));
-    text = String(await read(source.path));
+    const stat = await fs.promises.stat(source.path);
+    if (stat.size > maxBytes) throw tooBig();
+    text = await fs.promises.readFile(source.path, "utf8");
   }
-  if (Buffer.byteLength(text, "utf8") > maxBytes) throw new Error("larger than " + maxBytes + " bytes");
+  if (Buffer.byteLength(text, "utf8") > maxBytes) throw tooBig();
   return text;
 }
 
@@ -101,10 +124,20 @@ function createPolicySource(options) {
   const deployment = normalizeDeployment(settings.deployment);
   const cache = settings.cache || { load: () => null, save: () => {} };
 
+  /** Verify an envelope for this source: valid signature and the source's own layer. */
+  function verifyFor(source, envelope) {
+    const verified = signing.verifyEnvelope(envelope, deployment.publicKeys);
+    if (!verified.ok) return verified;
+    if (verified.layer !== source.layer) {
+      return { ok: false, error: "signed for layer " + JSON.stringify(verified.layer) + ", but this source is layer " + JSON.stringify(source.layer) };
+    }
+    return verified;
+  }
+
   function fromCache(source) {
     const cached = cache.load(source.id);
     if (!cached || typeof cached.envelope !== "string") return null;
-    const verified = signing.verifyEnvelope(cached.envelope, deployment.publicKeys);
+    const verified = verifyFor(source, cached.envelope);
     if (!verified.ok) return { error: "last good copy no longer verifies: " + verified.error };
     return { verified, acceptedAt: cached.acceptedAt || null };
   }
@@ -146,7 +179,7 @@ function createPolicySource(options) {
       } else {
         try {
           const text = await fetchText(source, settings);
-          fresh = signing.verifyEnvelope(text, deployment.publicKeys);
+          fresh = verifyFor(source, text);
           if (!fresh.ok) {
             problem = fresh.error;
             fresh = null;
@@ -192,4 +225,4 @@ function createPolicySource(options) {
   return { deployment, loadCached, refresh };
 }
 
-module.exports = { DEFAULTS, normalizeDeployment, createPolicySource };
+module.exports = { DEFAULTS, MIN_REFRESH_MINUTES, MAX_REFRESH_MINUTES, normalizeDeployment, createPolicySource };

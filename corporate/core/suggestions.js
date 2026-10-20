@@ -86,10 +86,13 @@ function rank(files, options) {
       if (!item) continue;
       const key = normalize(item.text);
       if (known.has(key)) continue;
-      const row = byText.get(key) || { text: item.text, kind: item.kind, desks: 0, sessions: 0, triggers: [], teams: [] };
+      const row = byText.get(key) || { text: item.text, kind: item.kind, desks: 0, sessions: 0, triggers: [], teams: [], votes: new Map() };
       row.desks += 1;
       row.sessions += item.sessions;
-      if (item.trigger && !row.triggers.includes(item.trigger)) row.triggers.push(item.trigger);
+      if (item.trigger) {
+        row.votes.set(item.trigger, (row.votes.get(item.trigger) || 0) + 1);
+        if (!row.triggers.includes(item.trigger)) row.triggers.push(item.trigger);
+      }
       if (file.team && !row.teams.includes(file.team)) row.teams.push(file.team);
       byText.set(key, row);
     }
@@ -98,9 +101,13 @@ function rank(files, options) {
   const ranked = [...byText.values()].filter((row) => row.desks >= minDesks)
     .sort((a, b) => b.desks - a.desks || b.sessions - a.sessions || a.text.localeCompare(b.text));
   for (const row of ranked) {
-    // The trigger most desks chose, unless the library already uses it.
-    const preferred = row.triggers.find((t) => !taken.includes(t));
+    // The trigger most desks chose (first seen breaks a tie), unless the
+    // library or a higher-ranked suggestion already uses it.
+    const byVotes = row.triggers.slice().sort((a, b) => row.votes.get(b) - row.votes.get(a));
+    const preferred = byVotes.find((t) => !taken.includes(t));
     row.suggestedTrigger = preferred || suggestTrigger(row.text, taken);
+    row.triggers = byVotes;
+    delete row.votes;
     taken.push(row.suggestedTrigger);
   }
   return { desks: latest.size, suggestions: ranked, warnings };

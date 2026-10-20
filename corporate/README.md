@@ -132,9 +132,11 @@ it is bounded on purpose:
   not stored.
 - Locally, under the app-data folder, encrypted with a key held in the
   operating system keychain, for `retention.corpusDays` (default 90). Without
-  a secure keychain nothing is written. The Learning tab shows how much is
-  stored and can delete all of it; switching an application to triggers mode
-  stops learning there.
+  a secure keychain nothing is written. Proposals a person explicitly marks
+  "Suggest to organisation" are the one readable copy, kept until exported.
+  The Learning tab shows how much is stored and deletes all of it, those
+  suggestions included; switching an application to triggers mode stops
+  learning there.
 - Nothing typed is ever sent anywhere. The only network access is fetching
   signed policy files on a managed desk; usage reports are files the person
   saves and hands over.

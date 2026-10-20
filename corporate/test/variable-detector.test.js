@@ -72,3 +72,23 @@ test("typed text that looks like a blank or a placeholder stays literal in the t
   const rendered = template.render(result.template, { name: "Ann" }, new Date(2026, 9, 20));
   assert.equal(rendered.text, texts[0], "saving and expanding reproduces what was typed");
 });
+
+test("every detected template expands back to each message it came from", () => {
+  const { template } = require("../core/personal.js");
+  const groups = [
+    ["Your request [INC4411] has been closed today.", "Your request [INC5520] has been closed today.", "Your request [INC6630] has been closed today."],
+    ["Saved to C:\\Users\\alice\\report.docx as asked", "Saved to C:\\Users\\bob\\report.docx as asked"],
+    ["Escaped \\ Alice and [x] stays", "Escaped \\ Robert and [x] stays"],
+    ["Ticket (#4411) for Ann is due {date} soon", "Ticket (#5520) for Bob is due {date} soon"],
+    ["Hi John, your order 12345 ships Monday.", "Hi Mary Ann, your order 99881 ships Friday."],
+  ];
+  for (const texts of groups) {
+    const result = detector.detect(texts);
+    assert.ok(result, "a template for: " + texts[0]);
+    assert.deepEqual(template.fields(result.template).map((f) => f.name), result.slots.map((s) => s.name), result.template);
+    texts.forEach((text, index) => {
+      const answers = Object.fromEntries(result.slots.map((slot) => [slot.name, slot.values[index]]));
+      assert.equal(template.render(result.template, answers, new Date(2026, 9, 20)).text, text, result.template);
+    });
+  }
+});

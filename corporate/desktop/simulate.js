@@ -161,14 +161,14 @@ async function managedDesk() {
   const share = new Map();
   const base = fs.existsSync(POLICY_FILE) ? JSON.parse(fs.readFileSync(POLICY_FILE, "utf8")) : FALLBACK_POLICY;
   const publish = (where, policy) => share.set(where, JSON.stringify(signing.signPolicy(policy, keys.privateKey)));
-  publish("S:/IT/actle/org.signed.json", Object.assign({}, base, { serial: 1 }));
-  publish("S:/IT/actle/shipping.signed.json", { serial: 1, library: [{ trigger: "eta/", expansion: "Estimated arrival is [[date]]." }] });
+  publish("S:/IT/actle/org.signed.json", Object.assign({}, base, { layer: "organisation", serial: 1 }));
+  publish("S:/IT/actle/shipping.signed.json", { layer: "shipping", serial: 1, library: [{ trigger: "eta/", expansion: "Estimated arrival is [[date]]." }] });
   const deskDir = fs.mkdtempSync(path.join(os.tmpdir(), "actle-corporate-desk-"));
   const desk = createAssistant({
     dataDir: deskDir,
     now,
     deployment: {
-      policySources: [{ label: "Organisation", path: "S:/IT/actle/org.signed.json" }, { label: "Shipping team", path: "S:/IT/actle/shipping.signed.json" }],
+      policySources: [{ layer: "organisation", label: "Organisation", path: "S:/IT/actle/org.signed.json" }, { layer: "shipping", label: "Shipping team", path: "S:/IT/actle/shipping.signed.json" }],
       publicKeys: [keys.publicKey],
     },
     readFile: async (where) => {
@@ -179,7 +179,7 @@ async function managedDesk() {
   const report = (label, result) => print(`  ${label}: ${result.sources.map((s) => s.label + " " + s.status + (s.serial ? " #" + s.serial : "")).join(", ")}; paused: ${desk.paused ? "yes" : "no"}; shared shortcuts: ${desk.policyInfo().organizationLibrary.length}`);
   print("\nSigned policy distribution");
   report("first fetch", await desk.refreshPolicy());
-  publish("S:/IT/actle/org.signed.json", Object.assign({}, base, { serial: 2, paused: { message: "Paused for review" } }));
+  publish("S:/IT/actle/org.signed.json", Object.assign({}, base, { layer: "organisation", serial: 2, paused: { message: "Paused for review" } }));
   report("after IT pauses", await desk.refreshPolicy());
   const tampered = JSON.parse(share.get("S:/IT/actle/org.signed.json"));
   tampered.payload = tampered.payload.replace('"Paused for review"', '"Resumed"').replace('"serial": 2', '"serial": 3');

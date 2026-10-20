@@ -92,3 +92,12 @@ test("the admin tool ranks suggestion files and writes a library to review", () 
   assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")).shorthands, [{ trigger: "wgb/", expansion: "We will get back to you within one business day." }]);
   assert.equal(run(["suggestions", path.join(dir, "a.json"), "--min-desks", "0"], { stdout: () => {}, stderr: () => {} }), 1);
 });
+
+test("the suggested trigger is the one most desks chose", () => {
+  const files = [["a", "ty/"], ["b", "ship/"], ["c", "ship/"]].map(([id, trigger]) =>
+    suggestions.buildExport([{ text: "Your order ships today.", trigger }], { installId: id, now: 1 }));
+  const ranked = suggestions.rank(files);
+  assert.equal(ranked.suggestions[0].suggestedTrigger, "ship/");
+  assert.deepEqual(ranked.suggestions[0].triggers, ["ship/", "ty/"]);
+  assert.equal(suggestions.rank(files, { library: [{ trigger: "ship/", expansion: "x" }] }).suggestions[0].suggestedTrigger, "ty/");
+});

@@ -33,12 +33,12 @@ test("keygen, sign and verify round-trip; keys are never overwritten", () => {
   assert.equal(missingSerial.code, 1);
   assert.match(missingSerial.err, /serial/);
   const signedFile = path.join(dir, "org.signed.json");
-  const sign = cli(["sign", policy, "--key", path.join(keys, "policy-signing.key"), "--serial", "3", "--out", signedFile]);
+  const sign = cli(["sign", policy, "--key", path.join(keys, "policy-signing.key"), "--serial", "3", "--layer", "org", "--out", signedFile]);
   assert.equal(sign.code, 0, sign.err);
-  assert.match(sign.out, /signed serial 3/);
+  assert.match(sign.out, /signed layer org serial 3/);
   const verify = cli(["verify", signedFile, "--pub", path.join(keys, "policy-signing.pub")]);
   assert.equal(verify.code, 0, verify.err);
-  assert.match(verify.out, /valid: serial 3/);
+  assert.match(verify.out, /valid: layer org, serial 3/);
 
   const other = path.join(dir, "other");
   cli(["keygen", other]);
@@ -61,7 +61,7 @@ test("sign refuses a policy with warnings unless told otherwise", () => {
   assert.equal(refused.code, 1);
   assert.match(refused.err, /warning: keyword rule x ignored/);
   assert.match(refused.err, /not signed/);
-  const forced = cli(["sign", policy, "--key", path.join(dir, "policy-signing.key"), "--allow-warnings"]);
+  const forced = cli(["sign", policy, "--key", path.join(dir, "policy-signing.key"), "--allow-warnings", "--layer", "org"]);
   assert.equal(forced.code, 0);
   assert.match(forced.out, /"format": "actle-signed-policy"/);
   assert.equal(cli(["sign", policy, "--key", path.join(dir, "policy-signing.key"), "--serial", "0"]).code, 1);

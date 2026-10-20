@@ -89,6 +89,16 @@ function isReport(value) {
     && value.totals && typeof value.totals === "object" && Array.isArray(value.series);
 }
 
+// Reports come from other desks' files: names are made strings and rows
+// that are not objects are skipped, so one odd file cannot stop a roll-up.
+function name(value) {
+  return value == null ? "" : String(value);
+}
+
+function rows(value) {
+  return Array.isArray(value) ? value.filter((row) => row && typeof row === "object") : [];
+}
+
 function addTotals(target, source) {
   target.inserts += Number(source.inserts) || 0;
   target.keystrokesSaved += Number(source.keystrokesSaved) || 0;
@@ -115,7 +125,7 @@ function mergeReports(reports, options) {
       warnings.push("report " + (index + 1) + " skipped: not an actle usage report");
       return;
     }
-    const id = report.installId || "anonymous-" + anonymous++;
+    const id = name(report.installId) || "anonymous-" + anonymous++;
     const previous = latest.get(id);
     if (previous) {
       warnings.push("desk " + id + " sent more than one report; the newest is used");
@@ -148,30 +158,32 @@ function mergeReports(reports, options) {
       from = Math.min(from, Number(report.range.from));
       to = Math.max(to, Number(report.range.to));
     }
-    for (const bucket of report.series) {
-      const row = series.get(bucket.key) || Object.assign({ key: bucket.key, desks: 0 }, zero());
+    for (const bucket of rows(report.series)) {
+      const key = name(bucket.key);
+      const row = series.get(key) || Object.assign({ key, desks: 0 }, zero());
       addTotals(row, bucket);
       if (bucket.inserts) row.desks += 1;
-      series.set(bucket.key, row);
+      series.set(key, row);
     }
-    const teamName = report.team || "(no team)";
+    const teamName = name(report.team) || "(no team)";
     const team = teams.get(teamName) || Object.assign({ team: teamName, desks: 0 }, zero());
     team.desks += 1;
     addTotals(team, report.totals);
     teams.set(teamName, team);
-    for (const item of Array.isArray(report.byShortcut) ? report.byShortcut : []) {
-      const key = item.kind + "\u0000" + item.trigger;
-      const row = shortcuts.get(key) || { trigger: item.trigger, kind: item.kind, inserts: 0, keystrokesSaved: 0, desks: 0 };
+    for (const item of rows(report.byShortcut)) {
+      const key = name(item.kind) + "\u0000" + name(item.trigger);
+      const row = shortcuts.get(key) || { trigger: name(item.trigger), kind: name(item.kind), inserts: 0, keystrokesSaved: 0, desks: 0 };
       row.inserts += Number(item.inserts) || 0;
       row.keystrokesSaved += Number(item.keystrokesSaved) || 0;
       row.desks += 1;
       shortcuts.set(key, row);
     }
-    for (const item of Array.isArray(report.byApp) ? report.byApp : []) {
-      const row = apps.get(item.app) || Object.assign({ app: item.app, desks: 0 }, zero());
+    for (const item of rows(report.byApp)) {
+      const app = name(item.app);
+      const row = apps.get(app) || Object.assign({ app, desks: 0 }, zero());
       addTotals(row, item);
       row.desks += 1;
-      apps.set(item.app, row);
+      apps.set(app, row);
     }
   }
 

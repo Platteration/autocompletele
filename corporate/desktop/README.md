@@ -51,21 +51,24 @@ Everything is in Electron's `userData` folder for the app
 | `metrics.jsonl`   | One line per insert: time, kind, application, keystrokes saved, whether the shortcut was the organisation's or the person's |
 | `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
-| `learned.json`    | Proposals the person dismissed                                  |
-| `suggestions.json` | Proposals the person chose to suggest to the organisation, until exported or removed |
+| `learned.json`    | SHA-256 digests of proposals the person dismissed (no readable text) |
+| `suggestions.json` | Proposals the person chose to suggest to the organisation, readable, until exported, removed or deleted with the learned text |
 | `deployment.json` | Managed desks only: signed policy sources and pinned public keys, written by IT |
 | `policy-cache/`   | Last good copy of each signed policy layer                     |
 | `policy-state.json` | Hash of the policy last applied and each source's status     |
 | `audit.jsonl`     | Policy changes, failing or recovering sources, capture-rule changes, corpus key and deletion events; never typed text |
 
-Learned text is only written encrypted. When the system has no secure
+Learned text is only written encrypted, with one exception the person
+chooses: proposals they mark "Suggest to organisation" are kept readable in
+`suggestions.json` so they can be reviewed and exported. When the system has no secure
 keychain (for example Linux without GNOME Keyring or KWallet, where Electron
 would fall back to a fixed password), learning sessions are not written at
 all and the dashboard says so. Text written by an earlier version without
 encryption is encrypted on the next start. Records the current key cannot
 open are kept untouched, never dropped, and the key file is never replaced
-while such records exist. The Learning tab shows how much text is stored and
-can delete all of it.
+while such records exist. The Learning tab shows how much text is stored;
+"Delete learned text" removes it together with the dismissed-proposal
+digests and any suggestions not yet exported.
 
 A file that cannot be parsed is moved aside (`*.corrupt-<timestamp>`), the
 dashboard shows a warning, and the app starts with defaults. Nothing refuses
