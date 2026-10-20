@@ -763,6 +763,42 @@ test("Writing pad keys are never library changes", () => {
   assert.equal(chromeStorage.isLibraryChange({ "sh:a": {} }, "sync"), true);
 });
 
+test("on Firefox with getKeys, reading the library skips Writing pad drafts", async () => {
+  const stored = {
+    ...structuredClone(initial),
+    "pad-draft:a": { id: "a", title: "Private", body: "x".repeat(1000), rev: 1 },
+    "pad-trash": [],
+    "shorthand-usage-counts": { local: 3 },
+  };
+  const reads = [];
+  const local = {
+    async getKeys() { return Object.keys(stored); },
+    async get(keys) {
+      reads.push(keys);
+      if (keys === null) return structuredClone(stored);
+      return Object.fromEntries([].concat(keys).filter((key) => key in stored).map((key) => [key, structuredClone(stored[key])]));
+    },
+  };
+  const load = (area) => {
+    const chrome = { runtime: { getManifest: () => ({ browser_specific_settings: { gecko: { id: "test@example.test" } } }) }, storage: { local: area } };
+    const context = vm.createContext({ chrome, self: {}, TextEncoder });
+    vm.runInContext(fs.readFileSync(require.resolve("../src/storage.js"), "utf8"), context);
+    return context.self.ShorthandStorage;
+  };
+  const all = await load(local).getAll();
+  assert.deepEqual(plain(all.shorthands.map((item) => item.trigger)), ["local/", "sig/"]);
+  assert.equal(all.settings.enabled, false);
+  assert.deepEqual(plain(reads), [["sh:local", "sh:sig", "settings"]], "only the library's keys are read");
+
+  // Without getKeys (Firefox 142), or when it fails, everything is read as before.
+  reads.length = 0;
+  const { getKeys, ...older } = local;
+  assert.equal((await load(older).getAll()).shorthands.length, 2);
+  assert.equal((await load({ ...local, getKeys: () => Promise.reject(new Error("unsupported")) }).getAll()).shorthands.length, 2);
+  assert.deepEqual(reads, [null, null]);
+  assert.equal(typeof getKeys, "function");
+});
+
 test("a Recently deleted change is not a library change", () => {
   const firefox = storageWith({}, { firefox: true }).storage;
   assert.equal(firefox.TRASH_KEY, TRASH);

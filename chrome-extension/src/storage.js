@@ -37,8 +37,27 @@
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
+  // On Firefox the library shares storage.local with everything else the
+  // extension keeps there, Writing pad drafts included, and getAll runs in
+  // every frame's content script. Where the browser can list keys (Firefox
+  // 143 and later), only the library's records and settings are read. This
+  // saves time and memory; it is not a privacy boundary.
+  async function libraryItems() {
+    if (AREA === "local" && typeof dataStore.getKeys === "function") {
+      let keys = null;
+      try {
+        keys = await dataStore.getKeys();
+      } catch (_) { /* read everything, as before */ }
+      if (Array.isArray(keys)) {
+        const wanted = keys.filter((key) => key.startsWith(PREFIX) || key === SETTINGS_KEY);
+        return wanted.length ? dataStore.get(wanted) : {};
+      }
+    }
+    return dataStore.get(null);
+  }
+
   async function getAll() {
-    const items = await dataStore.get(null);
+    const items = await libraryItems();
     const shorthands = [];
     for (const [key, value] of Object.entries(items)) {
       if (!key.startsWith(PREFIX) || !value || typeof value !== "object") continue;
