@@ -24,6 +24,18 @@ sources and the public keys that sign them; it then ignores any local
 `policy.json`. See [`../shared/ORG-POLICY.md`](../shared/ORG-POLICY.md) and the
 example in `../shared/org-policy.example.json`.
 
+## Search palette
+
+Ctrl+Shift+Space (Cmd+Shift+Space on macOS) opens a search over the merged
+library and the organisation's document sets; the tray menu has the same
+entry. Type a trigger or any words from the text, choose with ↑ and ↓, and
+press Enter: the window closes and the text is pasted where you were typing
+(fill-in templates open their form first, document sets their list). Esc or
+clicking elsewhere closes it. Typing in the palette is never expanded or
+learned. If another application already owns the hotkey, the dashboard says
+so and the tray entry still works. Statistics count a palette insert as its
+length minus the query and the Enter key.
+
 ## Where data lives
 
 Everything is in Electron's `userData` folder for the app
@@ -35,7 +47,7 @@ Everything is in Electron's `userData` folder for the app
 | ----------------- | --------------------------------------------------------------- |
 | `library.json`    | Own shortcuts, in the shared `shorthands.json` format (version 1) |
 | `policy.json`     | The organisation policy, if one was installed                   |
-| `settings.json`   | Enabled flag, own capture rules, typing-speed override          |
+| `settings.json`   | Enabled flag, own capture rules, typing-speed override, palette hotkey (`paletteShortcut`, an Electron accelerator; `""` turns it off) |
 | `metrics.jsonl`   | One line per insert: time, kind, application, keystrokes saved, whether the shortcut was the organisation's or the person's |
 | `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
@@ -111,5 +123,7 @@ Electron and without the native `uiohook-napi` build:
 - Package installation ran with `--ignore-scripts` to produce the lockfile;
   the Electron download and the uiohook native build were not performed.
 - `safeStorage` (the keychain behind corpus encryption), the policy refresh
-  timer, the save dialogs for usage reports, and the warning popover have not
-  run inside Electron; their logic is tested in Node with stand-ins.
+  timer, the save dialogs for usage reports, the warning popover, the global
+  palette hotkey and the return of focus to the previous application after
+  the palette closes have not run inside Electron; their logic is tested in
+  Node with stand-ins and the pages were rendered in Chromium.

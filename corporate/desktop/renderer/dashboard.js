@@ -423,6 +423,9 @@
     }
     if (!status.listener.available) problems.push("Keyboard listener unavailable: " + (status.listener.error || "unknown reason") + ". Shortcuts are not expanded until this is fixed.");
     if (!status.sender.available) problems.push("Cannot type into other applications: " + status.sender.reason + ".");
+    if (status.palette && status.palette.accelerator && !status.palette.registered) {
+      problems.push("The search palette shortcut " + status.palette.accelerator + " is not available (" + (status.palette.error || "unknown reason") + "). Use Search shortcuts in the tray menu instead.");
+    }
     for (const warning of status.warnings) problems.push(warning);
     $("banner").hidden = !problems.length;
     $("banner").textContent = "";

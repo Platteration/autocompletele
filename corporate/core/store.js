@@ -30,6 +30,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   shiftEnterForNewlines: false,
   startWithSystem: false,
   installId: null,            // random id that lets an administrator count a desk's reports once
+  paletteShortcut: "CommandOrControl+Shift+Space", // global hotkey for the search palette; "" turns it off
 });
 
 function createStore(dir) {
@@ -151,6 +152,7 @@ function createStore(dir) {
     out.charsPerMinute = Number.isFinite(cpm) && cpm > 0 ? cpm : null;
     out.captureApps = Array.isArray(out.captureApps) ? out.captureApps : [];
     out.installId = typeof out.installId === "string" && out.installId ? out.installId : null;
+    out.paletteShortcut = typeof out.paletteShortcut === "string" ? out.paletteShortcut.trim() : DEFAULT_SETTINGS.paletteShortcut;
     return out;
   }
 

@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld("actle", {
   getLearningInfo: invoke("learning:info"),
   clearLearning: invoke("learning:clear"),
   getStatus: invoke("app:status"),
+  // Search palette window.
+  paletteSearch: invoke("palette:search"),
+  paletteChoose: invoke("palette:choose"),
+  paletteClose: invoke("palette:close"),
   // Popover windows (template form, documents, keyword offer).
   getPopover: invoke("popover:get"),
   submitPopover: invoke("popover:submit"),

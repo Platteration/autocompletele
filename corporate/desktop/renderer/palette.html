@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
+  <title>actle search</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="popover palette">
+  <label class="palette-label" for="query">Search shortcuts and documents</label>
+  <input type="text" id="query" role="combobox" aria-expanded="true" aria-controls="results" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Type a trigger or any words from the text">
+  <ul id="results" role="listbox" aria-label="Results"></ul>
+  <p class="palette-hint">↑ ↓ choose · Enter insert · Esc close</p>
+  <div class="status" role="status" aria-live="polite" id="status"></div>
+  <script src="palette.js"></script>
+</body>
+</html>

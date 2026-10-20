@@ -279,6 +279,40 @@ function createAssistant(options) {
     return saveSettings({ enabled: value !== false });
   }
 
+  // Search palette: find and insert any shortcut or document set without
+  // remembering its trigger.
+  function paletteSearch(query, limit) {
+    if (policy.paused.active) return [];
+    const items = core.paletteSearch.items(engine.library, policy.documents);
+    return core.paletteSearch.search(items, query, limit).map((item) => ({
+      kind: item.kind, trigger: item.trigger, source: item.source, needsInput: item.needsInput, preview: item.preview,
+    }));
+  }
+
+  /** The action for a palette choice. The query and Enter count as keystrokes spent. */
+  function paletteChoose(choice) {
+    if (policy.paused.active || !choice) return null;
+    const spentKeystrokes = core.metrics.graphemes(String(choice.query == null ? "" : choice.query)) + 1;
+    if (choice.kind === "documents") {
+      const set = policy.documents.shortcuts.find((s) => s.trigger === choice.trigger);
+      return set ? { type: "documents", trigger: set.trigger, label: set.label, documents: set.documents.slice(), backspaces: 0, via: "palette" } : null;
+    }
+    const sh = engine.library.find((item) => item.trigger === choice.trigger);
+    if (!sh) return null;
+    const { template } = core.personal;
+    if (template.requiresInput(sh.expansion)) {
+      return { type: "template", trigger: sh.trigger, expansion: sh.expansion, fields: template.fields(sh.expansion), variables: template.variables(sh.expansion), backspaces: 0, source: sh.source, via: "palette", spentKeystrokes };
+    }
+    const rendered = template.render(sh.expansion, null, new Date(settings.now()));
+    return { type: "expand", trigger: sh.trigger, text: rendered.text, cursorOffset: rendered.cursorOffset, backspaces: 0, source: sh.source, via: "palette", spentKeystrokes };
+  }
+
+  /** Record a palette expansion after the shell inserted it. */
+  function paletteInserted(action) {
+    if (!action || action.type !== "expand") return null;
+    return engine.recordInsert({ kind: "palette", trigger: action.trigger, source: action.source, inserted: action.text, typed: "", spentKeystrokes: action.spentKeystrokes });
+  }
+
   /** The counts-only report this desk would send to its organisation. */
   function usageReport() {
     if (!userSettings.installId) {
@@ -353,6 +387,9 @@ function createAssistant(options) {
     usageReport,
     corpusInfo,
     clearLearning,
+    paletteSearch,
+    paletteChoose,
+    paletteInserted,
     audit: (limit) => store.loadAudit(limit),
     get managed() { return managed; },
     get paused() { return policy.paused.active; },

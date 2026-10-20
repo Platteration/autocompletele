@@ -27,6 +27,9 @@ adds what a business asks for:
 - **Central management**: signed policy files fetched from an intranet URL or
   a file share, layered organisation, department and team; rollback
   protection; an administrator kill switch; and a change log on every desk.
+- **Search palette**: Ctrl+Shift+Space (Cmd+Shift+Space on macOS) opens a
+  search over every shortcut and document set in any application; Enter
+  inserts the choice where the person was typing.
 - **Usage reports**: a counts-only report a person previews and exports, and
   an administrator roll-up with hours saved per team, estimated value,
   shortcuts by use and shortcuts nobody uses.
@@ -67,6 +70,7 @@ corporate/
     phrase-miner.js           recurring sentences, paragraphs and phrases across messages
     keyword-rules.js          keyword offers and compliance warnings, once per field
     documents.js              document shortcuts (/sld) and search
+    palette-search.js         search palette items, scored by the extension's palette module
     org-policy.js             the organisation policy parser and layer merge (skips bad parts, never refuses)
     policy-signing.js         Ed25519 signing and verification of policy files
     policy-source.js          fetch signed layers, verify, refuse replays, keep the last good copy

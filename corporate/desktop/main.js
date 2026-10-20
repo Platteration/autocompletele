@@ -4,7 +4,7 @@
 "use strict";
 
 const path = require("node:path");
-const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, shell, nativeImage, Notification, dialog, safeStorage } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, shell, nativeImage, Notification, dialog, safeStorage, globalShortcut } = require("electron");
 const { createAssistant } = require("./assistant.js");
 const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
@@ -28,6 +28,8 @@ let popoverState = null;
 let listenerStatus = { available: false, error: "starting" };
 let dashboardFocused = false;
 let lastContext = {};
+let paletteWindow = null;
+let paletteStatus = { accelerator: "", registered: false, error: null };
 
 function notify(body) {
   if (Notification.isSupported()) new Notification({ title: "actle", body }).show();
@@ -83,6 +85,7 @@ function updateTray() {
   tray.setToolTip("actle Corporate: " + state);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open dashboard", click: openDashboard },
+    { label: "Search shortcuts…" + (paletteStatus.registered ? " (" + paletteStatus.accelerator.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl") + ")" : ""), click: openPalette },
     { label: "Enabled", type: "checkbox", checked: enabled, click: (item) => { assistant.setEnabled(item.checked); updateTray(); broadcast({ settings: true }); } },
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
@@ -147,7 +150,9 @@ async function submitPopover(payload) {
   if (state.kind === "template") {
     const rendered = personal.template.render(state.expansion, payload.values || {}, new Date(), payload.pronouns || null);
     await sender.replace({ backspaces: state.backspaces, text: rendered.text, cursorOffset: rendered.cursorOffset });
-    assistant.recordInsert({ kind: "template", trigger: state.trigger, source: state.source, inserted: rendered.text, typed: state.trigger });
+    // The trigger was typed into the field only when it has to be deleted
+    // (typed trigger); from a keyword offer or the palette nothing was typed.
+    assistant.recordInsert({ kind: "template", trigger: state.trigger, source: state.source, inserted: rendered.text, typed: state.backspaces ? state.trigger : "", spentKeystrokes: state.spentKeystrokes });
   } else if (state.kind === "documents") {
     const chosen = state.documents.filter((doc, index) => (payload.selected || []).includes(index));
     if (payload.action === "reveal") {
@@ -214,6 +219,63 @@ function schedulePolicyRefresh() {
   refreshTimer = setInterval(refreshPolicy, minutes * 60 * 1000);
 }
 
+// Search palette: a global hotkey opens a small window that finds any
+// shortcut or document set; Enter inserts into the application underneath.
+function registerPaletteShortcut() {
+  const accelerator = assistant.settings().paletteShortcut;
+  paletteStatus = { accelerator, registered: false, error: null };
+  if (!accelerator) return;
+  try {
+    paletteStatus.registered = globalShortcut.register(accelerator, openPalette);
+    if (!paletteStatus.registered) paletteStatus.error = "another application already uses it";
+  } catch (error) {
+    paletteStatus.error = String(error && error.message || error);
+  }
+  if (!paletteStatus.registered) notify("The search palette shortcut " + accelerator + " is not available: " + paletteStatus.error + ".");
+}
+
+function openPalette() {
+  if (assistant.paused) {
+    notify("Paused by your organisation; the search palette is unavailable.");
+    return;
+  }
+  if (paletteWindow && !paletteWindow.isDestroyed()) {
+    paletteWindow.focus();
+    return;
+  }
+  paletteWindow = new BrowserWindow(windowOptions({
+    width: 560, height: 420, frame: false, alwaysOnTop: true, resizable: false, skipTaskbar: true, center: true, title: "actle search",
+  }));
+  paletteWindow.loadFile(path.join(__dirname, "renderer", "palette.html"));
+  paletteWindow.once("ready-to-show", () => { paletteWindow.show(); paletteWindow.focus(); });
+  // Typing a query must not expand or be learned.
+  paletteWindow.on("focus", () => setOwnWindow(true));
+  paletteWindow.on("blur", () => { setOwnWindow(false); closePalette(); });
+  paletteWindow.on("closed", () => { paletteWindow = null; });
+}
+
+function closePalette() {
+  if (paletteWindow && !paletteWindow.isDestroyed()) paletteWindow.close();
+  paletteWindow = null;
+}
+
+async function choosePalette(choice) {
+  closePalette();
+  // Give the focus back to the application the person was writing in.
+  if (process.platform === "darwin") app.hide();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const action = assistant.paletteChoose(choice);
+  if (!action) return { ok: false };
+  if (action.type === "expand") {
+    await sender.replace(action);
+    assistant.paletteInserted(action);
+    broadcast({ metrics: true });
+  } else {
+    handleAction(action);
+  }
+  return { ok: true };
+}
+
 function registerIpc() {
   const handle = (channel, fn) => ipcMain.handle(channel, (event, payload) => fn(payload));
   handle("metrics:summary", (q) => assistant.summary(q || {}));
@@ -238,6 +300,9 @@ function registerIpc() {
     require("node:fs").writeFileSync(result.filePath, JSON.stringify(report, null, 2) + "\n", "utf8");
     return { ok: true, path: result.filePath };
   });
+  handle("palette:search", (query) => assistant.paletteSearch(String(query == null ? "" : query), 8));
+  handle("palette:choose", (choice) => choosePalette(choice || null));
+  handle("palette:close", () => { closePalette(); return { ok: true }; });
   handle("policy:info", () => assistant.policyInfo());
   handle("policy:refresh", () => refreshPolicy());
   handle("policy:audit", () => assistant.audit(100));
@@ -257,6 +322,7 @@ function registerIpc() {
     mode: assistant.engine.mode,
     paused: assistant.paused,
     pausedMessage: assistant.policyInfo().paused.message,
+    palette: paletteStatus,
     context: lastContext,
     version: app.getVersion(),
   }));
@@ -302,6 +368,8 @@ function start() {
   if (!sender.isAvailable()) notify("Expansions cannot be typed into other applications: " + sender.unavailableReason());
   for (const warning of assistant.warnings()) notify(warning);
   schedulePolicyRefresh();
+  registerPaletteShortcut();
+  updateTray();
   openDashboard();
 }
 
@@ -312,6 +380,8 @@ function ledgerBroadcast() {
 app.on("window-all-closed", () => {
   // Stay in the tray.
 });
+
+app.on("will-quit", () => globalShortcut.unregisterAll());
 
 app.on("before-quit", () => {
   if (refreshTimer) clearInterval(refreshTimer);

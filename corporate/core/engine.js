@@ -280,13 +280,17 @@ function createEngine(options) {
     const kind = metrics.KINDS.includes(data.kind) ? data.kind : "suggestion";
     const inserted = String(data.inserted == null ? "" : data.inserted);
     const typed = String(data.typed == null ? "" : data.typed);
+    // Keystrokes spent outside the field (a palette query and its Enter key)
+    // are subtracted so the statistics do not flatter the palette.
+    const spent = Math.max(0, Math.floor(Number(data.spentKeystrokes) || 0));
     if (inserted) insertedText(typed.length, inserted);
     const fixedSeconds = kind === "document"
       ? Math.max(1, Math.floor(Number(data.count) || 1)) * policy.typing.secondsPerAttachment
       : Number(data.fixedSeconds) || 0;
     // Keyword rules and document sets only exist in the organisation policy.
     const source = kind === "document" || kind === "keyword" ? "organization" : data.source;
-    return ledger.record({ kind, trigger: data.trigger, source, inserted, typed, fixedSeconds, app: appName() });
+    const keystrokesSaved = Math.max(0, metrics.keystrokesSaved(inserted, typed) - spent);
+    return ledger.record({ kind, trigger: data.trigger, source, keystrokesSaved, fixedSeconds, app: appName() });
   }
 
   function setLibrary(next) {

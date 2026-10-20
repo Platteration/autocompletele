@@ -79,6 +79,20 @@ body.popover li { padding: 6px 0; border-bottom: 1px solid var(--line); }
 body.popover li label { display: flex; gap: 8px; align-items: center; margin: 0; }
 body.popover .path { color: var(--muted); font-size: 11px; }
 body.popover li.warning { border-left: 3px solid var(--danger); padding-left: 8px; }
+/* search palette */
+body.palette { display: flex; flex-direction: column; height: 100vh; border: 1px solid var(--control); border-radius: 12px; }
+body.palette .palette-label { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+body.palette input { width: 100%; font: inherit; font-size: 16px; padding: 8px 10px; border: 1px solid var(--control); border-radius: 8px; background: var(--bg); color: var(--text); }
+body.palette ul { flex: 1; overflow-y: auto; margin-top: 8px; }
+body.palette li[role="option"] { padding: 6px 8px; border-left: 3px solid transparent; border-bottom: 1px solid var(--line); cursor: pointer; }
+body.palette li[aria-selected="true"] { background: var(--soft); border-left-color: var(--accent); }
+body.palette .palette-head { display: flex; gap: 8px; align-items: baseline; }
+body.palette .palette-tag { margin-left: auto; color: var(--muted); font-size: 11px; }
+body.palette .palette-empty { padding: 12px 8px; color: var(--muted); }
+body.palette .palette-hint { margin: 6px 0 0; color: var(--muted); font-size: 11px; }
+@media (forced-colors: active) {
+  body.palette li[aria-selected="true"] { outline: 1px solid Highlight; outline-offset: -1px; }
+}
 @media (forced-colors: active) {
   .chart .fill, button.primary { forced-color-adjust: none; background: Highlight; color: HighlightText; }
   .overlay .slot { outline: 1px solid Highlight; }

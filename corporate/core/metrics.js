@@ -3,7 +3,7 @@
 "use strict";
 
 const DEFAULT_CHARS_PER_MINUTE = 200; // 40 words per minute at five characters a word
-const KINDS = Object.freeze(["expansion", "suggestion", "template", "learned", "keyword", "document"]);
+const KINDS = Object.freeze(["expansion", "suggestion", "template", "learned", "keyword", "document", "palette"]);
 const PERIODS = Object.freeze(["all", "day", "week", "month"]);
 const SOURCES = Object.freeze(["personal", "organization"]);
 
