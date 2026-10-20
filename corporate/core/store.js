@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   installId: null,            // random id that lets an administrator count a desk's reports once
   paletteShortcut: "CommandOrControl+Shift+Space", // global hotkey for the search palette; "" turns it off
   keyboardLayout: "auto",     // a layout id from desktop/adapters/layouts.js, or "auto" to follow the system
+  deferUpdates: false,        // true: an available update is only downloaded when the person asks
 });
 
 function createStore(dir) {
@@ -158,6 +159,7 @@ function createStore(dir) {
     out.installId = typeof out.installId === "string" && out.installId ? out.installId : null;
     out.paletteShortcut = typeof out.paletteShortcut === "string" ? out.paletteShortcut.trim() : DEFAULT_SETTINGS.paletteShortcut;
     out.keyboardLayout = typeof out.keyboardLayout === "string" && out.keyboardLayout.trim() ? out.keyboardLayout.trim() : "auto";
+    out.deferUpdates = out.deferUpdates === true;
     return out;
   }
 

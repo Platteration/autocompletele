@@ -37,6 +37,8 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `reporting.includeApps` | `true` adds per-application totals to usage reports (default `false`). |
 | `reporting.endpoint` | `https://` address that collects usage reports. Absent: nothing is ever sent. Plain `http://` is refused with a warning. |
 | `reporting.uploadEvery` | `day` or `week` (default): how often a desk sends its report once the endpoint is set. |
+| `updates.url` | `https://` folder that holds the installers and the `latest*.yml` files electron-builder writes. Absent: the desk never checks for updates. Plain `http://` is refused with a warning. |
+| `updates.channel` | Lower-case name, default `latest`: the desk reads `<channel>.yml` (`<channel>-mac.yml`, `<channel>-linux.yml`) from `updates.url`. |
 | `reporting.uploadToken` | Optional shared secret. The body is signed with HMAC-SHA256 (`X-Actle-Signature: sha256=…`) so the collector can drop posts from anyone who merely knows the URL. |
 | `retention.metricsDays` | Days of statistics kept on disk (default 365). |
 | `retention.corpusDays` | Days of learning text kept on disk (default 90). |
@@ -184,6 +186,35 @@ body is also signed with HMAC-SHA256 of the token. Desks hold no private key
 and the token sits in every desk's policy cache, so the signature proves
 only "sent by a desk holding this policy". The collector is yours to run:
 anything that accepts an https POST.
+
+## Software updates
+
+A packaged desk (an installer built with `cd corporate/desktop && npm run
+dist`) checks `updates.url` ninety seconds after start and every six hours,
+and only when the policy names such a server; a desk without one never
+contacts anything. The server is any static https host holding what
+electron-builder leaves in `dist/`: the installers (`.exe`, `.dmg` and
+`.zip`, `.AppImage`) and `latest.yml`, `latest-mac.yml`, `latest-linux.yml`
+(or `<channel>.yml` for another channel). Copy a new build's files there and
+every desk picks it up at its next check; downloads are verified against the
+hash in the `.yml`. The update installs when the app next quits, or at once
+with **Restart and install** on the Policy tab. A person can tick **Defer
+updates** there: the desk then only announces a new version and downloads
+it when they press **Download now**. Available, downloaded and failed
+updates go to the change log; a failed check never stops the assistant. Linux
+`.deb` installs do not self-update (electron-updater supports AppImage only);
+a `.deb` desk is updated by the package manager.
+
+```json
+"updates": { "url": "https://intranet.example/actle/updates", "channel": "latest" }
+```
+
+Installers from CI are unsigned. For a signed build set `CSC_LINK` and
+`CSC_KEY_PASSWORD` (Windows and macOS) and `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` for notarisation when
+running `npm run dist`; on Windows an update only installs over a build
+signed by the same certificate, so sign from the first release onward. The
+Windows installer accepts `/S` for a silent per-machine install.
 
 ## Lookups
 

@@ -24,6 +24,30 @@ sources and the public keys that sign them; it then ignores any local
 `policy.json`. See [`../shared/ORG-POLICY.md`](../shared/ORG-POLICY.md) and the
 example in `../shared/org-policy.example.json`.
 
+## Installers and updates
+
+```
+npm run dist                       # installers into dist/: NSIS .exe, .dmg + .zip, .AppImage + .deb
+npm run check:package -- dist/linux-unpacked   # confirms the packaged layout loads the core
+```
+
+`electron-builder` packs this folder into `app.asar` and copies `../core`
+and the three personal modules (`chrome-extension/src/{expander,template,
+palette}.js`) next to it as extra resources, so the `../core` requires in
+this folder and `core/personal.js`'s second search path resolve inside the
+package. The Windows installer is per machine, asks for the folder, and
+accepts `/S` for a silent install. The CI job `corporate-desktop` builds all
+three platforms unsigned and keeps the installers as artifacts; signing and
+notarisation need the certificate variables listed in
+[`../shared/ORG-POLICY.md`](../shared/ORG-POLICY.md), "Software updates".
+
+Updates (`updater.js`) run only in a packaged build and only when the
+policy names `updates.url`; `electron-updater` downloads from that server
+and installs on quit. The Policy tab shows the server, the last check and
+the state, with **Check now**, **Download now** (while updates are deferred)
+and **Restart and install**. The setting `deferUpdates` stops automatic
+downloads.
+
 ## Search palette
 
 Ctrl+Shift+Space (Cmd+Shift+Space on macOS) opens a search over the merged
@@ -47,7 +71,7 @@ Everything is in Electron's `userData` folder for the app
 | ----------------- | --------------------------------------------------------------- |
 | `library.json`    | Own shortcuts, in the shared `shorthands.json` format (version 1) |
 | `policy.json`     | The organisation policy, if one was installed                   |
-| `settings.json`   | Enabled flag, own capture rules, typing-speed override, palette hotkey (`paletteShortcut`, an Electron accelerator; `""` turns it off), `keyboardLayout` (`auto` or a layout id) |
+| `settings.json`   | Enabled flag, own capture rules, typing-speed override, palette hotkey (`paletteShortcut`, an Electron accelerator; `""` turns it off), `keyboardLayout` (`auto` or a layout id), `deferUpdates` |
 | `metrics.jsonl`   | One line per insert: time, kind, application, keystrokes saved, whether the shortcut was the organisation's or the person's |
 | `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
@@ -163,6 +187,11 @@ Electron and without the native `uiohook-napi` build:
   detection commands have not been tried on a real keyboard.
 - Package installation ran with `--ignore-scripts` to produce the lockfile;
   the Electron download and the uiohook native build were not performed.
+- `npm run dist` has not been run here: electron-builder, the NSIS, DMG and
+  AppImage targets, the `extraResources` copy of the core, and
+  `electron-updater` against a real `latest.yml` are unverified until the CI
+  job `corporate-desktop` and a Windows desk confirm them. The updater's
+  decisions are tested with a stand-in `autoUpdater`.
 - `safeStorage` (the keychain behind corpus encryption), the policy refresh
   and upload timers, the save dialogs for usage reports, the warning popover,
   the global palette hotkey and the return of focus to the previous

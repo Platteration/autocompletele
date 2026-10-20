@@ -113,6 +113,19 @@ test("reporting settings are validated with safe defaults", () => {
   assert.ok(plain.warnings.some((w) => /reporting.endpoint ignored: only https/.test(w)));
 });
 
+test("update servers are https only, channels are plain names, and later layers replace the whole block", () => {
+  assert.deepEqual(orgPolicy.parse({}).updates, { url: null, channel: "latest" });
+  assert.deepEqual(orgPolicy.parse({ updates: { url: " https://updates.example/actle/ ", channel: "beta" } }).updates, { url: "https://updates.example/actle", channel: "beta" });
+  const plain = orgPolicy.parse({ updates: { url: "http://updates.example/actle", channel: "Beta Channel" } });
+  assert.deepEqual(plain.updates, { url: null, channel: "latest" });
+  assert.ok(plain.warnings.some((w) => /updates.url ignored: only https/.test(w)));
+  assert.ok(plain.warnings.some((w) => /updates.channel ignored/.test(w)));
+  assert.deepEqual(orgPolicy.parse({ updates: "https://updates.example" }).updates, { url: null, channel: "latest" });
+  const merged = orgPolicy.parse(orgPolicy.merge([{ updates: { url: "https://a.example", channel: "beta" } }, { updates: { url: "https://b.example" } }]));
+  assert.deepEqual(merged.updates, { url: "https://b.example", channel: "latest" }, "a later layer with a url replaces the block, channel included");
+  assert.equal(orgPolicy.parse(orgPolicy.merge([{ updates: { url: "https://a.example" } }, { updates: { channel: "beta" } }])).updates.url, "https://a.example", "a layer without a url leaves the block alone");
+});
+
 test("a warning rule without a fix is valid; a fix must point at something that exists", () => {
   const policy = orgPolicy.parse({ keywordRules: [
     { id: "card", action: "warn", detect: ["card-number"], message: "No card numbers." },

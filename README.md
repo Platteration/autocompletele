@@ -48,7 +48,10 @@ applications a person opts in (mail clients, typically), with a diff overlay
 that shows which parts of similar messages change and turns them into
 `[[name]]` fill-in templates; keyword offers that insert predetermined text
 when certain words are written; and document shortcuts such as `/sld` that
-list the files an organisation designates for a job. Everything is driven by
+list the files an organisation designates for a job. It is installed from
+NSIS, DMG or AppImage/deb installers (`cd corporate/desktop && npm run dist`,
+or the CI artifacts), updates itself from a folder the organisation names,
+and carries a per-seat licence inside the policy. Everything is driven by
 one organisation policy file (`corporate/shared/ORG-POLICY.md`). See
 [corporate/README.md](corporate/README.md) for the assessment, architecture
 and current status. Rules for which edition a change touches are in

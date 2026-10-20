@@ -9,6 +9,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createAssistant } = require("./assistant.js");
+const { createUpdater } = require("./updater.js");
 
 const POLICY_FILE = path.join(__dirname, "..", "shared", "org-policy.example.json");
 const FALLBACK_POLICY = {
@@ -97,6 +98,11 @@ print("policy: " + (assistant.policyInfo().organization || "(none)") + "; warnin
 print("licence: " + assistant.licence().status + (assistant.licence().enforced ? "" : " (no vendor key built in; nothing is switched off)"));
 
 async function main() {
+  // Updates: the stand-in autoUpdater records what a packaged desk would ask of electron-updater.
+  const updaterCalls = [];
+  const updater = createUpdater({ policy: () => assistant.policyInfo(), settings: () => assistant.settings(), isPackaged: true, autoUpdater: { on() {}, setFeedURL: (o) => updaterCalls.push(o), checkForUpdates: async () => updaterCalls.push("check") } });
+  const updateCheck = await updater.check();
+  print("updates: " + (assistant.policyInfo().updates.url || "no server in the policy") + "; check " + (updateCheck.ok ? "ran" : "refused: " + updateCheck.reason) + "; electron-updater calls: " + updaterCalls.length);
   const lookups = await assistant.refreshLookups(true);
   print("lookups: " + lookups.lookups.map((l) => l.trigger + " " + l.status + " (" + l.rows + " rows)").join(", ") + (lookups.warnings.length ? "; " + lookups.warnings.join("; ") : ""));
 

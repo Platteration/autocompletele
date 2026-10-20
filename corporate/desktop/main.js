@@ -10,6 +10,7 @@ const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
 const { createAttacher } = require("./adapters/attach.js");
 const { detectLayout } = require("./adapters/keyboard-layout.js");
+const { createUpdater } = require("./updater.js");
 const layouts = require("./adapters/layouts.js");
 const { personal } = require("../core/index.js");
 
@@ -34,6 +35,8 @@ let dashboardFocused = false;
 let lastContext = {};
 let paletteWindow = null;
 let paletteStatus = { accelerator: "", registered: false, error: null };
+let updater = null;
+let updateTimer = null;
 let detectedLayout = null;
 let keyboardTest = false; // while true, translated keys go to the dashboard's test box instead of the engine
 
@@ -280,6 +283,14 @@ function scheduleLookups() {
   lookupTimer = setInterval(() => { refreshLookups(false).catch((error) => assistant.log("lookup refresh failed: " + error)); }, 60 * 60 * 1000);
 }
 
+// Software updates: only when the policy names an https update server, and
+// only in a packaged build; checked after start and then every six hours.
+function scheduleUpdates() {
+  const run = () => updater.check().catch((error) => assistant.log("update check failed: " + error)).then(() => broadcast({ updates: true }));
+  setTimeout(run, 90 * 1000);
+  updateTimer = setInterval(run, 6 * 60 * 60 * 1000);
+}
+
 function scheduleUploads() {
   uploadTimer = setInterval(() => { uploadIfDue().catch((error) => assistant.log("upload failed: " + error)); }, 60 * 60 * 1000);
   setTimeout(() => { uploadIfDue().catch((error) => assistant.log("upload failed: " + error)); }, 2 * 60 * 1000);
@@ -412,8 +423,13 @@ function registerIpc() {
     updateTray();
     broadcast({ settings: true });
     if (next && Object.hasOwn(next, "keyboardLayout")) applyKeyboardLayout().catch((error) => assistant.log("layout: " + error));
+    if (next && next.deferUpdates === false && updater.status().phase === "available") updater.download().then(() => broadcast({ updates: true }));
     return r;
   });
+  handle("updates:status", () => updater.status());
+  handle("updates:check", async () => { const r = await updater.check(); broadcast({ updates: true }); return r; });
+  handle("updates:download", async () => { const r = await updater.download(); broadcast({ updates: true }); return r; });
+  handle("updates:install", () => updater.install());
   handle("keyboard:info", () => keyboardInfo());
   handle("keyboard:test", (on) => { keyboardTest = !!on; return { ok: true }; });
   handle("keyboard:detect", async () => { detectedLayout = await detectLayout(process.platform); await applyKeyboardLayout(); return keyboardInfo(); });
@@ -446,6 +462,7 @@ function registerIpc() {
     pausedMessage: assistant.policyInfo().paused.message,
     palette: paletteStatus,
     keyboard: keyboardInfo(),
+    updates: updater.status(),
     context: lastContext,
     version: app.getVersion(),
   }));
@@ -463,6 +480,14 @@ function start() {
     log: (line) => console.log(line),
   });
   sender = createSender({ clipboard, notify });
+  updater = createUpdater({
+    policy: () => assistant.policyInfo(),
+    settings: () => assistant.settings(),
+    isPackaged: app.isPackaged,
+    log: (line) => assistant.log(line),
+    audit: (entry) => assistant.record(entry),
+    notify,
+  });
   attacher = createAttacher({ notify, paste: () => sender.paste() });
   listener = createInputListener({
     onKey: (key) => {
@@ -500,6 +525,7 @@ function start() {
   schedulePolicyRefresh();
   scheduleUploads();
   scheduleLookups();
+  scheduleUpdates();
   registerPaletteShortcut();
   updateTray();
   openDashboard();
@@ -518,6 +544,7 @@ app.on("will-quit", () => globalShortcut.unregisterAll());
 app.on("before-quit", () => {
   if (refreshTimer) clearInterval(refreshTimer);
   if (uploadTimer) clearInterval(uploadTimer);
+  if (updateTimer) clearInterval(updateTimer);
   if (lookupTimer) clearInterval(lookupTimer);
   if (listener) listener.stop();
   if (assistant) assistant.endSession();

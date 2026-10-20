@@ -1,6 +1,7 @@
 {
   "version": 1,
   "organization": "Example Logistics Ltd",
+  "updates": { "url": "https://intranet.example/actle/updates", "channel": "latest" },
   "typing": { "charsPerMinute": 200, "secondsPerAttachment": 20 },
   "capture": {
     "defaultMode": "triggers",

@@ -151,6 +151,15 @@
         <summary>What was sent last time</summary>
         <pre class="mono" id="upload-body"></pre>
       </details>
+      <h2 class="mt">Software updates</h2>
+      <p class="hint" id="updates-mode"></p>
+      <div class="toolbar">
+        <button class="plain" id="updates-check" hidden>Check now</button>
+        <button class="plain" id="updates-download" hidden>Download now</button>
+        <button id="updates-install" hidden>Restart and install</button>
+        <span class="hint" id="updates-result"></span>
+      </div>
+      <label class="row"><input type="checkbox" id="updates-defer"> Defer updates: tell me when one is available and download it only when I choose</label>
       <h2 class="mt">Change log</h2>
       <p class="hint">Policy changes, policy sources that failed or recovered, and changes to your own capture rules. Typed text is never recorded here.</p>
       <table><thead><tr><th>When</th><th>Event</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table>

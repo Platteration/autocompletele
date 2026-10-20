@@ -7,12 +7,61 @@
   "engines": { "node": ">=22.2.0" },
   "scripts": {
     "start": "electron .",
-    "simulate": "node simulate.js"
+    "simulate": "node simulate.js",
+    "dist": "electron-builder --publish never",
+    "check:package": "node scripts/check-package.js"
   },
   "dependencies": {
+    "electron-updater": "6.8.9",
     "uiohook-napi": "1.5.5"
   },
   "devDependencies": {
-    "electron": "44.9.0"
+    "electron": "44.9.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.actle.corporate",
+    "productName": "actle Corporate",
+    "artifactName": "actle-corporate-${version}-${os}-${arch}.${ext}",
+    "copyright": "actle contributors",
+    "asar": true,
+    "files": [
+      "package.json",
+      "main.js",
+      "preload.js",
+      "assistant.js",
+      "learning.js",
+      "corpus-key.js",
+      "updater.js",
+      "adapters/**/*",
+      "renderer/**/*"
+    ],
+    "extraResources": [
+      { "from": "../core", "to": "core", "filter": ["*.js"] },
+      { "from": "../../chrome-extension/src", "to": "chrome-extension/src", "filter": ["expander.js", "template.js", "palette.js"] }
+    ],
+    "publish": null,
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "actle Corporate"
+    },
+    "mac": {
+      "target": [{ "target": "dmg" }, { "target": "zip" }],
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "executableName": "actle-corporate",
+      "category": "Office",
+      "maintainer": "actle contributors"
+    }
   }
 }

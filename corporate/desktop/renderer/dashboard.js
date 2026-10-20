@@ -422,6 +422,9 @@
     "report-uploaded": "Usage report sent",
     "report-upload-failed": "Usage report not sent",
     "licence-changed": "Licence changed",
+    "update-available": "Update available",
+    "update-downloaded": "Update downloaded",
+    "update-failed": "Update failed",
   };
 
   function auditDetail(entry) {
@@ -442,6 +445,12 @@
         return entry.bytes + " bytes to " + entry.endpoint + " (HTTP " + entry.status + ")";
       case "report-upload-failed":
         return (entry.error || "failed") + " (" + entry.endpoint + ")";
+      case "update-available":
+        return "version " + entry.version + (entry.channel ? " on channel " + entry.channel : "") + (entry.deferred ? ", deferred" : "");
+      case "update-downloaded":
+        return "version " + entry.version + ", installs at the next restart";
+      case "update-failed":
+        return entry.error || "";
       case "licence-changed":
         return (entry.id || "no licence") + ": " + entry.status + (entry.seats ? ", " + entry.seats + " seats" : "") + (entry.expiresAt ? ", expires " + String(entry.expiresAt).slice(0, 10) : "");
       case "policy-source-problem":
@@ -521,6 +530,51 @@
     }
   }
 
+  async function renderUpdates() {
+    const up = await api.getUpdateStatus();
+    const when = (ms) => (ms ? new Date(ms).toLocaleString() : "never");
+    let line;
+    if (!up.available) line = "Automatic updates are not available in this build (" + (up.blocked || "no updater") + ").";
+    else if (!up.configured) line = "Your organisation has not named an update server; this computer never checks for updates. Install new versions by hand.";
+    else {
+      line = "Updates come from " + up.url + " (channel " + up.channel + ")";
+      if (!up.packaged) line += ", but this is a development run, so nothing is checked";
+      line += ". Last check: " + when(up.checkedAt) + ".";
+      const phase = {
+        checking: " Checking…", current: " This is the latest version.", available: " Version " + up.version + " is available and waiting for you to download it.",
+        downloading: " Downloading version " + up.version + (up.percent != null ? " (" + up.percent + "%)" : "") + "…",
+        downloaded: " Version " + up.version + " is downloaded and installs when the app restarts.", error: " The last check failed: " + up.error,
+      }[up.phase];
+      if (phase) line += phase;
+    }
+    text($("updates-mode"), line);
+    $("updates-check").hidden = !(up.available && up.configured && up.packaged);
+    $("updates-download").hidden = up.phase !== "available";
+    $("updates-install").hidden = up.phase !== "downloaded";
+    $("updates-defer").checked = !!up.deferred;
+  }
+
+  $("updates-check").addEventListener("click", async () => {
+    text($("updates-result"), "Checking…");
+    const result = await api.checkUpdates();
+    text($("updates-result"), result && result.ok ? "" : "Not checked: " + ((result && result.reason) || "unknown reason"));
+    await renderUpdates();
+  });
+  $("updates-download").addEventListener("click", async () => {
+    const result = await api.downloadUpdate();
+    text($("updates-result"), result && result.ok ? "" : "Not downloaded: " + ((result && result.reason) || "unknown reason"));
+    await renderUpdates();
+  });
+  $("updates-install").addEventListener("click", async () => {
+    const result = await api.installUpdate();
+    if (!(result && result.ok)) text($("updates-result"), "Not installed: " + ((result && result.reason) || "unknown reason"));
+  });
+  $("updates-defer").addEventListener("change", async () => {
+    await api.saveSettings({ deferUpdates: $("updates-defer").checked });
+    announce($("updates-defer").checked ? "Updates are deferred" : "Updates download automatically");
+    await renderUpdates();
+  });
+
   $("upload-now").addEventListener("click", async () => {
     text($("upload-result"), "Sending…");
     const result = await api.uploadReport();
@@ -583,7 +637,7 @@
   }
 
   async function renderAll(change) {
-    const what = change || { metrics: true, library: true, learning: true, settings: true, status: true, context: true, policy: true, keyboard: true };
+    const what = change || { metrics: true, library: true, learning: true, settings: true, status: true, context: true, policy: true, keyboard: true, updates: true };
     if (what.status || what.context) await renderStatus();
     if (what.settings || what.library || what.learning) await renderPolicyTabs();
     if (what.metrics || what.settings) await renderOverview();
@@ -596,6 +650,7 @@
       await renderUpload();
       await renderLookups();
     }
+    if (what.settings || what.policy || what.updates) await renderUpdates();
   }
 
   api.onChange((change) => { renderAll(change).catch(console.error); });

@@ -35,6 +35,7 @@ function empty() {
     paused: { active: false, message: "" },
     serial: null,
     licence: null,
+    updates: { url: null, channel: "latest" },
     reporting: { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12, endpoint: null, uploadEvery: "week", uploadToken: null },
     warnings: [],
   };
@@ -73,6 +74,7 @@ function merge(layers) {
   for (const layer of list) {
     if (typeof layer.organization === "string") out.organization = layer.organization;
     if (typeof layer.licence === "string" && layer.licence.trim()) out.licence = layer.licence;
+    if (isObject(layer.updates) && typeof layer.updates.url === "string" && layer.updates.url.trim()) out.updates = Object.assign({}, layer.updates);
     for (const section of ["typing", "learning", "retention", "reporting"]) {
       if (isObject(layer[section])) out[section] = Object.assign({}, out[section], layer[section]);
     }
@@ -191,6 +193,15 @@ function parse(input) {
   policy.reporting.endpoint = /^https:\/\//i.test(endpoint) ? endpoint : null;
   policy.reporting.uploadEvery = ["day", "week"].includes(reporting.uploadEvery) ? reporting.uploadEvery : "week";
   policy.reporting.uploadToken = typeof reporting.uploadToken === "string" && reporting.uploadToken.trim() ? reporting.uploadToken.trim() : null;
+
+  // Software updates: a desk only ever fetches from an https server the policy names (see desktop/updater.js).
+  const updates = isObject(source.updates) ? source.updates : {};
+  const updateUrl = typeof updates.url === "string" ? updates.url.trim().replace(/\/+$/, "") : "";
+  if (updateUrl && !/^https:\/\//i.test(updateUrl)) policy.warnings.push("updates.url ignored: only https:// is allowed");
+  policy.updates.url = /^https:\/\//i.test(updateUrl) ? updateUrl : null;
+  const channel = typeof updates.channel === "string" ? updates.channel.trim() : "";
+  if (channel && !/^[a-z][a-z0-9-]{0,31}$/.test(channel)) policy.warnings.push("updates.channel ignored: use lower-case letters, digits and dashes");
+  policy.updates.channel = /^[a-z][a-z0-9-]{0,31}$/.test(channel) ? channel : "latest";
 
   const retention = source.retention && typeof source.retention === "object" ? source.retention : {};
   policy.retention.metricsDays = Math.floor(positive(retention.metricsDays, policy.retention.metricsDays));

@@ -49,6 +49,10 @@ adds what a business asks for:
 - **Usage reports**: a counts-only report a person previews and exports, and
   an administrator roll-up with hours saved per team, estimated value,
   shortcuts by use and shortcuts nobody uses.
+- **Installers and updates**: NSIS, DMG and AppImage/deb installers from
+  one command or the CI job, silent per-machine install on Windows, and
+  automatic updates from an https folder the policy names (never from
+  anywhere else), with a per-desk "defer updates" choice.
 - **One organisation policy file** drives all of it:
   [`shared/ORG-POLICY.md`](shared/ORG-POLICY.md), with a complete example in
   [`shared/org-policy.example.json`](shared/org-policy.example.json).
@@ -187,7 +191,9 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
 
 ## Follow-ups
 
-- Installer packaging for organisations (signed installers, silent install).
+- Installers from CI are unsigned; a signing certificate (and Apple
+  notarisation credentials) is the organisation's to add. Linux `.deb`
+  installs do not self-update.
 - Licensing is built but not enforced until the vendor's public key is pasted
   into `core/license.js` (see ORG-POLICY.md, Licensing).
 - Keyboard layouts beyond the ten built in, and input methods (IME).
