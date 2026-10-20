@@ -171,6 +171,12 @@
         <small>Username, password, sign-in code and payment fields are skipped when identified by the page.</small>
       </div>
       <div class="row column">
+        <label for="theme"><strong>Style</strong></label>
+        <select id="theme" aria-describedby="themeHint themeMsg" data-shorthand-ignore></select>
+        <small id="themeHint">Restyles the library, toolbar popup, suggestions, search overlay and fill-in form.</small>
+        <span id="themeMsg" class="msg" role="status"></span>
+      </div>
+      <div class="row column">
         <label for="animationMode"><strong>Text animation</strong></label>
         <select id="animationMode" aria-describedby="animationHint animationMsg" data-shorthand-ignore>
           <option value="expand">Expand</option>
@@ -277,6 +283,7 @@
   </div>
 
   <script src="brand.js"></script>
+  <script src="themes.js"></script>
   <script src="expander.js"></script>
   <script src="template.js"></script>
   <script src="conflicts.js"></script>

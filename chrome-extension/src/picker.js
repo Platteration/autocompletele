@@ -78,8 +78,8 @@
         .panel {
           width: 340px; max-width: 90vw;
           background: var(--panel); color: var(--text); border: 1px solid var(--control);
-          border-radius: 12px; box-shadow: 0 12px 32px rgba(13,19,32,.2);
-          font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+          border-radius: var(--radius-panel, 12px); box-shadow: var(--shadow, 0 12px 32px rgba(13,19,32,.2));
+          font: 13px/1.45 var(--font, system-ui, -apple-system, "Segoe UI", sans-serif);
           overflow: hidden;
         }
         @media (prefers-color-scheme: dark) {
@@ -91,7 +91,7 @@
         }
         .query {
           padding: 10px 12px; border-bottom: 1px solid var(--line);
-          font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all;
+          font-family: var(--mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-all;
         }
         .caret { color: var(--muted); }
         .list { max-height: 260px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--control) var(--panel); }
@@ -100,7 +100,7 @@
         .item[data-selected="true"] { background: var(--soft); border-left-color: var(--accent); }
         .item:active { background: var(--pressed); }
         .trigger {
-          display: block; font-family: ui-monospace, monospace; font-weight: 600;
+          display: block; font-family: var(--mono, ui-monospace, monospace); font-weight: 600;
           color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .expansion {
@@ -114,7 +114,7 @@
           .item[data-selected="true"] { border-left-color: Highlight; outline: 1px solid Highlight; outline-offset: -1px; }
         }
     `);
-    shadow.adoptedStyleSheets = [stylesheet];
+    root.ActleThemes.adopt(shadow, stylesheet);
     shadow.innerHTML = `
       <div class="panel" role="dialog" aria-label="Insert shorthand">
         <div class="query"></div>

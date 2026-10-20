@@ -4,6 +4,7 @@
   const palette = self.ShorthandPalette;
   const template = self.ShorthandTemplate;
   const templateForm = self.ShorthandTemplateForm;
+  const themes = self.ActleThemes;
   const enabledEl = document.getElementById("enabled");
   const siteEl = document.getElementById("site");
   const hostEl = document.getElementById("host");
@@ -12,11 +13,28 @@
   const searchEl = document.getElementById("search");
   const resultsEl = document.getElementById("results");
   const toastEl = document.getElementById("toast");
+  const themeEl = document.getElementById("theme");
+  const themeNoteEl = document.getElementById("themeNote");
 
   let host = "";
   let shorthands = [];
   let excluded = [];
   let visible = [];
+  let savedTheme = themes.applyRemembered(document);
+
+  for (const theme of themes.THEMES) {
+    const option = document.createElement("option");
+    option.value = theme.id;
+    option.textContent = theme.name;
+    themeEl.append(option);
+  }
+
+  function showTheme(id, remember = true) {
+    savedTheme = themes.applyPage(document, id, remember);
+    themeEl.value = savedTheme;
+    themeNoteEl.textContent = themes.THEMES.find((entry) => entry.id === savedTheme).note;
+  }
+  showTheme(savedTheme, false);
 
   function setStatus(enabled, siteEnabled) {
     const active = enabled && siteEnabled;
@@ -114,6 +132,7 @@
   const settings = data.settings;
   enabledEl.checked = settings.enabled !== false;
   excluded = settings.excludedHosts || [];
+  showTheme(settings.theme);
 
   let siteEnabled = true;
   if (host) {
@@ -169,6 +188,22 @@
     excluded = Array.from(set);
     await storage.saveSettings({ excludedHosts: excluded });
     setStatus(enabledEl.checked, siteEl.checked);
+  });
+
+  themeEl.addEventListener("change", async () => {
+    const previous = savedTheme;
+    themeEl.disabled = true;
+    themes.applyPage(document, themeEl.value, false);
+    try {
+      showTheme((await storage.saveSettings({ theme: themes.normalize(themeEl.value) })).theme);
+      say(`Style: ${themeEl.selectedOptions[0].textContent}`);
+    } catch (error) {
+      showTheme(previous);
+      say("Could not save style. Previous style kept.");
+    } finally {
+      themeEl.disabled = false;
+      themeEl.focus();
+    }
   });
 
   document.getElementById("options").addEventListener("click", () => chrome.runtime.openOptionsPage());

@@ -26,6 +26,7 @@ async function content({ premium = previewClient(), config = premiumConfig, stor
       ShorthandTemplate: require("../src/template.js"),
       ShorthandTemplateForm: form || { isOpen() { return false; }, show() { return false; } },
       ShorthandExpansionFeedback: feedback || { show() {}, clear() {} },
+      ActleThemes: require("../src/themes.js"),
     },
     document, window: { addEventListener() {} }, location: { hostname: "page.example" }, chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {},
   };
@@ -250,6 +251,7 @@ async function richContent() {
       ShorthandTemplate: require("../src/template.js"),
       ShorthandTemplateForm: { isOpen() { return false; }, show() { return false; } },
       ShorthandExpansionFeedback: { show() {}, clear() {} },
+      ActleThemes: require("../src/themes.js"),
     },
     document, window: { getSelection() { return selection; }, addEventListener() {} }, location: { hostname: "page.example" },
     chrome: { storage: { onChanged: { addListener() {} } } }, Event: class {}, InputEvent: class {}, Node: { TEXT_NODE: 3 },
@@ -308,6 +310,7 @@ function picker() {
   // The picker styles its closed shadow root with a constructed stylesheet.
   const sandbox = { self: {}, document, CSSStyleSheet: class { replaceSync() {} }, window: { innerWidth: 800, innerHeight: 600, addEventListener() {}, removeEventListener() {} } };
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/themes.js"), "utf8"), sandbox);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/picker.js"), "utf8"), sandbox);
   const anchor = { getRootNode() { return document; }, getBoundingClientRect() { return { width: 10, height: 10, bottom: 10, left: 0 }; } };
   document.activeElement = anchor;

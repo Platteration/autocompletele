@@ -67,6 +67,27 @@ library and editor, keeping the editing controls in view. The library, toolbar,
 search overlay, and fill-in form follow the browser's light or dark appearance.
 Keyboard focus, selected results, and disabled controls have distinct states.
 
+Choose a look under **Settings → Style**, or from the **Style** menu in the
+toolbar popup. The choice applies at once to the library, the toolbar popup,
+suggestions, the `;;` search overlay, the fill-in form, the plan notice and the
+expansion outline, including ones already open on other pages:
+
+- **Classic** (default): navy sidebar, rounded cards, actle blue.
+- **Quiet Grid**: neutral greys, hairline rules, square corners and one blue.
+- **Quiet Utility**: white panels, soft grey borders and one steady blue.
+- **Warm Paper**: off-white paper, dark ink, terracotta and a serif for headings.
+- **Bright Playful**: violet and sunflower with rounded keycap buttons; on
+  webpages its overlays are a dark violet bubble.
+- **Dark Pro**: near-black with an electric-lime accent, dark in both appearances.
+- **Swiss Grid**: black on white, square corners and one signal red.
+
+Every style has light and dark colors (Dark Pro is always dark) that meet WCAG AA
+contrast. The style is saved with your other settings. Fonts come from your
+computer: actle never downloads one, so a style's named typeface (IBM Plex,
+Fraunces, Nunito, Space Grotesk, Archivo) appears only if it is installed, and a
+similar system font is used otherwise. The toolbar icon keeps its blue tile in
+every style.
+
 The actle logo completes `actle` into `autocompletele` once when the library or
 toolbar popup opens. Select the logo to replay the completion. Reduced-motion
 preferences suppress the animation. Store screenshots show the resting logo;
@@ -279,6 +300,7 @@ Use the appropriate `autocomplete` tokens on credential and payment controls.
 | `src/field-safety.js` | Identifies credential and payment fields from page metadata    |
 | `src/animation-frames.js` | Grapheme-aware Expand and Casino animation frames             |
 | `src/expansion-feedback.js` | Temporary in-field animation, respecting reduced motion    |
+| `src/themes.js`       | Selectable styles: colors and shapes for every surface         |
 | `src/picker.js`       | The `;;` search overlay (closed shadow root, key capture)       |
 | `src/palette.js`      | Pure ranking logic for the toolbar command palette             |
 | `src/import-plan.js`  | Pure import preview and safe-merge planning                    |

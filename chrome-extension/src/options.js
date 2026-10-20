@@ -4,12 +4,14 @@
   const { sanitizeList } = self.ShorthandExpander;
   const importPlan = self.ShorthandImportPlan;
   const template = self.ShorthandTemplate;
+  const themes = self.ActleThemes;
 
   const $ = (id) => document.getElementById(id);
   const enabledEl = $("enabled");
   const excludedEl = $("excluded");
   const pickerTriggerEl = $("pickerTrigger");
   const animationModeEl = $("animationMode");
+  const themeEl = $("theme");
   const suggestionsEnabledEl = $("suggestionsEnabled");
   const form = $("editor");
   const editId = $("editId");
@@ -39,6 +41,22 @@
   let savingAnimationMode = false;
   let savedSuggestionsEnabled = storage.DEFAULT_SETTINGS.suggestionsEnabled;
   let savingSuggestionsEnabled = false;
+  let savedTheme = themes.applyRemembered(document);
+  let savingTheme = false;
+
+  for (const theme of themes.THEMES) {
+    const option = document.createElement("option");
+    option.value = theme.id;
+    option.textContent = theme.name;
+    themeEl.append(option);
+  }
+
+  function showTheme(id) {
+    savedTheme = themes.applyPage(document, id);
+    themeEl.value = savedTheme;
+    $("themeHint").textContent = themes.THEMES.find((entry) => entry.id === savedTheme).note
+      + " Applies to the library, toolbar popup, suggestions, search overlay and fill-in form.";
+  }
 
   function renderPreview() {
     const preview = $("templatePreview");
@@ -233,6 +251,7 @@
       savedSuggestionsEnabled = data.settings.suggestionsEnabled;
       suggestionsEnabledEl.checked = savedSuggestionsEnabled;
     }
+    if (!savingTheme) showTheme(data.settings.theme);
     if (document.activeElement !== pickerTriggerEl) {
       pickerTriggerEl.value = typeof data.settings.pickerTrigger === "string"
         ? data.settings.pickerTrigger
@@ -413,6 +432,33 @@
     }
   });
 
+  themeEl.addEventListener("change", async () => {
+    if (savingTheme) return;
+    const previous = savedTheme;
+    const restoreFocus = document.activeElement === themeEl;
+    savingTheme = true;
+    themeEl.disabled = true;
+    // Show the choice right away; a failed save puts the saved style back.
+    themes.applyPage(document, themeEl.value, false);
+    say($("themeMsg"), "Saving style…", false, true);
+    try {
+      const settings = await storage.saveSettings({ theme: themes.normalize(themeEl.value) });
+      showTheme(settings.theme);
+      say($("themeMsg"), `Style saved: ${themeEl.selectedOptions[0].textContent}.`);
+    } catch (error) {
+      showTheme(previous);
+      say($("themeMsg"), "Could not save style: "
+        + (error && error.message ? error.message : error) + ". Previous style kept.", true, true);
+    } finally {
+      savingTheme = false;
+      themeEl.disabled = !writable;
+      if (restoreFocus && document.hasFocus()
+          && (document.activeElement === document.body || document.activeElement === themeEl)) {
+        themeEl.focus({ preventScroll: true });
+      }
+    }
+  });
+
   pickerTriggerEl.addEventListener("change", () => {
     const value = pickerTriggerEl.value.trim();
     if (/\s/.test(value)) {
@@ -490,7 +536,7 @@
     }
     say(ioMsg, "Library recovery needs attention: " + e.message + ". Export the pre-import backup before editing." + readError, true);
     form.querySelectorAll("input, textarea, select, button").forEach((el) => { el.disabled = true; });
-    [enabledEl, excludedEl, pickerTriggerEl, animationModeEl, suggestionsEnabledEl, $("importBtn"), $("importFile")].forEach((el) => { el.disabled = true; });
+    [enabledEl, excludedEl, pickerTriggerEl, animationModeEl, suggestionsEnabledEl, themeEl, $("importBtn"), $("importFile")].forEach((el) => { el.disabled = true; });
     $("mergeBtn").disabled = $("replaceBtn").disabled = true;
   });
 })();

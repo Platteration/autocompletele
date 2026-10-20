@@ -4,7 +4,7 @@
 
 **Privacy contact:** https://github.com/Platteration/autocompletele/issues
 
-**Effective date:** October 13, 2026
+**Effective date:** October 20, 2026
 
 This policy covers the actle browser extension. The contact page is
 public; do not include snippets, credentials, or other private information when
@@ -26,7 +26,9 @@ a remote service. Suggestions are enabled by default and can be turned off.
 
 The extension saves the triggers and expansion text you create, their ordering,
 and your settings. Settings include whether expansion is enabled, the search
-overlay trigger, suggestions, text animation, and the hostnames you exclude. When you open the toolbar popup,
+overlay trigger, suggestions, text animation, style, and the hostnames you exclude. The library and
+toolbar pages also keep a copy of the chosen style in the extension's own page
+storage on that device, so they open in that style. When you open the toolbar popup,
 the extension reads the active tab's URL to identify its hostname for the site
 toggle. It does not keep a browsing-history log.
 

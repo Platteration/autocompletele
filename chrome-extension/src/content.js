@@ -153,6 +153,7 @@
       const previousMode = animationMode;
       animationMode = data.settings.animationMode;
       suggestionsEnabled = data.settings.suggestionsEnabled;
+      self.ActleThemes.setOverlayTheme(data.settings.theme);
       closeSuggestions();
       if (previousMode !== animationMode || !enabled || hostExcluded) {
         self.ShorthandExpansionFeedback.clear();
