@@ -49,14 +49,14 @@
         color-scheme: light dark; --panel: #fff; --text: #172033; --muted: #526078;
         --control: #7d8ba1; --accent: #2357d7; --soft: #eaf0ff; --pressed: #dce6ff; }
       .notice { box-sizing: border-box; padding: 16px; border: 1px solid var(--control);
-        border-radius: 14px; background: var(--panel); color: var(--text);
-        box-shadow: 0 12px 32px rgb(13 19 32 / 20%);
-        font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+        border-radius: var(--radius-panel, 14px); background: var(--panel); color: var(--text);
+        box-shadow: var(--shadow, 0 12px 32px rgb(13 19 32 / 20%));
+        font: 13px/1.5 var(--font, system-ui, -apple-system, "Segoe UI", sans-serif); }
       .brand { color: var(--accent); font-weight: 750; font-size: 14px; }
       .message { margin: 7px 0 14px; overflow-wrap: anywhere; }
       .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-      button { font: 600 12px/1.4 system-ui, sans-serif; color: var(--accent);
-        background: var(--panel); border: 1px solid var(--control); border-radius: 8px;
+      button { font: 600 12px/1.4 var(--font, system-ui, sans-serif); color: var(--accent);
+        background: var(--panel); border: 1px solid var(--control); border-radius: var(--radius-control, 8px);
         min-height: 36px; padding: 7px 11px; cursor: pointer; }
       button:hover { background: var(--soft); }
       button:active { background: var(--pressed); }
@@ -71,7 +71,7 @@
         button:focus-visible { outline-color: Highlight; }
       }
     `);
-    shadow.adoptedStyleSheets = [sheet];
+    root.ActleThemes.adopt(shadow, sheet);
     const panel = document.createElement("div");
     panel.className = "notice";
     const brand = document.createElement("div");

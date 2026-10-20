@@ -44,6 +44,8 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.ok(files.includes("src/expansion-feedback.js"));
     assert.ok(files.includes("src/field-safety.js"));
     assert.ok(files.includes("src/suggestions.js"));
+    assert.ok(files.includes("src/themes.js"));
+    assert.ok(files.includes("src/themes.css"));
     for (const name of ["premium-config", "license", "premium-service", "premium-client", "premium-ui"]) {
       assert.ok(files.includes(`src/${name}.js`), `${name} must ship in both browser packages`);
     }
@@ -60,6 +62,10 @@ test("browser packages contain only runtime files and installable manifests", as
       }
       const expanderIndex = content.js.indexOf("src/expander.js");
       assert.ok(expanderIndex >= 0 && expanderIndex < content.js.indexOf("src/suggestions.js"), "Suggestions depend on the expander boundary rules");
+      const themesIndex = content.js.indexOf("src/themes.js");
+      for (const name of ["picker", "suggestions", "template-form", "expansion-feedback", "premium-client", "content"]) {
+        assert.ok(themesIndex >= 0 && themesIndex < content.js.indexOf(`src/${name}.js`), `Styles must load before ${name}`);
+      }
       const premiumIndex = content.js.indexOf("src/premium-client.js");
       assert.ok(content.js.indexOf("src/premium-config.js") >= 0 && content.js.indexOf("src/premium-config.js") < premiumIndex);
       assert.ok(premiumIndex >= 0 && premiumIndex < content.js.indexOf("src/content.js"), "Premium client must load before insertion handlers");
@@ -79,7 +85,15 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.ok(optionScripts.indexOf("premium-client.js") < optionScripts.indexOf("content.js"));
     const popup = fs.readFileSync(path.join(directory, manifest.action.default_popup), "utf8");
     const popupScripts = [...popup.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
+    for (const page of [options, popup]) {
+      const sheets = [...page.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((match) => match[1]);
+      assert.equal(sheets.at(-1), "themes.css", "Flavor rules must load after the page's own styles");
+    }
     for (const scripts of [optionScripts, popupScripts]) {
+      const themesIndex = scripts.indexOf("themes.js");
+      for (const name of ["template-form.js", "premium-client.js", "options.js", "popup.js"].filter((file) => scripts.includes(file))) {
+        assert.ok(themesIndex >= 0 && themesIndex < scripts.indexOf(name), `Styles must load before ${name}`);
+      }
       const configIndex = scripts.indexOf("premium-config.js"), clientIndex = scripts.indexOf("premium-client.js"), uiIndex = scripts.indexOf("premium-ui.js");
       assert.ok(configIndex >= 0 && configIndex < clientIndex && clientIndex < uiIndex, "Plan UI must load after its config and client");
     }

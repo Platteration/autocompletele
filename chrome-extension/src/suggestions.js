@@ -79,8 +79,8 @@
       .panel {
         width: 320px; max-width: calc(100vw - 16px); overflow: hidden;
         background: var(--panel); color: var(--text); border: 1px solid var(--control);
-        border-radius: 12px; box-shadow: 0 10px 30px rgba(13,19,32,.18);
-        font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+        border-radius: var(--radius-panel, 12px); box-shadow: var(--shadow, 0 10px 30px rgba(13,19,32,.18));
+        font: 13px/1.45 var(--font, system-ui, -apple-system, "Segoe UI", sans-serif);
       }
       .heading {
         display: flex; align-items: center; gap: 7px; padding: 9px 12px;
@@ -93,10 +93,11 @@
       .item:hover { background: var(--soft); }
       .item[data-selected="true"] { background: var(--soft); border-left-color: var(--accent); }
       .item:active { background: var(--pressed); }
-      .trigger { display: block; color: var(--accent); font: 600 13px/1.45 ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .trigger { display: block; color: var(--accent); font: 600 13px/1.45 var(--mono, ui-monospace, monospace); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .typed { color: var(--text); font-weight: 400; }
       .expansion { display: block; margin-top: 2px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .hint { padding: 8px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+      .hint kbd { font: inherit; }
       .status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
       @media (prefers-color-scheme: dark) {
         :host { --panel: #151d2c; --text: #eef2f7; --muted: #a7b4c8; --line: #344159; --control: #7f8da5; --accent: #a4bdff; --soft: #233354; --pressed: #30446c; }
@@ -106,12 +107,12 @@
         .item[data-selected="true"] { border-left-color: Highlight; outline: 1px solid Highlight; outline-offset: -1px; }
       }
     `);
-    shadow.adoptedStyleSheets = [sheet];
+    self.ActleThemes.adopt(shadow, sheet);
     shadow.innerHTML = `
       <div class="panel">
         <div class="heading"><span class="brand">actle</span><span>Suggestions</span><span class="count"></span></div>
         <div class="list" role="listbox" aria-label="Shorthand suggestions"></div>
-        <div class="hint">↓ choose · Enter insert · Esc dismiss</div>
+        <div class="hint"><kbd>↓</kbd> choose · <kbd>Enter</kbd> insert · <kbd>Esc</kbd> dismiss</div>
         <div class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>`;
     listEl = shadow.querySelector(".list");

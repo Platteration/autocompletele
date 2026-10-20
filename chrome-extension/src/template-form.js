@@ -23,23 +23,23 @@
     .panel {
       width: 620px; max-width: 100%; max-height: 85vh; max-height: 85dvh;
       display: flex; flex-direction: column; overflow: hidden;
-      border: 1px solid var(--control); border-radius: 20px;
+      border: 1px solid var(--control); border-radius: var(--radius-card, 20px);
       color: var(--text); background: var(--panel); box-shadow: var(--shadow);
-      font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      font: 14px/1.5 var(--font, system-ui, -apple-system, "Segoe UI", sans-serif);
       text-align: left; letter-spacing: normal; word-spacing: normal;
     }
     .heading { padding: 24px 24px 20px; border-bottom: 1px solid var(--line); background: linear-gradient(120deg, var(--soft), var(--panel)); }
     .eyebrow { margin: 0 0 7px; color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
-    h2 { margin: 0; font-size: 23px; font-weight: 750; line-height: 1.2; letter-spacing: -.04em; }
+    h2 { margin: 0; font-family: var(--font-heading, inherit); font-size: 23px; font-weight: 750; line-height: 1.2; letter-spacing: -.04em; }
     .description { margin: 8px 0 14px; color: var(--muted); font-size: 12px; }
     .meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-    .trigger { min-width: 0; margin: 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); color: var(--accent); font: 650 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+    .trigger { min-width: 0; margin: 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius-small, 6px); background: var(--soft); color: var(--accent); font: 650 12px/1.4 var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow-wrap: anywhere; }
     .count { color: var(--muted); font-size: 11px; white-space: nowrap; }
     .body { padding: 20px 24px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--control) var(--panel); }
-    .view-tabs { display: flex; gap: 4px; margin-bottom: 18px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .view-tabs { display: flex; gap: 4px; margin-bottom: 18px; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-control, 10px); background: var(--surface); }
     .view-tabs button { flex: 1; min-height: 34px; padding: 5px 10px; border-color: transparent; background: transparent; color: var(--muted); font-size: 12px; }
     .view-tabs button[aria-selected="true"] { border-color: var(--accent); background: var(--soft); color: var(--accent); }
-    .field-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; border: 1px solid var(--control); border-radius: 10px; overflow: hidden; }
+    .field-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; border: 1px solid var(--control); border-radius: var(--radius-panel, 10px); overflow: hidden; }
     .field-table caption { padding: 0 0 9px; color: var(--muted); font-size: 11px; text-align: left; }
     .field-table th, .field-table td { padding: 10px; vertical-align: middle; text-align: left; overflow-wrap: anywhere; }
     .field-table thead th { border-bottom: 1px solid var(--line); background: var(--soft); color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
@@ -50,41 +50,41 @@
     .field { display: grid; gap: 6px; font-size: 12px; font-weight: 650; overflow-wrap: anywhere; }
     input, select {
       width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--control);
-      border-radius: 9px; background: var(--panel); color: var(--text);
-      font: 400 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      border-radius: var(--radius-control, 9px); background: var(--panel); color: var(--text);
+      font: 400 14px/1.5 var(--font, system-ui, -apple-system, "Segoe UI", sans-serif);
     }
     input::placeholder { color: var(--muted); opacity: 1; }
     input:hover:not(:disabled), select:hover:not(:disabled) { border-color: var(--accent); }
     input:focus, select:focus { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
     input:disabled, select:disabled { background: var(--surface); color: var(--muted); }
-    .pronouns { margin-bottom: 18px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .pronouns { margin-bottom: 18px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-panel, 10px); background: var(--surface); }
     .pronouns .hint, .message-hint, .no-fields { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
     .custom-pronouns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
-    .inline-message { margin-top: 10px; padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 2.6; }
-    .inline-message input { display: inline-block; width: auto; min-width: 5ch; max-width: 100%; padding: 2px 7px; border-color: var(--accent); border-radius: 5px; background: var(--soft); color: var(--accent); font: inherit; line-height: 1.6; vertical-align: baseline; }
+    .inline-message { margin-top: 10px; padding: 17px; border: 1px solid var(--line); border-radius: var(--radius-panel, 12px); background: var(--panel); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 2.6; }
+    .inline-message input { display: inline-block; width: auto; min-width: 5ch; max-width: 100%; padding: 2px 7px; border-color: var(--accent); border-radius: var(--radius-small, 5px); background: var(--soft); color: var(--accent); font: inherit; line-height: 1.6; vertical-align: baseline; }
     .inline-message input::placeholder { color: var(--accent); }
     .field-table td input:disabled, .inline-message input:disabled { background: var(--surface); border-color: var(--line); color: var(--muted); }
     .variable { padding: 2px 5px; border-radius: 4px; background: var(--soft); color: var(--accent); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-    .preview-wrap { margin-top: 22px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .preview-wrap { margin-top: 22px; padding: 15px; border: 1px solid var(--line); border-radius: var(--radius-panel, 12px); background: var(--surface); }
     .preview-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 9px; }
     .preview-heading h3 { margin: 0; font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
     .preview-heading span { color: var(--muted); font-size: 10px; }
     .preview { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.7; }
     .blank { padding: 1px 4px; border-radius: 4px; color: var(--accent); background: var(--soft); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
     .footer { flex-shrink: 0; padding: 16px 24px 20px; border-top: 1px solid var(--line); background: var(--panel); }
-    .status { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--danger); border-radius: 8px; background: var(--danger-soft); color: var(--danger); font-size: 12px; overflow-wrap: anywhere; }
+    .status { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--danger); border-radius: var(--radius-control, 8px); background: var(--danger-soft); color: var(--danger); font-size: 12px; overflow-wrap: anywhere; }
     .actions { display: flex; gap: 10px; }
-    button { min-height: 40px; padding: 9px 16px; border: 1px solid var(--control); border-radius: 9px; background: var(--panel); color: var(--text); font: 650 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; cursor: pointer; }
+    button { min-height: 40px; padding: 9px 16px; border: 1px solid var(--control); border-radius: var(--radius-control, 9px); background: var(--panel); color: var(--text); font: 650 13px/1.5 var(--font, system-ui, -apple-system, "Segoe UI", sans-serif); cursor: pointer; }
     button:hover:not(:disabled) { background: var(--soft); border-color: var(--accent); }
     button:active:not(:disabled) { transform: translateY(1px); }
     button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-    .submit { flex: 1; border-color: var(--button); background: var(--button); color: #fff; }
+    .submit { flex: 1; border-color: var(--button); background: var(--button); color: var(--button-text, #fff); box-shadow: var(--button-depth, none); }
     .submit:hover:not(:disabled) { border-color: var(--button-hover); background: var(--button-hover); }
     button:disabled { background: var(--surface); border-color: var(--line); color: var(--muted); cursor: wait; }
     .privacy { margin: 10px 0 0; color: var(--muted); font-size: 10px; text-align: center; }
     @media (max-width: 480px) {
       :host { padding: 10px !important; }
-      .panel { border-radius: 16px; }
+      .panel { border-radius: var(--radius-card, 16px); }
       .heading { padding: 18px 18px 15px; }
       h2 { font-size: 21px; }
       .body { padding: 17px 18px; }
@@ -279,7 +279,7 @@
     // Constructed sheets work on strict-CSP pages in both Firefox and Chrome.
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(styles);
-    shadow.adoptedStyleSheets = [sheet];
+    root.ActleThemes.adopt(shadow, sheet);
 
     const form = element("form", "panel");
     form.tabIndex = -1;
