@@ -119,3 +119,53 @@ test("report rolls up desk files, skips unreadable ones and writes CSV", () => {
   assert.equal(cli(["report", path.join(dir, "a.json"), "--rate", "-1"]).code, 1);
   assert.equal(cli(["report", path.join(dir, "broken.json")]).code, 1, "no readable report is a failure");
 });
+
+test("deployment writes a validated deployment file and refuses a bad one", () => {
+  const dir = temp();
+  cli(["keygen", path.join(dir, "keys")]);
+  const target = path.join(dir, "deployment.json");
+  const ok = cli(["deployment", "--pub", path.join(dir, "keys", "policy-signing.pub"), "--source", "layer=organisation,label=Organisation,url=https://intranet.example/org.signed.json",
+    "--source", "layer=shipping,path=S:/IT/shipping.signed.json", "--refresh", "120", "--out", target]);
+  assert.equal(ok.code, 0, ok.err);
+  assert.match(ok.out, /2 source\(s\), 1 key\(s\), refresh every 120 minutes/);
+  const written = JSON.parse(fs.readFileSync(target, "utf8"));
+  assert.deepEqual(written.policySources.map((s) => s.layer), ["organisation", "shipping"]);
+  assert.equal(written.refreshMinutes, 120);
+  const bad = cli(["deployment", "--pub", path.join(dir, "keys", "policy-signing.pub"), "--source", "label=NoLayer,url=https://x.example/p.json", "--out", path.join(dir, "bad.json")]);
+  assert.equal(bad.code, 1);
+  assert.match(bad.err, /names no layer/);
+  assert.equal(fs.existsSync(path.join(dir, "bad.json")), false);
+  assert.equal(cli(["deployment", "--pub", path.join(dir, "keys", "policy-signing.pub"), "--source", "nonsense", "--out", target]).code, 1);
+});
+
+test("rotate creates new keys, pins both, re-signs the layers, and sign warns about unpinned keys", () => {
+  const signing = require("../core/policy-signing.js");
+  const dir = temp();
+  cli(["keygen", path.join(dir, "old")]);
+  const deployment = path.join(dir, "deployment.json");
+  cli(["deployment", "--pub", path.join(dir, "old", "policy-signing.pub"), "--source", "layer=org,url=https://intranet.example/org.signed.json", "--out", deployment]);
+  const org = path.join(dir, "org.json");
+  fs.writeFileSync(org, JSON.stringify({ layer: "org", serial: 7, organization: "Example" }));
+  const rotated = cli(["rotate", "--old", path.join(dir, "old"), "--new", path.join(dir, "new"), "--deployment", deployment, "--layer", org, "--out-dir", path.join(dir, "signed")]);
+  assert.equal(rotated.code, 0, rotated.err);
+  assert.match(rotated.out, /re-signed .*org\.json \(layer org, serial 7\)/);
+  assert.match(rotated.out, /next: 1\) roll out/);
+  const pinned = JSON.parse(fs.readFileSync(deployment, "utf8")).publicKeys;
+  assert.equal(pinned.length, 2);
+  const newPub = fs.readFileSync(path.join(dir, "new", "policy-signing.pub"), "utf8");
+  const envelope = fs.readFileSync(path.join(dir, "signed", "org.signed.json"), "utf8");
+  const verified = signing.verifyEnvelope(envelope, [newPub]);
+  assert.equal(verified.ok, true);
+  assert.equal(verified.serial, 7);
+  assert.equal(signing.verifyEnvelope(envelope, pinned).ok, true, "a desk with the two-key deployment accepts it");
+  assert.equal(cli(["rotate", "--old", path.join(dir, "old"), "--new", path.join(dir, "new"), "--deployment", deployment, "--layer", org, "--out-dir", path.join(dir, "signed")]).code, 1, "refuses to overwrite the new key");
+
+  const unrelated = path.join(dir, "unrelated");
+  cli(["keygen", unrelated]);
+  const warned = cli(["sign", org, "--key", path.join(unrelated, "policy-signing.key"), "--deployment", deployment, "--out", path.join(dir, "x.signed.json")]);
+  assert.equal(warned.code, 0);
+  assert.match(warned.err, /is not pinned in/);
+  fs.writeFileSync(path.join(dir, "team.json"), JSON.stringify({ layer: "team", serial: 1 }));
+  const noLayer = cli(["sign", path.join(dir, "team.json"), "--key", path.join(dir, "new", "policy-signing.key"), "--deployment", deployment, "--out", path.join(dir, "t.signed.json")]);
+  assert.match(noLayer.err, /no source in .* expects layer "team"/);
+});

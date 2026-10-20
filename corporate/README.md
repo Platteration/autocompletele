@@ -91,7 +91,7 @@ corporate/
     engine.js                 headless assistant: keys + focus in, actions out
     store.js                  app-data files: library, policy, settings, metrics log, learning corpus, audit log
   admin/
-    actle-admin.js            keygen, sign, verify, validate, layers, report, suggestions, license
+    actle-admin.js            keygen, sign, verify, validate, layers, deployment, rotate, report, suggestions, license
   test/                       node --test suites for every module, plus the shared conformance suite
   shared/
     ORG-POLICY.md             policy file format

@@ -204,7 +204,10 @@ function createPolicySource(options) {
       if (fresh) {
         const unchanged = good && good.hash === fresh.hash;
         const acceptedAt = unchanged && cached.acceptedAt ? cached.acceptedAt : now();
-        if (!unchanged) cache.save(source.id, { envelope: fresh.text, serial: fresh.serial, hash: fresh.hash, keyId: fresh.keyId, acceptedAt });
+        // The same policy re-signed with a new key (key rotation) replaces the
+        // cached copy too; otherwise the last good copy would stop verifying
+        // the moment the old key is retired.
+        if (!unchanged || good.keyId !== fresh.keyId) cache.save(source.id, { envelope: fresh.text, serial: fresh.serial, hash: fresh.hash, keyId: fresh.keyId, acceptedAt });
         layers.push(fresh.policy);
         sources.push(report(source, { status: unchanged ? "unchanged" : "fresh", serial: fresh.serial, keyId: fresh.keyId, hash: fresh.hash, acceptedAt }));
         continue;

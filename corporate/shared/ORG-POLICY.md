@@ -84,7 +84,39 @@ node admin/actle-admin.js verify org.signed.json --pub keys/policy-signing.pub
 ```
 
 `sign` refuses a policy that has warnings unless `--allow-warnings` is
-given, and `keygen` refuses to overwrite an existing key.
+given, warns when `--deployment <file>` is passed and the signing key or the
+layer is not in that deployment, and `keygen` refuses to overwrite an
+existing key. `deployment` writes a validated `deployment.json`:
+
+```
+node admin/actle-admin.js deployment --pub keys/policy-signing.pub \
+  --source layer=organisation,label=Organisation,url=https://intranet.example/actle/org.signed.json \
+  --source layer=shipping,label="Shipping team",path=S:/IT/actle/shipping.signed.json \
+  --refresh 60 --out deployment.json
+```
+
+### Rotating the signing key
+
+Desks accept a policy signed by any key in their `deployment.json`, and a
+policy re-signed with a new key replaces the cached copy even when its
+content is unchanged. So a rotation is: both keys pinned for a while, then
+only the new one.
+
+1. `node admin/actle-admin.js rotate --old keys --new keys-2027 --deployment deployment.json --layer org.json --layer shipping.json --out-dir signed/`
+   creates the new keypair (it refuses to overwrite one), rewrites
+   `deployment.json` with both public keys, and re-signs every layer with
+   the new key, keeping each layer's serial and layer name.
+2. Roll out the two-key `deployment.json` to every desk.
+3. Publish the re-signed layers from `signed/` at their usual locations.
+4. Wait at least `refreshMinutes` plus the longest time a desk may be
+   offline, so every desk has fetched a copy signed by the new key.
+5. `node admin/actle-admin.js deployment --pub keys-2027/policy-signing.pub …`
+   with the new key only, and roll it out.
+6. Delete the old private key. From then on, sign with `keys-2027`.
+
+A desk that missed step 3 before step 5 keeps its old-key copy, which no
+longer verifies: it shows the source as failed, applies the other layers,
+and recovers at its next successful fetch.
 
 ## Licensing
 

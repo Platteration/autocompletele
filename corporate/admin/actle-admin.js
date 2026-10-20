@@ -19,6 +19,7 @@ const orgPolicy = require("../core/org-policy.js");
 const report = require("../core/report.js");
 const suggestions = require("../core/suggestions.js");
 const license = require("../core/license.js");
+const { normalizeDeployment } = require("../core/policy-source.js");
 
 const USAGE = `actle Corporate admin tool
 
@@ -36,7 +37,37 @@ const USAGE = `actle Corporate admin tool
   license issue --key <vendor.key> --org <name> --seats N --expires YYYY-MM-DD [--grace DAYS] [--id ID] [--out <file>]
                                   issue a business licence token (vendor only)
   license show <token | file with the token | policy.json> [--pub <vendor.pub>]
-                                  print what a licence token says and, with --pub, whether it verifies`;
+                                  print what a licence token says and, with --pub, whether it verifies
+  deployment --pub <file> [--pub <file>] --source layer=NAME,label=TEXT,url=https://… [--source …] [--refresh MINUTES] --out <deployment.json>
+                                  write a desk's deployment.json (sources, pinned keys, refresh)
+  rotate --old <keys dir> --new <keys dir> --deployment <deployment.json> --layer <policy.json> [--layer …] --out-dir <dir>
+                                  start a signing-key rotation: new keys, two-key deployment, layers re-signed`;
+
+function writeKeyPair(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const keyFile = path.join(dir, "policy-signing.key");
+  const pubFile = path.join(dir, "policy-signing.pub");
+  // Never overwrite a key: losing the private key means every desk has to be
+  // re-deployed with a new public key.
+  for (const file of [keyFile, pubFile]) {
+    if (fs.existsSync(file)) throw new Error(file + " already exists; refusing to overwrite a signing key");
+  }
+  const pair = signing.generateKeyPair();
+  fs.writeFileSync(keyFile, pair.privateKey, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  fs.writeFileSync(pubFile, pair.publicKey, { encoding: "utf8", flag: "wx" });
+  return { pair, keyFile, pubFile };
+}
+
+/** "layer=org,label=Organisation,url=https://…" -> source object. */
+function parseSource(text) {
+  const source = {};
+  for (const part of String(text).split(",")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) throw new Error("--source parts look like key=value: " + JSON.stringify(part));
+    source[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
+  }
+  return source;
+}
 
 function parseArgs(argv) {
   const positional = [];
@@ -111,17 +142,7 @@ function run(argv, io) {
       case "keygen": {
         const dir = rest[0];
         if (!dir) throw new Error("keygen needs a folder");
-        fs.mkdirSync(dir, { recursive: true });
-        const keyFile = path.join(dir, "policy-signing.key");
-        const pubFile = path.join(dir, "policy-signing.pub");
-        // Never overwrite a key: losing the private key means every desk has
-        // to be re-deployed with a new public key.
-        for (const file of [keyFile, pubFile]) {
-          if (fs.existsSync(file)) throw new Error(file + " already exists; refusing to overwrite a signing key");
-        }
-        const pair = signing.generateKeyPair();
-        fs.writeFileSync(keyFile, pair.privateKey, { encoding: "utf8", mode: 0o600, flag: "wx" });
-        fs.writeFileSync(pubFile, pair.publicKey, { encoding: "utf8", flag: "wx" });
+        const { pair, keyFile, pubFile } = writeKeyPair(dir);
         out("key id " + pair.keyId);
         out("private key: " + keyFile + " (keep it off shared drives)");
         out("public key:  " + pubFile + " (put its text in each desk's deployment.json publicKeys)");
@@ -147,6 +168,13 @@ function run(argv, io) {
           throw new Error("not signed: fix the warnings above or pass --allow-warnings");
         }
         const envelope = signing.signPolicy(value, fs.readFileSync(keyFile, "utf8"));
+        const deploymentFile = one(args.flags, "deployment");
+        if (deploymentFile) {
+          const pinned = normalizeDeployment(readJsonFile(deploymentFile).value).publicKeys.map((pem) => signing.keyId(pem));
+          if (!pinned.includes(envelope.keyId)) err("warning: key " + envelope.keyId + " is not pinned in " + deploymentFile + "; desks with that deployment will refuse this policy");
+          const layers = normalizeDeployment(readJsonFile(deploymentFile).value).sources.map((s) => s.layer);
+          if (!layers.includes(value.layer)) err("warning: no source in " + deploymentFile + " expects layer " + JSON.stringify(value.layer));
+        }
         const text = JSON.stringify(envelope, null, 2) + "\n";
         const target = one(args.flags, "out");
         if (target) {
@@ -332,6 +360,52 @@ function run(argv, io) {
           return 0;
         }
         throw new Error("license needs issue or show");
+      }
+      case "deployment": {
+        const pubs = (args.flags.pub || []).map((file) => fs.readFileSync(file, "utf8"));
+        const sources = (args.flags.source || []).map(parseSource);
+        const target = one(args.flags, "out");
+        if (!pubs.length || !sources.length || !target) throw new Error("deployment needs --pub, --source and --out");
+        const deployment = { policySources: sources, publicKeys: pubs };
+        const refresh = one(args.flags, "refresh");
+        if (refresh !== undefined) deployment.refreshMinutes = Number(refresh);
+        const checked = normalizeDeployment(deployment);
+        for (const warning of checked.warnings) err("warning: " + warning);
+        if (checked.warnings.length) throw new Error("not written: fix the warnings above");
+        fs.writeFileSync(target, JSON.stringify(deployment, null, 2) + "\n", "utf8");
+        out("deployment written to " + target + ": " + checked.sources.length + " source(s), " + checked.publicKeys.length + " key(s), refresh every " + checked.refreshMinutes + " minutes");
+        out("install it as deployment.json in each desk's data folder");
+        return 0;
+      }
+      case "rotate": {
+        const oldDir = one(args.flags, "old");
+        const newDir = one(args.flags, "new");
+        const deploymentFile = one(args.flags, "deployment");
+        const layerFiles = args.flags.layer || [];
+        const outDir = one(args.flags, "out-dir");
+        if (!oldDir || !newDir || !deploymentFile || !layerFiles.length || !outDir) throw new Error("rotate needs --old, --new, --deployment, --layer and --out-dir");
+        const oldPub = fs.readFileSync(path.join(oldDir, "policy-signing.pub"), "utf8");
+        const deployment = readJsonFile(deploymentFile).value;
+        const pinned = (Array.isArray(deployment.publicKeys) ? deployment.publicKeys : []).map((pem) => signing.keyId(pem));
+        if (!pinned.includes(signing.keyId(oldPub))) throw new Error("the old key is not pinned in " + deploymentFile + "; nothing to rotate from");
+        const { pair } = writeKeyPair(newDir);
+        deployment.publicKeys = (deployment.publicKeys || []).concat([pair.publicKey]);
+        const checked = normalizeDeployment(deployment);
+        for (const warning of checked.warnings) err("warning: " + warning);
+        fs.writeFileSync(deploymentFile, JSON.stringify(deployment, null, 2) + "\n", "utf8");
+        fs.mkdirSync(outDir, { recursive: true });
+        for (const file of layerFiles) {
+          const value = policyFrom(file).policy;
+          if (!value.layer || !value.serial) throw new Error(file + " needs layer and serial before it can be signed");
+          const envelope = signing.signPolicy(value, pair.privateKey);
+          const target = path.join(outDir, path.basename(file).replace(/(\.signed)?\.json$/, "") + ".signed.json");
+          fs.writeFileSync(target, JSON.stringify(envelope, null, 2) + "\n", "utf8");
+          out("re-signed " + file + " (layer " + value.layer + ", serial " + value.serial + ") -> " + target);
+        }
+        out("new key id " + pair.keyId + " in " + newDir + "; " + deploymentFile + " now pins both keys");
+        out("next: 1) roll out " + deploymentFile + " to every desk; 2) publish the re-signed layers from " + outDir
+          + "; 3) after refreshMinutes plus the longest time a desk may be offline, run `deployment` with only " + path.join(newDir, "policy-signing.pub") + " and roll it out; 4) delete " + path.join(oldDir, "policy-signing.key"));
+        return 0;
       }
       case undefined:
       case "help":
