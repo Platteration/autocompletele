@@ -201,7 +201,8 @@ async function managedDesk() {
   const base = fs.existsSync(POLICY_FILE) ? JSON.parse(fs.readFileSync(POLICY_FILE, "utf8")) : FALLBACK_POLICY;
   const publish = (where, policy) => share.set(where, JSON.stringify(signing.signPolicy(policy, keys.privateKey)));
   publish("S:/IT/actle/org.signed.json", Object.assign({}, base, { layer: "organisation", serial: 1 }));
-  publish("S:/IT/actle/shipping.signed.json", { layer: "shipping", serial: 1, library: [{ trigger: "eta/", expansion: "Estimated arrival is [[date]]." }] });
+  const groups = ["shipping"];
+  publish("S:/IT/actle/shipping.signed.json", { layer: "shipping", serial: 1, library: [{ trigger: "etd/", expansion: "Estimated departure is [[date]]." }] });
   const deskDir = fs.mkdtempSync(path.join(os.tmpdir(), "actle-corporate-desk-"));
   const desk = createAssistant({
     dataDir: deskDir,
@@ -209,6 +210,7 @@ async function managedDesk() {
     deployment: {
       policySources: [{ layer: "organisation", label: "Organisation", path: "S:/IT/actle/org.signed.json" }, { layer: "shipping", label: "Shipping team", path: "S:/IT/actle/shipping.signed.json" }],
       publicKeys: [keys.publicKey],
+      groups,
     },
     readFile: async (where) => {
       if (!share.has(where)) throw new Error("not found");
@@ -218,6 +220,10 @@ async function managedDesk() {
   const report = (label, result) => print(`  ${label}: ${result.sources.map((s) => s.label + " " + s.status + (s.serial ? " #" + s.serial : "")).join(", ")}; paused: ${desk.paused ? "yes" : "no"}; shared shortcuts: ${desk.policyInfo().organizationLibrary.length}`);
   print("\nSigned policy distribution");
   report("first fetch", await desk.refreshPolicy());
+  const info = desk.policyInfo();
+  const everyone = require("../core/org-policy.js").parse(require("../core/org-policy.js").merge([base]));
+  print(`  groups: ${info.groups.join(", ") || "none"}; collections received: ${info.collections.map((c) => c.label + " (" + c.counts.shortcuts + " shortcuts)").join(", ") || "none"}; not shared: ${info.hiddenCollections.map((c) => c.label).join(", ") || "none"}`);
+  print(`  a desk with no groups would get ${everyone.library.length} shared shortcuts; this desk gets ${info.organizationLibrary.length}`);
   publish("S:/IT/actle/org.signed.json", Object.assign({}, base, { layer: "organisation", serial: 2, paused: { message: "Paused for review" } }));
   report("after IT pauses", await desk.refreshPolicy());
   const tampered = JSON.parse(share.get("S:/IT/actle/org.signed.json"));

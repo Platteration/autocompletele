@@ -82,7 +82,7 @@ Everything is in Electron's `userData` folder for the app
 | `lookup-cache/`   | Last good copy of each lookup's data source, plain JSON (organisation reference data, not typed text) |
 | `upload-state.json` | When the policy sets `reporting.endpoint`: time and outcome of the last usage-report upload and the exact body sent |
 | `suggestions.json` | Proposals the person chose to suggest to the organisation, readable, until exported, removed or deleted with the learned text |
-| `deployment.json` | Managed desks only: signed policy sources and pinned public keys, written by IT |
+| `deployment.json` | Written by IT: signed policy sources, pinned public keys and the desk's `groups` (which policy collections it receives; read even without sources) |
 | `policy-cache/`   | Last good copy of each signed policy layer                     |
 | `policy-state.json` | Hash of the policy last applied and each source's status     |
 | `audit.jsonl`     | Policy changes, failing or recovering sources, capture-rule changes, corpus key and deletion events; never typed text |
