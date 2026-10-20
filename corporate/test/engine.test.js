@@ -201,3 +201,42 @@ test("statistics remember whether a shortcut came from the organisation or the p
     ["cool/", "personal"], ["sig/", "organization"], ["/sld", "organization"], ["refund", "organization"], ["ack/", "organization"],
   ]);
 });
+
+test("compliance warnings see the whole field, across new lines, and fire once", () => {
+  const engine = make({ policy: orgPolicy.parse({
+    library: [{ trigger: "disc/", expansion: "This message is confidential." }],
+    keywordRules: [
+      { id: "disclaimer", action: "warn", keywords: ["contract"], unless: ["This message is confidential"], message: "Add the disclaimer.", insert: { kind: "shorthand", trigger: "disc/" } },
+      { id: "card", action: "warn", detect: ["card-number"], message: "No card numbers." },
+      { id: "hours", keywords: ["hours"], insert: "9 to 5" },
+    ],
+  }) });
+  engine.focusChanged({ process: "notepad" });
+  const first = engine.type("Hi,\nthe contract ");
+  assert.deepEqual(first.map((a) => a.type), ["warning"]);
+  assert.equal(first[0].hits[0].rule.message, "Add the disclaimer.");
+  assert.deepEqual(engine.type("contract again "), [], "once per field");
+  assert.deepEqual(engine.type("card 4111 1111 1111 1111 and office hours ").map((a) => a.type), ["warning", "keyword"]);
+
+  engine.focusChanged({ process: "notepad" });
+  engine.type("disc/");
+  assert.deepEqual(engine.type("\n\nAbout the contract "), [], "the disclaimer inserted above, before new lines, counts");
+  assert.equal(engine.fieldText.endsWith("This message is confidential.\n\nAbout the contract "), true);
+  engine.keyTyped({ isBackspace: true });
+  assert.equal(engine.fieldText.endsWith("About the contract"), true, "Backspace removes from the field text too");
+  engine.focusChanged({ process: "other" });
+  assert.equal(engine.fieldText, "", "the field text is dropped when the focus moves");
+});
+
+test("without keyword rules the field text is not kept at all", () => {
+  const engine = make({ policy: orgPolicy.parse({ library: [{ trigger: "a/", expansion: "A" }] }) });
+  engine.focusChanged({ process: "notepad" });
+  engine.type("some private words a/ ");
+  assert.equal(engine.fieldText, "");
+  const kept = make();
+  kept.focusChanged({ process: "notepad" });
+  kept.type("x".repeat(5000));
+  assert.equal(kept.fieldText.length, 4000, "capped");
+  kept.setPolicy(orgPolicy.parse({}));
+  assert.equal(kept.fieldText, "", "dropped when the rules go away");
+});

@@ -269,9 +269,13 @@
     const kw = $("keywords");
     kw.textContent = "";
     for (const rule of policy.keywordRules) {
-      const inserts = rule.insert.kind === "text" ? "text: " + preview(rule.insert.text)
-        : rule.insert.kind === "shorthand" ? "shortcut " + rule.insert.trigger : "documents " + rule.insert.shortcut;
-      kw.append(el("tr", {}, [el("td", { text: rule.label }), el("td", { text: rule.keywords.join(", ") }), el("td", { text: rule.match }), el("td", { text: inserts })]));
+      const insert = rule.insert;
+      const inserts = !insert ? "" : insert.kind === "text" ? "text: " + preview(insert.text)
+        : insert.kind === "shorthand" ? "shortcut " + insert.trigger : "documents " + insert.shortcut;
+      const does = rule.action === "warn" ? "Warns: " + rule.message + (inserts ? " Fix: " + inserts : "") : inserts;
+      const when = rule.keywords.concat((rule.detect || []).map((name) => "[" + name + "]")).join(", ")
+        + ((rule.unless || []).length ? " unless: " + rule.unless.join("; ") : "");
+      kw.append(el("tr", {}, [el("td", { text: rule.label }), el("td", { text: when }), el("td", { text: rule.match }), el("td", { text: does })]));
     }
     if (!policy.keywordRules.length) kw.append(el("tr", {}, [el("td", { colspan: "4", text: "No keyword rules in the policy." })]));
     const docs = $("documents");

@@ -13,6 +13,9 @@ const orgPolicy = require("./org-policy.js");
 
 const DEFAULTS = Object.freeze({
   maxBuffer: 200,
+  // Keyword and compliance rules look at the current field's text, held in
+  // memory only, only while the policy has such rules, and never written.
+  maxFieldText: 4000,
   minSessionLength: 20,
   // Whether the input adapter swallows the key that completes a trigger (the
   // Windows hook does; uiohook-style listeners cannot, so the character
@@ -49,6 +52,7 @@ function createEngine(options) {
   const keywordState = keywords.createState();
 
   let buffer = "";
+  let fieldText = "";
   let context = {};
   let decision = { mode: policy.capture.defaultMode, reason: "default", rule: null };
   let session = null;
@@ -91,20 +95,39 @@ function createEngine(options) {
     return { app: ended.app, startedAt: ended.startedAt, endedAt: now(), text: scrubbed.text, redactions: scrubbed.redactions };
   }
 
+  function tracksField() {
+    return policy.keywordRules.length > 0;
+  }
+
+  function capField() {
+    if (fieldText.length > settings.maxFieldText) fieldText = fieldText.slice(fieldText.length - settings.maxFieldText);
+  }
+
   function sessionAppend(text) {
     if (session) session.text += text;
+    if (tracksField()) {
+      fieldText += text;
+      capField();
+    }
   }
 
   function sessionReplaceTail(typedChars, inserted) {
-    if (!session) return;
-    if (typedChars > 0) session.text = session.text.slice(0, Math.max(0, session.text.length - typedChars));
-    session.text += inserted;
+    if (session) {
+      if (typedChars > 0) session.text = session.text.slice(0, Math.max(0, session.text.length - typedChars));
+      session.text += inserted;
+    }
+    if (tracksField()) {
+      if (typedChars > 0) fieldText = fieldText.slice(0, Math.max(0, fieldText.length - typedChars));
+      fieldText += inserted;
+      capField();
+    }
   }
 
   /** Tell the engine which window has the focus. Returns the learning session that just ended, if any. */
   function focusChanged(nextContext) {
     clearUndo();
     buffer = "";
+    fieldText = "";
     keywordState.reset();
     const ended = flushSession();
     context = nextContext && typeof nextContext === "object" ? Object.assign({}, nextContext) : {};
@@ -117,6 +140,7 @@ function createEngine(options) {
   function endSession() {
     clearUndo();
     buffer = "";
+    fieldText = "";
     keywordState.reset();
     const ended = flushSession();
     if (decision.mode === "learn") startSession();
@@ -184,6 +208,7 @@ function createEngine(options) {
     if (k.isBackspace) {
       buffer = popGrapheme(buffer);
       if (session) session.text = popGrapheme(session.text);
+      fieldText = popGrapheme(fieldText);
       return [];
     }
     if (k.resetsBuffer) {
@@ -222,8 +247,11 @@ function createEngine(options) {
     }
     // Keywords are checked when a word ends, so "invoices" is not offered on "inv".
     if (policy.keywordRules.length && !expander.isBoundary(buffer[buffer.length - 2]) && expander.isBoundary(text[text.length - 1])) {
-      const hits = keywords.detect(session ? session.text : buffer, policy.keywordRules, keywordState);
-      if (hits.length) actions.push({ type: "keyword", hits });
+      const hits = keywords.detect(fieldText, policy.keywordRules, keywordState);
+      const warnings = hits.filter((hit) => hit.rule.action === "warn");
+      const offers = hits.filter((hit) => hit.rule.action !== "warn");
+      if (warnings.length) actions.push({ type: "warning", hits: warnings });
+      if (offers.length) actions.push({ type: "keyword", hits: offers });
     }
     return actions;
   }
@@ -254,6 +282,7 @@ function createEngine(options) {
   function setPolicy(next) {
     policy = next && Array.isArray(next.keywordRules) ? next : orgPolicy.parse(next);
     library = mergeLibraries(personal, policy.library);
+    if (!tracksField()) fieldText = "";
     ledger.setCharsPerMinute(policy.typing.charsPerMinute);
     decision = decideMode();
     if (decision.mode !== "learn") session = null;
@@ -283,6 +312,7 @@ function createEngine(options) {
     get library() { return library.slice(); },
     get policy() { return policy; },
     get session() { return session ? Object.assign({}, session) : null; },
+    get fieldText() { return fieldText; },
   };
 }
 

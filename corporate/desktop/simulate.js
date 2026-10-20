@@ -42,6 +42,7 @@ function describe(action) {
     case "template": return `template ${action.trigger}: ask for ${action.fields.map((f) => f.name).join(", ")}`;
     case "documents": return `documents ${action.trigger} (${action.label}): ${action.documents.map((d) => d.title).join("; ")}`;
     case "keyword": return `keyword offer: ${action.hits.map((h) => h.rule.label + " [" + h.matched.join(", ") + "]").join("; ")}`;
+    case "warning": return `warning: ${action.hits.map((h) => h.rule.message + (h.rule.insert ? " (fix offered)" : "")).join("; ")}`;
     case "undo": return `undo -> put ${action.trigger} back`;
     default: return JSON.stringify(action);
   }
@@ -81,6 +82,9 @@ type("hrs/");
 type("\b"); // Backspace right after an expansion puts the trigger back
 type("\n");
 assistant.recordInsert({ kind: "document", trigger: "/sld", count: 2 });
+
+focus({ process: "OUTLOOK.EXE", title: "Contract renewal - Message" });
+type("Hello,\n\nThe renewed contract is attached. ");
 
 focus({ process: "1Password.exe", title: "1Password" });
 type("hrs/");

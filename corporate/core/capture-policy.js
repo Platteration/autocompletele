@@ -144,6 +144,15 @@ const CARD = /(?<![\d-])(?:\d[ -]?){12,18}\d(?![\d-])/g;
 const SECRET_LABEL = /\b(password|passwd|passcode|passphrase|pwd|pin|secret|token|api[ _-]?key|otp)\b(\s*(?:[:=]|is)\s*)(\S+)/gi;
 const TOKEN = /(?<![\w\/@.-])(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{24,}(?![\w\/@.-])/g;
 
+/** True when the text contains a card number that passes the Luhn check. */
+function containsCardNumber(text) {
+  const source = String(text == null ? "" : text);
+  for (const match of source.matchAll(CARD)) {
+    if (luhn(match[0].replace(/[ -]/g, ""))) return true;
+  }
+  return false;
+}
+
 /**
  * Mask things that must never reach the learning corpus. Threat: a card number
  * or a pasted token typed into an email client in learn mode would otherwise
@@ -178,5 +187,6 @@ module.exports = {
   createPolicy,
   decide,
   isSensitiveContext,
+  containsCardNumber,
   scrub,
 };

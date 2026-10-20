@@ -19,7 +19,10 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `capture.defaultMode` | `off`, `triggers` (default) or `learn` for applications no rule names. |
 | `capture.apps[]` | Per-application rules, first match wins. `match.process` (one name or a list; `.exe` and paths are ignored), `match.bundleId` (macOS) and `match.title` (regular expression, case-insensitive) identify the window. `mode` is as above. |
 | `library` | The shared shortcut library in the personal `shorthands.json` format (`shared/SPEC.md` at the repository root). A person's own shortcut with the same trigger wins. |
-| `keywordRules[]` | `keywords` (list), `match` (`any` default, or `all`), `caseSensitive` (default false) and `insert`: `{ "kind": "text", "text": ... }`, `{ "kind": "shorthand", "trigger": ... }` (must exist in `library`) or `{ "kind": "document", "shortcut": ... }` (must exist in `documents`). Each rule is offered once per field. |
+| `keywordRules[]` | `keywords` (list), `match` (`any` default, or `all`), `caseSensitive` (default false) and `insert`: `{ "kind": "text", "text": ... }`, `{ "kind": "shorthand", "trigger": ... }` (must exist in `library`) or `{ "kind": "document", "shortcut": ... }` (must exist in `documents`). Each rule fires once per field. |
+| `keywordRules[].action` | `offer` (default) shows the insert. `warn` shows `message` (required) and offers `insert` as an optional fix: a compliance warning. |
+| `keywordRules[].detect` | Built-in detectors that must also fire. `card-number` finds a card number that passes the Luhn check. A rule may have `detect` instead of `keywords`. |
+| `keywordRules[].unless` | Phrases that stop the rule when any of them appears anywhere in the field (case and spacing ignored), for example the disclaimer itself. Only text typed in the field or inserted by actle is seen; a mail client's automatic signature or pasted text is not. |
 | `documents.shortcuts[]` | `trigger` (for example `/sld`), `label`, and `documents[]` with `title`, `path` (file path or URL), optional `tags` and `description`. Triggers follow the same boundary rule as text shortcuts and lose to a text shortcut with the same trigger. |
 | `learning.minCount` | Distinct messages a text must recur in before it is proposed (default 3, minimum 2). |
 | `learning.minLength`, `learning.minWords` | Smallest text worth proposing (defaults 20 characters, 4 words). |
@@ -97,7 +100,9 @@ unreadable report is skipped with a warning.
 * **off**: the assistant ignores the application entirely, including triggers.
 * **triggers**: a rolling buffer of the last 200 characters is matched against
   triggers and document shortcuts and is never written anywhere. This is what
-  the personal Windows app does in every application.
+  the personal Windows app does in every application. While the policy has
+  keyword rules, the text of the current field (up to 4,000 characters) is
+  also held in memory to check them, and dropped when the focus moves.
 * **learn**: in addition, the text typed in that application is kept per
   field session (until the focus moves), scrubbed, and stored under the data
   folder so the phrase miner can propose shortcuts and fill-in templates.

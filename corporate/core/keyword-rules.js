@@ -1,12 +1,18 @@
 // Keyword rules: when the words a person writes include a rule's keywords, the
 // assistant offers to insert something predetermined (a text, a saved shortcut
-// or a document set). Detection looks only at the recent text of the current
-// field and offers each rule once per field session unless the person asks again.
+// or a document set). A rule with action "warn" shows a message instead, for
+// example "contract" without the legal disclaimer, or a card number in a
+// message, and may offer a fix. Detection looks at the recent text of the
+// current field and fires each rule once per field session.
 "use strict";
+
+const { containsCardNumber } = require("./capture-policy.js");
 
 const DEFAULTS = Object.freeze({ windowChars: 500 });
 const MATCH = Object.freeze(["any", "all"]);
 const INSERT_KINDS = Object.freeze(["text", "shorthand", "document"]);
+const ACTIONS = Object.freeze(["offer", "warn"]);
+const DETECTORS = Object.freeze({ "card-number": containsCardNumber });
 
 function asText(value) {
   return String(value == null ? "" : value).trim();
@@ -56,17 +62,39 @@ function normalizeRules(list) {
     let id = asText(raw.id) || "keyword-" + index;
     while (ids.has(id)) id += "-dup";
     const keywords = (Array.isArray(raw.keywords) ? raw.keywords : [raw.keywords]).map(asText).filter(Boolean);
-    if (!keywords.length) {
+    const detect = (Array.isArray(raw.detect) ? raw.detect : [raw.detect]).map(asText).filter(Boolean);
+    const unknown = detect.filter((name) => !Object.hasOwn(DETECTORS, name));
+    if (unknown.length) {
+      warnings.push("keyword rule " + id + " ignored: unknown detector " + unknown.join(", ") + " (known: " + Object.keys(DETECTORS).join(", ") + ")");
+      return;
+    }
+    if (!keywords.length && !detect.length) {
       warnings.push("keyword rule " + id + " ignored: no keywords");
       return;
     }
-    const insert = normalizeInsert(raw.insert, warnings, id);
-    if (!insert) return;
+    const action = raw.action === undefined ? "offer" : raw.action;
+    if (!ACTIONS.includes(action)) {
+      warnings.push("keyword rule " + id + " ignored: action must be offer or warn");
+      return;
+    }
+    const message = asText(raw.message);
+    if (action === "warn" && !message) {
+      warnings.push("keyword rule " + id + " ignored: a warning needs a message");
+      return;
+    }
+    // An offer needs something to insert; for a warning the insert is an optional fix.
+    const insert = action === "warn" && raw.insert == null ? null : normalizeInsert(raw.insert, warnings, id);
+    if (!insert && action === "offer") return;
+    if (action === "warn" && raw.insert != null && !insert) return;
     ids.add(id);
     rules.push({
       id,
-      label: asText(raw.label) || keywords.join(", "),
+      label: asText(raw.label) || keywords.concat(detect).join(", "),
+      action,
+      message,
       keywords,
+      detect,
+      unless: (Array.isArray(raw.unless) ? raw.unless : [raw.unless]).map(asText).filter(Boolean),
       match: MATCH.includes(raw.match) ? raw.match : "any",
       caseSensitive: raw.caseSensitive === true,
       insert,
@@ -90,8 +118,14 @@ function createState() {
   };
 }
 
+function squash(value) {
+  return String(value).replace(/\s+/g, " ").toLowerCase();
+}
+
 /**
- * Find rules whose keywords appear in the recent text.
+ * Find rules whose conditions hold: keywords in the recent text (if the rule
+ * has keywords), a detector firing on the recent text (if it has detectors),
+ * and none of its `unless` phrases anywhere in the field's text.
  * @returns {Array<{rule:object, matched:string[]}>}
  */
 function detect(text, rules, state, options) {
@@ -99,16 +133,23 @@ function detect(text, rules, state, options) {
   const list = Array.isArray(rules) ? rules : rules && Array.isArray(rules.rules) ? rules.rules : [];
   const source = String(text == null ? "" : text);
   const recent = source.length > settings.windowChars ? source.slice(-settings.windowChars) : source;
+  let whole = null;
   const hits = [];
   for (const rule of list) {
     if (state && state.offered && state.offered.has(rule.id)) continue;
-    const matched = rule.keywords.filter((keyword) => keywordPattern(keyword, rule.caseSensitive).test(recent));
-    const satisfied = rule.match === "all" ? matched.length === rule.keywords.length : matched.length > 0;
-    if (!satisfied) continue;
+    const keywords = rule.keywords || [];
+    const matched = keywords.filter((keyword) => keywordPattern(keyword, rule.caseSensitive).test(recent));
+    if (keywords.length && !(rule.match === "all" ? matched.length === keywords.length : matched.length > 0)) continue;
+    const detected = (rule.detect || []).filter((name) => DETECTORS[name](recent));
+    if ((rule.detect || []).length && !detected.length) continue;
+    if ((rule.unless || []).length) {
+      if (whole === null) whole = squash(source);
+      if (rule.unless.some((phrase) => whole.includes(squash(phrase)))) continue;
+    }
     if (state && state.offered) state.offered.add(rule.id);
-    hits.push({ rule, matched });
+    hits.push({ rule, matched: matched.concat(detected) });
   }
   return hits;
 }
 
-module.exports = { DEFAULTS, MATCH, INSERT_KINDS, normalizeRules, createState, detect };
+module.exports = { DEFAULTS, MATCH, INSERT_KINDS, ACTIONS, DETECTORS, normalizeRules, createState, detect };

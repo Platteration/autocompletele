@@ -133,7 +133,8 @@ function handleAction(action) {
     case "documents":
       return showPopover("documents", Object.assign({ kind: "documents" }, action), { width: 460, height: 160 + 44 * action.documents.length });
     case "keyword":
-      return showPopover("keyword", { kind: "keyword", hits: action.hits.map((hit) => ({ rule: hit.rule, matched: hit.matched })) }, { width: 380, height: 90 + 60 * action.hits.length, focusable: false });
+    case "warning":
+      return showPopover("keyword", { kind: "keyword", warning: action.type === "warning", hits: action.hits.map((hit) => ({ rule: hit.rule, matched: hit.matched })) }, { width: 380, height: 90 + 72 * action.hits.length, focusable: false });
     default:
       return null;
   }
@@ -160,7 +161,7 @@ async function submitPopover(payload) {
     }
   } else if (state.kind === "keyword") {
     const hit = state.hits[payload.index || 0];
-    if (!hit) return { ok: false };
+    if (!hit || !hit.rule.insert) return { ok: false };
     const insert = hit.rule.insert;
     if (insert.kind === "text") {
       await sender.replace({ backspaces: 0, text: insert.text, cursorOffset: insert.text.length });

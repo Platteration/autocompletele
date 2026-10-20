@@ -11,7 +11,8 @@ test("the shipped example policy parses without warnings", () => {
   assert.equal(policy.organization, "Example Logistics Ltd");
   assert.equal(policy.capture.apps.length, 4);
   assert.equal(policy.library.length, 4);
-  assert.equal(policy.keywordRules.length, 3);
+  assert.equal(policy.keywordRules.length, 5);
+  assert.deepEqual(policy.keywordRules.filter((r) => r.action === "warn").map((r) => r.id), ["contract-disclaimer", "card-numbers"]);
   assert.equal(policy.documents.shortcuts.length, 2);
   assert.equal(policy.typing.charsPerMinute, 200);
   assert.equal(policy.retention.corpusDays, 90);
@@ -107,4 +108,13 @@ test("reporting settings are validated with safe defaults", () => {
     { team: "Ops", hourlyRate: 45, currency: "USD", includeApps: true, period: "month", periods: 366 });
   assert.deepEqual(orgPolicy.parse({ reporting: { hourlyRate: -3, includeApps: "yes", period: "year" } }).reporting,
     { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 });
+});
+
+test("a warning rule without a fix is valid; a fix must point at something that exists", () => {
+  const policy = orgPolicy.parse({ keywordRules: [
+    { id: "card", action: "warn", detect: ["card-number"], message: "No card numbers." },
+    { id: "fix", action: "warn", keywords: ["contract"], message: "Add it.", insert: { kind: "shorthand", trigger: "nope/" } },
+  ] });
+  assert.deepEqual(policy.keywordRules.map((r) => r.id), ["card"]);
+  assert.ok(policy.warnings.some((w) => /fix ignored: shortcut nope\//.test(w)));
 });

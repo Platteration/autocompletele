@@ -144,6 +144,7 @@ function parse(input) {
   const triggers = new Set(policy.library.map((sh) => sh.trigger));
   const shortcuts = new Set(policy.documents.shortcuts.map((s) => s.trigger));
   policy.keywordRules = policy.keywordRules.filter((rule) => {
+    if (!rule.insert) return true;
     if (rule.insert.kind === "shorthand" && !triggers.has(rule.insert.trigger)) {
       policy.warnings.push("keyword rule " + rule.id + " ignored: shortcut " + rule.insert.trigger + " is not in the policy library");
       return false;

@@ -76,7 +76,7 @@
     </section>
 
     <section id="tab-apps" role="tabpanel" hidden>
-      <p class="hint"><strong>Triggers</strong> keeps only the last 200 characters in memory to spot a trigger; nothing is written. <strong>Learn</strong> keeps the text you type in that application, with card numbers, passwords and tokens masked, so recurring phrases can be proposed. <strong>Off</strong> reads nothing. Credential prompts, password managers and terminals are never learned.</p>
+      <p class="hint"><strong>Triggers</strong> keeps only the last 200 characters in memory to spot a trigger (and, while the organisation has keyword rules, the current field's text, up to 4,000 characters); nothing is written. <strong>Learn</strong> keeps the text you type in that application, with card numbers, passwords and tokens masked, so recurring phrases can be proposed. <strong>Off</strong> reads nothing. Credential prompts, password managers and terminals are never learned.</p>
       <h2>Your rules</h2>
       <div class="row mb">
         <input type="text" id="rule-process" placeholder="Process name, e.g. outlook.exe" aria-label="Process name">
@@ -92,8 +92,8 @@
     </section>
 
     <section id="tab-keywords" role="tabpanel" hidden>
-      <p class="hint">When these words appear in what you write, a small offer appears. Rules come from the organisation policy.</p>
-      <table><thead><tr><th>Rule</th><th>Keywords</th><th>Match</th><th>Inserts</th></tr></thead><tbody id="keywords"></tbody></table>
+      <p class="hint">When these words appear in what you write, a small offer or a warning appears. Rules come from the organisation policy. While there are rules, the text of the field you are typing in is held in memory (up to 4,000 characters) to check them, and dropped when you move to another field; it is never written to disk.</p>
+      <table><thead><tr><th>Rule</th><th>When</th><th>Match</th><th>Does</th></tr></thead><tbody id="keywords"></tbody></table>
     </section>
 
     <section id="tab-documents" role="tabpanel" hidden>
