@@ -8,6 +8,8 @@
 //   node admin/actle-admin.js layers <org.json> [<team.json> ...]
 //   node admin/actle-admin.js report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
 //   node admin/actle-admin.js suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
+//   node admin/actle-admin.js license issue --key <vendor.key> --org <name> --seats N --expires YYYY-MM-DD [--grace DAYS] [--id ID] [--out <file>]
+//   node admin/actle-admin.js license show <token|file|policy.json> [--pub <vendor.pub>]
 "use strict";
 
 const fs = require("node:fs");
@@ -16,6 +18,8 @@ const signing = require("../core/policy-signing.js");
 const orgPolicy = require("../core/org-policy.js");
 const report = require("../core/report.js");
 const suggestions = require("../core/suggestions.js");
+const license = require("../core/license.js");
+const { normalizeDeployment } = require("../core/policy-source.js");
 
 const USAGE = `actle Corporate admin tool
 
@@ -29,7 +33,41 @@ const USAGE = `actle Corporate admin tool
   report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
                                   roll desks' usage reports up into a team view
   suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
-                                  rank phrases people suggested; write a library to review`;
+                                  rank phrases people suggested; write a library to review
+  license issue --key <vendor.key> --org <name> --seats N --expires YYYY-MM-DD [--grace DAYS] [--id ID] [--out <file>]
+                                  issue a business licence token (vendor only)
+  license show <token | file with the token | policy.json> [--pub <vendor.pub>]
+                                  print what a licence token says and, with --pub, whether it verifies
+  deployment --pub <file> [--pub <file>] --source layer=NAME,label=TEXT,url=https://… [--source …] [--refresh MINUTES] --out <deployment.json>
+                                  write a desk's deployment.json (sources, pinned keys, refresh)
+  rotate --old <keys dir> --new <keys dir> --deployment <deployment.json> --layer <policy.json> [--layer …] --out-dir <dir>
+                                  start a signing-key rotation: new keys, two-key deployment, layers re-signed`;
+
+function writeKeyPair(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const keyFile = path.join(dir, "policy-signing.key");
+  const pubFile = path.join(dir, "policy-signing.pub");
+  // Never overwrite a key: losing the private key means every desk has to be
+  // re-deployed with a new public key.
+  for (const file of [keyFile, pubFile]) {
+    if (fs.existsSync(file)) throw new Error(file + " already exists; refusing to overwrite a signing key");
+  }
+  const pair = signing.generateKeyPair();
+  fs.writeFileSync(keyFile, pair.privateKey, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  fs.writeFileSync(pubFile, pair.publicKey, { encoding: "utf8", flag: "wx" });
+  return { pair, keyFile, pubFile };
+}
+
+/** "layer=org,label=Organisation,url=https://…" -> source object. */
+function parseSource(text) {
+  const source = {};
+  for (const part of String(text).split(",")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) throw new Error("--source parts look like key=value: " + JSON.stringify(part));
+    source[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
+  }
+  return source;
+}
 
 function parseArgs(argv) {
   const positional = [];
@@ -104,17 +142,7 @@ function run(argv, io) {
       case "keygen": {
         const dir = rest[0];
         if (!dir) throw new Error("keygen needs a folder");
-        fs.mkdirSync(dir, { recursive: true });
-        const keyFile = path.join(dir, "policy-signing.key");
-        const pubFile = path.join(dir, "policy-signing.pub");
-        // Never overwrite a key: losing the private key means every desk has
-        // to be re-deployed with a new public key.
-        for (const file of [keyFile, pubFile]) {
-          if (fs.existsSync(file)) throw new Error(file + " already exists; refusing to overwrite a signing key");
-        }
-        const pair = signing.generateKeyPair();
-        fs.writeFileSync(keyFile, pair.privateKey, { encoding: "utf8", mode: 0o600, flag: "wx" });
-        fs.writeFileSync(pubFile, pair.publicKey, { encoding: "utf8", flag: "wx" });
+        const { pair, keyFile, pubFile } = writeKeyPair(dir);
         out("key id " + pair.keyId);
         out("private key: " + keyFile + " (keep it off shared drives)");
         out("public key:  " + pubFile + " (put its text in each desk's deployment.json publicKeys)");
@@ -140,6 +168,13 @@ function run(argv, io) {
           throw new Error("not signed: fix the warnings above or pass --allow-warnings");
         }
         const envelope = signing.signPolicy(value, fs.readFileSync(keyFile, "utf8"));
+        const deploymentFile = one(args.flags, "deployment");
+        if (deploymentFile) {
+          const pinned = normalizeDeployment(readJsonFile(deploymentFile).value).publicKeys.map((pem) => signing.keyId(pem));
+          if (!pinned.includes(envelope.keyId)) err("warning: key " + envelope.keyId + " is not pinned in " + deploymentFile + "; desks with that deployment will refuse this policy");
+          const layers = normalizeDeployment(readJsonFile(deploymentFile).value).sources.map((s) => s.layer);
+          if (!layers.includes(value.layer)) err("warning: no source in " + deploymentFile + " expects layer " + JSON.stringify(value.layer));
+        }
         const text = JSON.stringify(envelope, null, 2) + "\n";
         const target = one(args.flags, "out");
         if (target) {
@@ -220,6 +255,23 @@ function run(argv, io) {
         if (merged.byShortcut.length) out("\norganisation shortcuts by use");
         for (const s of merged.byShortcut) out("  " + (s.kind + " " + s.trigger).padEnd(30) + String(s.inserts).padStart(6) + " inserts on " + s.desks + " desk(s)");
         if (merged.unused.length) out("\nnever used: " + merged.unused.map((s) => (s.kind ? s.kind + " " : "") + s.trigger).join(", "));
+        for (const row of merged.licences) {
+          let seats = null;
+          if (policy && policy.licence) {
+            try {
+              const payload = JSON.parse(Buffer.from(policy.licence.split(".")[1], "base64url").toString("utf8"));
+              if (payload.id === row.id) seats = payload.seats;
+            } catch (error) {
+              seats = null;
+            }
+          }
+          out("licence " + row.id + ": " + row.desks + " desk(s)" + (seats != null ? " of " + seats + " seats" : ""));
+          if (seats != null && row.desks > seats) err("warning: licence " + row.id + " is over its " + seats + " seats by " + (row.desks - seats));
+        }
+        if (merged.complianceWarnings.shown) {
+          out("\ncompliance warnings shown: " + merged.complianceWarnings.shown);
+          for (const w of merged.complianceWarnings.byRule) out("  " + w.id.padEnd(30) + String(w.count).padStart(6));
+        }
         const csvFile = one(args.flags, "csv");
         if (csvFile) {
           fs.writeFileSync(csvFile, report.toCsv(merged), "utf8");
@@ -254,6 +306,106 @@ function run(argv, io) {
           out("\nlibrary written to " + target + "; review it, then add it to the policy's library and sign");
         }
         return ranked.desks ? 0 : 1;
+      }
+      case "license": {
+        const sub = rest[0];
+        if (sub === "issue") {
+          const keyFile = one(args.flags, "key");
+          const org = one(args.flags, "org");
+          const seats = Number(one(args.flags, "seats"));
+          const expires = one(args.flags, "expires");
+          if (!keyFile || !org || !expires || !(seats >= 1)) throw new Error("license issue needs --key, --org, --seats and --expires");
+          const graceFlag = one(args.flags, "grace");
+          const token = license.issueLicence({
+            id: one(args.flags, "id") || "LIC-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
+            organization: org,
+            seats: Math.floor(seats),
+            issuedAt: new Date().toISOString().slice(0, 10),
+            expiresAt: expires,
+            graceDays: graceFlag === undefined ? 30 : Number(graceFlag),
+          }, fs.readFileSync(keyFile, "utf8"));
+          const target = one(args.flags, "out");
+          if (target) {
+            fs.writeFileSync(target, token + "\n", "utf8");
+            out("licence written to " + target + "; put the token in the policy as \"licence\" and sign the policy");
+          } else {
+            out(token);
+          }
+          return 0;
+        }
+        if (sub === "show") {
+          const source = rest[1];
+          if (!source) throw new Error("license show needs a token, a file holding one, or a policy file");
+          let token = source;
+          if (fs.existsSync(source)) {
+            const text = fs.readFileSync(source, "utf8").trim();
+            try {
+              const parsed = JSON.parse(text);
+              token = parsed && parsed.format === signing.FORMAT ? JSON.parse(parsed.payload).licence : parsed && parsed.licence;
+            } catch (error) {
+              token = text;
+            }
+          }
+          const parts = String(token || "").split(".");
+          if (parts.length !== 3 || parts[0] !== license.PREFIX) throw new Error("no business licence token found");
+          const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+          for (const key of ["id", "organization", "seats", "issuedAt", "expiresAt", "graceDays"]) out((key + ":").padEnd(14) + payload[key]);
+          const pubs = (args.flags.pub || []).map((file) => fs.readFileSync(file, "utf8"));
+          if (pubs.length) {
+            const result = license.verifyLicence(token, pubs);
+            out("signature:    " + (result.ok ? "valid (key " + result.keyId + ")" : "NOT VALID: " + result.error));
+            return result.ok ? 0 : 1;
+          }
+          out("signature:    not checked (pass --pub <vendor.pub>)");
+          return 0;
+        }
+        throw new Error("license needs issue or show");
+      }
+      case "deployment": {
+        const pubs = (args.flags.pub || []).map((file) => fs.readFileSync(file, "utf8"));
+        const sources = (args.flags.source || []).map(parseSource);
+        const target = one(args.flags, "out");
+        if (!pubs.length || !sources.length || !target) throw new Error("deployment needs --pub, --source and --out");
+        const deployment = { policySources: sources, publicKeys: pubs };
+        const refresh = one(args.flags, "refresh");
+        if (refresh !== undefined) deployment.refreshMinutes = Number(refresh);
+        const checked = normalizeDeployment(deployment);
+        for (const warning of checked.warnings) err("warning: " + warning);
+        if (checked.warnings.length) throw new Error("not written: fix the warnings above");
+        fs.writeFileSync(target, JSON.stringify(deployment, null, 2) + "\n", "utf8");
+        out("deployment written to " + target + ": " + checked.sources.length + " source(s), " + checked.publicKeys.length + " key(s), refresh every " + checked.refreshMinutes + " minutes");
+        out("install it as deployment.json in each desk's data folder");
+        return 0;
+      }
+      case "rotate": {
+        const oldDir = one(args.flags, "old");
+        const newDir = one(args.flags, "new");
+        const deploymentFile = one(args.flags, "deployment");
+        const layerFiles = args.flags.layer || [];
+        const outDir = one(args.flags, "out-dir");
+        if (!oldDir || !newDir || !deploymentFile || !layerFiles.length || !outDir) throw new Error("rotate needs --old, --new, --deployment, --layer and --out-dir");
+        const oldPub = fs.readFileSync(path.join(oldDir, "policy-signing.pub"), "utf8");
+        const deployment = readJsonFile(deploymentFile).value;
+        const pinned = (Array.isArray(deployment.publicKeys) ? deployment.publicKeys : []).map((pem) => signing.keyId(pem));
+        if (!pinned.includes(signing.keyId(oldPub))) throw new Error("the old key is not pinned in " + deploymentFile + "; nothing to rotate from");
+        const { pair } = writeKeyPair(newDir);
+        deployment.publicKeys = (deployment.publicKeys || []).concat([pair.publicKey]);
+        const checked = normalizeDeployment(deployment);
+        for (const warning of checked.warnings) err("warning: " + warning);
+        fs.writeFileSync(deploymentFile, JSON.stringify(deployment, null, 2) + "\n", "utf8");
+        fs.mkdirSync(outDir, { recursive: true });
+        for (const file of layerFiles) {
+          const value = policyFrom(file).policy;
+          if (!value.layer || !value.serial) throw new Error(file + " needs layer and serial before it can be signed");
+          const envelope = signing.signPolicy(value, pair.privateKey);
+          const target = path.join(outDir, path.basename(file).replace(/(\.signed)?\.json$/, "") + ".signed.json");
+          fs.writeFileSync(target, JSON.stringify(envelope, null, 2) + "\n", "utf8");
+          out("re-signed " + file + " (layer " + value.layer + ", serial " + value.serial + ") -> " + target);
+        }
+        out("new key id " + pair.keyId + " in " + newDir + "; " + deploymentFile + " now pins both keys");
+        out("next: 1) roll out " + deploymentFile + " to every desk; 2) publish the re-signed layers from " + outDir
+          + "; 3) after refreshMinutes plus the longest time a desk may be offline, run `deployment` with only " + path.join(newDir, "policy-signing.pub") + " and roll it out; 4) delete " + path.join(oldDir, "policy-signing.key"));
+        return 0;
       }
       case undefined:
       case "help":

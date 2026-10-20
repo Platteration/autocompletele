@@ -65,7 +65,7 @@ test("warning rules need a message; their fix is optional and validated", () => 
     { id: "silent", action: "warn", keywords: ["x"] },
     { id: "odd", action: "shout", keywords: ["x"], message: "m" },
     { id: "badfix", action: "warn", keywords: ["x"], message: "m", insert: { kind: "text", text: "" } },
-    { id: "nodetector", action: "warn", detect: ["iban"], message: "m" },
+    { id: "nodetector", action: "warn", detect: ["passport"], message: "m" },
     { id: "offer-needs-insert", keywords: ["x"] },
   ]);
   assert.deepEqual(rules.map((r) => r.id), ["disclaimer", "card"]);
@@ -77,7 +77,7 @@ test("warning rules need a message; their fix is optional and validated", () => 
   assert.equal(warnings.length, 5);
   assert.ok(warnings.some((w) => /needs a message/.test(w)));
   assert.ok(warnings.some((w) => /offer or warn/.test(w)));
-  assert.ok(warnings.some((w) => /unknown detector iban/.test(w)));
+  assert.ok(warnings.some((w) => /unknown detector passport/.test(w)));
 });
 
 test("unless phrases anywhere in the field suppress a rule; detectors look at recent text", () => {
@@ -94,4 +94,45 @@ test("unless phrases anywhere in the field suppress a rule; detectors look at re
   assert.deepEqual(ids("quote for 4111-1111-1111-1111 "), ["card", "card-in-quote"]);
   assert.deepEqual(keywords.detect("contract", rules)[0].matched, ["contract"]);
   assert.deepEqual(keywords.detect("4111 1111 1111 1111", rules)[0].matched, ["card-number"]);
+});
+
+test("identity and bank number detectors verify check digits", () => {
+  const { DETECTORS } = keywords;
+  const cases = [
+    ["iban", "Pay to GB82 WEST 1234 5698 7654 32 please", "Pay to GB82 WEST 1234 5698 7654 33 please"],
+    ["iban", "DE89370400440532013000", "DE89370400440532013001"],
+    ["uk-ni", "NI number AB 12 34 56 C", "NI number BG 12 34 56 C"],
+    ["uk-ni", "ab123456a", "ab123456e"],
+    ["us-ssn", "SSN 219-09-9999 on file", "SSN 666-09-9999 on file"],
+    ["us-ssn", "123-45-6789", "123-00-6789"],
+    ["se-personnummer", "född 811218-9876", "född 811218-9875"],
+    ["se-personnummer", "19811218-9876", "811318-9876"],
+    ["nl-bsn", "BSN 111222333", "BSN 111222334"],
+    ["nl-bsn", "123456782", "000000000"],
+  ];
+  for (const [name, valid, invalid] of cases) {
+    assert.equal(DETECTORS[name](valid, {}, {}), true, name + " should match " + valid);
+    assert.equal(DETECTORS[name](invalid, {}, {}), false, name + " should not match " + invalid);
+  }
+  assert.equal(DETECTORS["nl-bsn"]("order 123456782 shipped", {}, {}), true);
+  assert.equal(DETECTORS["nl-bsn"]("ref 1234567821", {}, {}), false, "ten digits are not a BSN");
+});
+
+test("external e-mail and missing-attachment detectors use rule parameters and context", () => {
+  const { rules, warnings } = keywords.normalizeRules([
+    { id: "ext", action: "warn", detect: ["external-email-domain"], params: { allowedDomains: ["Example.com", "partner.org"] }, message: "External address." },
+    { id: "noparams", action: "warn", detect: ["external-email-domain"], message: "m" },
+    { id: "attach", action: "warn", keywords: ["attached", "attachment"], detect: ["missing-attachment"], apps: ["OUTLOOK.EXE", "/Applications/Thunderbird.app"], message: "Nothing is attached yet." },
+  ]);
+  assert.deepEqual(rules.map((r) => r.id), ["ext", "attach"]);
+  assert.deepEqual(rules[0].params.allowedDomains, ["example.com", "partner.org"]);
+  assert.deepEqual(rules[1].apps, ["outlook", "thunderbird"]);
+  assert.ok(warnings.some((w) => /noparams ignored: external-email-domain needs/.test(w)));
+  const ids = (text, context) => keywords.detect(text, rules, null, { context }).map((h) => h.rule.id);
+  assert.deepEqual(ids("cc bob@sales.example.com and ann@partner.org", {}), []);
+  assert.deepEqual(ids("cc bob@gmail.com", {}), ["ext"]);
+  assert.deepEqual(ids("please find attached the file", { app: "C:/Program Files/OUTLOOK.EXE", attachments: 0 }), ["attach"]);
+  assert.deepEqual(ids("please find attached the file", { app: "outlook", attachments: 2 }), []);
+  assert.deepEqual(ids("please find attached the file", { app: "notepad", attachments: 0 }), [], "rule limited to mail clients");
+  assert.deepEqual(ids("please find attached the file", {}), [], "no application known: an app-restricted rule stays quiet");
 });

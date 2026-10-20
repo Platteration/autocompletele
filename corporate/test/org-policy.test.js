@@ -11,8 +11,8 @@ test("the shipped example policy parses without warnings", () => {
   assert.equal(policy.organization, "Example Logistics Ltd");
   assert.equal(policy.capture.apps.length, 4);
   assert.equal(policy.library.length, 4);
-  assert.equal(policy.keywordRules.length, 5);
-  assert.deepEqual(policy.keywordRules.filter((r) => r.action === "warn").map((r) => r.id), ["contract-disclaimer", "card-numbers"]);
+  assert.equal(policy.keywordRules.length, 8);
+  assert.deepEqual(policy.keywordRules.filter((r) => r.action === "warn").map((r) => r.id), ["contract-disclaimer", "card-numbers", "bank-details", "attachment-reminder", "external-recipients"]);
   assert.equal(policy.documents.shortcuts.length, 2);
   assert.equal(policy.typing.charsPerMinute, 200);
   assert.equal(policy.retention.corpusDays, 90);
@@ -103,11 +103,27 @@ test("the kill switch pauses from any layer and carries a message", () => {
 });
 
 test("reporting settings are validated with safe defaults", () => {
-  assert.deepEqual(orgPolicy.parse({}).reporting, { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 });
-  assert.deepEqual(orgPolicy.parse({ reporting: { team: " Ops ", hourlyRate: "45", currency: "USD", includeApps: true, period: "month", periods: 999 } }).reporting,
-    { team: "Ops", hourlyRate: 45, currency: "USD", includeApps: true, period: "month", periods: 366 });
-  assert.deepEqual(orgPolicy.parse({ reporting: { hourlyRate: -3, includeApps: "yes", period: "year" } }).reporting,
-    { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 });
+  const base = { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12, endpoint: null, uploadEvery: "week", uploadToken: null };
+  assert.deepEqual(orgPolicy.parse({}).reporting, base);
+  assert.deepEqual(orgPolicy.parse({ reporting: { team: " Ops ", hourlyRate: "45", currency: "USD", includeApps: true, period: "month", periods: 999, endpoint: " https://collect.example/actle ", uploadEvery: "day", uploadToken: " s3cret " } }).reporting,
+    { team: "Ops", hourlyRate: 45, currency: "USD", includeApps: true, period: "month", periods: 366, endpoint: "https://collect.example/actle", uploadEvery: "day", uploadToken: "s3cret" });
+  assert.deepEqual(orgPolicy.parse({ reporting: { hourlyRate: -3, includeApps: "yes", period: "year", uploadEvery: "hour" } }).reporting, base);
+  const plain = orgPolicy.parse({ reporting: { endpoint: "http://collect.example/actle" } });
+  assert.equal(plain.reporting.endpoint, null);
+  assert.ok(plain.warnings.some((w) => /reporting.endpoint ignored: only https/.test(w)));
+});
+
+test("update servers are https only, channels are plain names, and later layers replace the whole block", () => {
+  assert.deepEqual(orgPolicy.parse({}).updates, { url: null, channel: "latest" });
+  assert.deepEqual(orgPolicy.parse({ updates: { url: " https://updates.example/actle/ ", channel: "beta" } }).updates, { url: "https://updates.example/actle", channel: "beta" });
+  const plain = orgPolicy.parse({ updates: { url: "http://updates.example/actle", channel: "Beta Channel" } });
+  assert.deepEqual(plain.updates, { url: null, channel: "latest" });
+  assert.ok(plain.warnings.some((w) => /updates.url ignored: only https/.test(w)));
+  assert.ok(plain.warnings.some((w) => /updates.channel ignored/.test(w)));
+  assert.deepEqual(orgPolicy.parse({ updates: "https://updates.example" }).updates, { url: null, channel: "latest" });
+  const merged = orgPolicy.parse(orgPolicy.merge([{ updates: { url: "https://a.example", channel: "beta" } }, { updates: { url: "https://b.example" } }]));
+  assert.deepEqual(merged.updates, { url: "https://b.example", channel: "latest" }, "a later layer with a url replaces the block, channel included");
+  assert.equal(orgPolicy.parse(orgPolicy.merge([{ updates: { url: "https://a.example" } }, { updates: { channel: "beta" } }])).updates.url, "https://a.example", "a layer without a url leaves the block alone");
 });
 
 test("a warning rule without a fix is valid; a fix must point at something that exists", () => {

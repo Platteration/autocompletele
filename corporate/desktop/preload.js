@@ -17,6 +17,14 @@ contextBridge.exposeInMainWorld("actle", {
   exportLibrary: invoke("library:export"),
   previewReport: invoke("report:preview"),
   saveReport: invoke("report:save"),
+  uploadReport: invoke("report:upload"),
+  getUploadStatus: invoke("report:uploadStatus"),
+  getUpdateStatus: invoke("updates:status"),
+  checkUpdates: invoke("updates:check"),
+  downloadUpdate: invoke("updates:download"),
+  installUpdate: invoke("updates:install"),
+  getLookupStatus: invoke("lookups:status"),
+  refreshLookups: invoke("lookups:refresh"),
   getPolicyInfo: invoke("policy:info"),
   refreshPolicy: invoke("policy:refresh"),
   getAudit: invoke("policy:audit"),
@@ -33,6 +41,14 @@ contextBridge.exposeInMainWorld("actle", {
   saveSuggestions: invoke("suggestions:save"),
   clearLearning: invoke("learning:clear"),
   getStatus: invoke("app:status"),
+  getKeyboardInfo: invoke("keyboard:info"),
+  setKeyboardTest: invoke("keyboard:test"),
+  detectKeyboard: invoke("keyboard:detect"),
+  onKeyboardKey: (listener) => {
+    const handler = (event, payload) => listener(payload);
+    ipcRenderer.on("keyboard:key", handler);
+    return () => ipcRenderer.removeListener("keyboard:key", handler);
+  },
   // Search palette window.
   paletteSearch: invoke("palette:search"),
   paletteChoose: invoke("palette:choose"),

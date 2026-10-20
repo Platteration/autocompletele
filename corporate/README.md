@@ -19,23 +19,40 @@ adds what a business asks for:
   "shipment" together, "office hours"), the assistant offers to insert
   predetermined text, a saved shortcut or a document set.
 - **Document shortcuts**: typing `/sld` lists the files the organisation marked
-  as the standard hand-outs for "shipping logistics department", so they can be
-  attached in one step.
+  as the standard hand-outs for "shipping logistics department"; Attach puts
+  them into the message being written (Outlook directly, Thunderbird's
+  compose window, or as pasted files elsewhere).
+- **Lookups**: `/cust 1001 ` inserts the customer block for id 1001 from a
+  CSV or JSON file the organisation keeps on a share or an https address,
+  rendered from a template; cached per desk, refreshed on a schedule.
 - **Compliance warnings**: a rule can warn instead of offer, for example when
-  "contract" is written without the legal disclaimer or a card number is typed
-  into a message, with an optional one-click fix.
+  "contract" is written without the legal disclaimer, a card number, IBAN or
+  national identity number is typed into a message, an outside address is
+  named, or "attached" is written with nothing attached, with an optional
+  one-click fix. Warnings are counted per rule in usage reports.
 - **Central management**: signed policy files fetched from an intranet URL or
   a file share, layered organisation, department and team; rollback
   protection; an administrator kill switch; and a change log on every desk.
+- **Keyboard layouts**: English (US and UK), German, French, Spanish,
+  Swedish, Norwegian, Danish, Dutch and Portuguese, with AltGr and dead
+  keys, detected from the system or chosen on the dashboard.
 - **Search palette**: Ctrl+Shift+Space (Cmd+Shift+Space on macOS) opens a
   search over every shortcut and document set in any application; Enter
   inserts the choice where the person was typing.
 - **Phrase suggestions**: a person can suggest learned proposals to the
   organisation; the administrator ranks suggestions across desks and turns
   the best into shared shortcuts.
+- **Per-seat licensing**: a vendor-signed licence inside the policy; an
+  unlicensed or expired desk keeps shortcuts and statistics and loses the
+  organisation features, never the ability to type. Seats are counted in the
+  administrator's roll-up.
 - **Usage reports**: a counts-only report a person previews and exports, and
   an administrator roll-up with hours saved per team, estimated value,
   shortcuts by use and shortcuts nobody uses.
+- **Installers and updates**: NSIS, DMG and AppImage/deb installers from
+  one command or the CI job, silent per-machine install on Windows, and
+  automatic updates from an https folder the policy names (never from
+  anywhere else), with a per-desk "defer updates" choice.
 - **One organisation policy file** drives all of it:
   [`shared/ORG-POLICY.md`](shared/ORG-POLICY.md), with a complete example in
   [`shared/org-policy.example.json`](shared/org-policy.example.json).
@@ -73,17 +90,20 @@ corporate/
     phrase-miner.js           recurring sentences, paragraphs and phrases across messages
     keyword-rules.js          keyword offers and compliance warnings, once per field
     documents.js              document shortcuts (/sld) and search
+    lookups.js                data-backed lookups (/cust 1001): CSV/JSON sources, cache, argument matching
     palette-search.js         search palette items, scored by the extension's palette module
     org-policy.js             the organisation policy parser and layer merge (skips bad parts, never refuses)
     policy-signing.js         Ed25519 signing and verification of policy files
     policy-source.js          fetch signed layers, verify, refuse replays, keep the last good copy
+    license.js                vendor-signed per-seat licences, licence state, free tier
     report.js                 counts-only usage reports, team roll-up, CSV
+    report-upload.js          opt-in https upload of the report, HMAC-signed with the policy's token
     suggestions.js            phrase suggestions a person shares, ranked across desks
     crypto-box.js             AES-256-GCM records for the learning corpus
     engine.js                 headless assistant: keys + focus in, actions out
     store.js                  app-data files: library, policy, settings, metrics log, learning corpus, audit log
   admin/
-    actle-admin.js            keygen, sign, verify, validate, layers, report, suggestions
+    actle-admin.js            keygen, sign, verify, validate, layers, deployment, rotate, report, suggestions, license
   test/                       node --test suites for every module, plus the shared conformance suite
   shared/
     ORG-POLICY.md             policy file format
@@ -138,8 +158,9 @@ it is bounded on purpose:
   suggestions included; switching an application to triggers mode stops
   learning there.
 - Nothing typed is ever sent anywhere. The only network access is fetching
-  signed policy files on a managed desk; usage reports are files the person
-  saves and hands over.
+  signed policy files on a managed desk and, only when the policy names an
+  https endpoint, posting the counts-only usage report; otherwise usage
+  reports are files the person saves and hands over.
 
 ## Run
 
@@ -170,15 +191,14 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
 
 ## Follow-ups
 
-- Licensing and installer packaging for organisations (per-seat, signed
-  installers, silent install). Nothing from the personal premium preview is
-  wired in. Policy signing and distribution exist (see ORG-POLICY.md).
-- Dead keys and input methods: the listener maps a US layout; other layouts
-  need a per-platform translation (the personal Windows app has the same
-  limit).
-- Attaching files directly into a mail client's compose window is
-  platform-specific; the shell copies the paths and reveals the files, and
-  counts an attachment only when the person confirms it.
-- Usage reports travel as files the person saves; an upload to a collection
-  point is not built, deliberately, so nothing leaves a desk without the
-  person's action.
+- Installers from CI are unsigned; a signing certificate (and Apple
+  notarisation credentials) is the organisation's to add. Linux `.deb`
+  installs do not self-update.
+- Licensing is built but not enforced until the vendor's public key is pasted
+  into `core/license.js` (see ORG-POLICY.md, Licensing).
+- Keyboard layouts beyond the ten built in, and input methods (IME).
+- Attaching files is done through Outlook COM, Thunderbird or pasted file
+  references; a client that accepts none of these gets the paths as text.
+- Usage reports travel as files the person saves, or, when the policy names
+  an https collection endpoint, are posted automatically (counts only; the
+  Policy tab shows every body sent).

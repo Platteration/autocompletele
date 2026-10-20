@@ -8,6 +8,10 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, shell, nativeImage, 
 const { createAssistant } = require("./assistant.js");
 const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
+const { createAttacher } = require("./adapters/attach.js");
+const { detectLayout } = require("./adapters/keyboard-layout.js");
+const { createUpdater } = require("./updater.js");
+const layouts = require("./adapters/layouts.js");
 const { personal } = require("../core/index.js");
 
 const SINGLE = app.requestSingleInstanceLock();
@@ -21,6 +25,7 @@ if (!SINGLE) {
 let assistant = null;
 let listener = null;
 let sender = null;
+let attacher = null;
 let tray = null;
 let dashboard = null;
 let popover = null;
@@ -30,6 +35,10 @@ let dashboardFocused = false;
 let lastContext = {};
 let paletteWindow = null;
 let paletteStatus = { accelerator: "", registered: false, error: null };
+let updater = null;
+let updateTimer = null;
+let detectedLayout = null;
+let keyboardTest = false; // while true, translated keys go to the dashboard's test box instead of the engine
 
 function notify(body) {
   if (Notification.isSupported()) new Notification({ title: "actle", body }).show();
@@ -66,7 +75,7 @@ function openDashboard() {
   dashboard.once("ready-to-show", () => dashboard.show());
   dashboard.on("focus", () => setOwnWindow(true));
   dashboard.on("blur", () => setOwnWindow(false));
-  dashboard.on("closed", () => { dashboard = null; setOwnWindow(false); });
+  dashboard.on("closed", () => { dashboard = null; keyboardTest = false; setOwnWindow(false); });
 }
 
 // Typing inside the dashboard (for example a trigger into the editor) must
@@ -130,10 +139,23 @@ function closePopover() {
   popoverState = null;
 }
 
+async function insertLookup(action) {
+  const resolved = assistant.resolveLookup(action);
+  if (resolved.type !== "expand") {
+    notify(resolved.message);
+    return;
+  }
+  await sender.replace(resolved);
+  assistant.lookupInserted(resolved);
+  broadcast({ metrics: true });
+}
+
 function handleAction(action) {
   switch (action.type) {
     case "expand":
       return sender.replace(action);
+    case "lookup":
+      return insertLookup(action).catch((error) => assistant.log("lookup failed: " + error));
     case "undo":
       return sender.undo(action);
     case "template":
@@ -163,7 +185,18 @@ async function submitPopover(payload) {
     if (payload.action === "reveal") {
       for (const doc of chosen) shell.showItemInFolder(doc.path);
     }
-    if (chosen.length) {
+    if (chosen.length && payload.action === "attach") {
+      if (state.backspaces) await sender.replace({ backspaces: state.backspaces, text: "", cursorOffset: 0 });
+      const result = await attacher.attach({ paths: chosen.map((doc) => doc.path), context: lastContext });
+      if (result.ok) {
+        // Counted only when the files really went in.
+        assistant.recordInsert({ kind: "document", trigger: state.trigger, count: chosen.length });
+        notify(chosen.length + " file" + (chosen.length === 1 ? "" : "s") + " attached" + (result.note ? " (" + result.note + ")" : "") + ".");
+      } else {
+        clipboard.writeText(chosen.map((doc) => doc.path).join("\n"));
+        notify("Could not attach the files here (" + result.error + "). Their paths were copied instead; paste or drag them into the attachment area.");
+      }
+    } else if (chosen.length) {
       clipboard.writeText(chosen.map((doc) => doc.path).join("\n"));
       if (state.backspaces) await sender.replace({ backspaces: state.backspaces, text: "", cursorOffset: 0 });
       assistant.recordInsert({ kind: "document", trigger: state.trigger, count: chosen.length });
@@ -216,6 +249,7 @@ async function refreshPolicy() {
   }
   updateTray();
   broadcast({ settings: true, status: true, policy: true });
+  refreshLookups(false).catch((error) => assistant.log("lookup refresh failed: " + error));
   return result;
 }
 
@@ -224,6 +258,42 @@ function schedulePolicyRefresh() {
   refreshPolicy();
   const minutes = assistant.policyInfo().refreshMinutes || 60;
   refreshTimer = setInterval(refreshPolicy, minutes * 60 * 1000);
+}
+
+// Usage-report upload: only when the policy names an https endpoint; checked
+// hourly, sent when the policy's interval has passed since the last success.
+let uploadTimer = null;
+async function uploadIfDue() {
+  if (!assistant.uploadDue()) return;
+  await assistant.uploadReport();
+  broadcast({ policy: true });
+}
+
+// Lookup data: refreshed on start and then hourly for the sources that are due.
+let lookupTimer = null;
+async function refreshLookups(all) {
+  const result = await assistant.refreshLookups(all);
+  if (result.warnings.length) assistant.log(result.warnings.join("; "));
+  broadcast({ policy: true, status: true });
+  return result;
+}
+
+function scheduleLookups() {
+  refreshLookups(false).catch((error) => assistant.log("lookup refresh failed: " + error));
+  lookupTimer = setInterval(() => { refreshLookups(false).catch((error) => assistant.log("lookup refresh failed: " + error)); }, 60 * 60 * 1000);
+}
+
+// Software updates: only when the policy names an https update server, and
+// only in a packaged build; checked after start and then every six hours.
+function scheduleUpdates() {
+  const run = () => updater.check().catch((error) => assistant.log("update check failed: " + error)).then(() => broadcast({ updates: true }));
+  setTimeout(run, 90 * 1000);
+  updateTimer = setInterval(run, 6 * 60 * 60 * 1000);
+}
+
+function scheduleUploads() {
+  uploadTimer = setInterval(() => { uploadIfDue().catch((error) => assistant.log("upload failed: " + error)); }, 60 * 60 * 1000);
+  setTimeout(() => { uploadIfDue().catch((error) => assistant.log("upload failed: " + error)); }, 2 * 60 * 1000);
 }
 
 // Search palette: a global hotkey opens a small window that finds any
@@ -273,6 +343,10 @@ async function choosePalette(choice) {
   await new Promise((resolve) => setTimeout(resolve, 150));
   const action = assistant.paletteChoose(choice);
   if (!action) return { ok: false };
+  if (action.type === "lookup-miss" || action.type === "lookup-needs-argument") {
+    notify(action.message);
+    return { ok: false, error: action.message };
+  }
   if (action.type === "expand") {
     await sender.replace(action);
     assistant.paletteInserted(action);
@@ -281,6 +355,32 @@ async function choosePalette(choice) {
     handleAction(action);
   }
   return { ok: true };
+}
+
+// Keyboard layout: the setting, or the system's layout when the setting is "auto".
+function chosenLayout() {
+  const setting = assistant.settings().keyboardLayout;
+  if (setting && setting !== "auto" && layouts.LAYOUTS[setting]) return setting;
+  return detectedLayout || "en-US";
+}
+
+async function applyKeyboardLayout() {
+  if (assistant.settings().keyboardLayout === "auto" && detectedLayout == null) {
+    detectedLayout = await detectLayout(process.platform);
+  }
+  const inUse = listener.setLayout(chosenLayout());
+  broadcast({ keyboard: true });
+  return inUse;
+}
+
+function keyboardInfo() {
+  return {
+    setting: assistant.settings().keyboardLayout,
+    detected: detectedLayout,
+    inUse: listener.layout,
+    exact: listener.layout === "en-US",
+    layouts: layouts.names().map((id) => ({ id, name: layouts.LAYOUTS[id].name })),
+  };
 }
 
 function registerIpc() {
@@ -310,11 +410,29 @@ function registerIpc() {
   handle("palette:search", (query) => assistant.paletteSearch(String(query == null ? "" : query), 8));
   handle("palette:choose", (choice) => choosePalette(choice || null));
   handle("palette:close", () => { closePalette(); return { ok: true }; });
+  handle("lookups:status", () => assistant.lookupStatus());
+  handle("lookups:refresh", () => refreshLookups(true));
+  handle("report:upload", async () => { const r = await assistant.uploadReport(); broadcast({ policy: true }); return r; });
+  handle("report:uploadStatus", () => assistant.uploadStatus());
   handle("policy:info", () => assistant.policyInfo());
   handle("policy:refresh", () => refreshPolicy());
   handle("policy:audit", () => assistant.audit(100));
   handle("settings:get", () => assistant.settings());
-  handle("settings:save", (next) => { const r = assistant.saveSettings(next || {}); updateTray(); broadcast({ settings: true }); return r; });
+  handle("settings:save", (next) => {
+    const r = assistant.saveSettings(next || {});
+    updateTray();
+    broadcast({ settings: true });
+    if (next && Object.hasOwn(next, "keyboardLayout")) applyKeyboardLayout().catch((error) => assistant.log("layout: " + error));
+    if (next && next.deferUpdates === false && updater.status().phase === "available") updater.download().then(() => broadcast({ updates: true }));
+    return r;
+  });
+  handle("updates:status", () => updater.status());
+  handle("updates:check", async () => { const r = await updater.check(); broadcast({ updates: true }); return r; });
+  handle("updates:download", async () => { const r = await updater.download(); broadcast({ updates: true }); return r; });
+  handle("updates:install", () => updater.install());
+  handle("keyboard:info", () => keyboardInfo());
+  handle("keyboard:test", (on) => { keyboardTest = !!on; return { ok: true }; });
+  handle("keyboard:detect", async () => { detectedLayout = await detectLayout(process.platform); await applyKeyboardLayout(); return keyboardInfo(); });
   handle("settings:enabled", (value) => { const r = assistant.setEnabled(value !== false); updateTray(); broadcast({ settings: true }); return r; });
   handle("learning:candidates", () => assistant.candidates());
   handle("learning:accept", (c) => { const r = assistant.acceptCandidate(c || {}); broadcast({ library: true, learning: true }); return r; });
@@ -336,12 +454,15 @@ function registerIpc() {
   handle("app:status", () => ({
     listener: listenerStatus,
     sender: { available: sender.isAvailable(), reason: sender.isAvailable() ? null : sender.unavailableReason() },
+    attach: { available: attacher.isAvailable(lastContext), reason: attacher.unavailableReason(lastContext) },
     warnings: assistant.warnings(),
     dataDir: assistant.store.root,
     mode: assistant.engine.mode,
     paused: assistant.paused,
     pausedMessage: assistant.policyInfo().paused.message,
     palette: paletteStatus,
+    keyboard: keyboardInfo(),
+    updates: updater.status(),
     context: lastContext,
     version: app.getVersion(),
   }));
@@ -359,8 +480,22 @@ function start() {
     log: (line) => console.log(line),
   });
   sender = createSender({ clipboard, notify });
+  updater = createUpdater({
+    policy: () => assistant.policyInfo(),
+    settings: () => assistant.settings(),
+    isPackaged: app.isPackaged,
+    log: (line) => assistant.log(line),
+    audit: (entry) => assistant.record(entry),
+    notify,
+  });
+  attacher = createAttacher({ notify, paste: () => sender.paste() });
   listener = createInputListener({
     onKey: (key) => {
+      if (keyboardTest && dashboard && !dashboard.isDestroyed()) {
+        // The dashboard's "type here to test" box shows what the layout makes of each key; nothing is stored.
+        dashboard.webContents.send("keyboard:key", { text: key.text, isBackspace: key.isBackspace, resetsBuffer: key.resetsBuffer });
+        return;
+      }
       if (dashboardFocused) return;
       for (const action of assistant.keyTyped(key)) handleAction(action);
     },
@@ -384,9 +519,13 @@ function start() {
   updateTray();
   registerIpc();
   listener.start();
+  applyKeyboardLayout().catch((error) => assistant.log("layout: " + error));
   if (!sender.isAvailable()) notify("Expansions cannot be typed into other applications: " + sender.unavailableReason());
   for (const warning of assistant.warnings()) notify(warning);
   schedulePolicyRefresh();
+  scheduleUploads();
+  scheduleLookups();
+  scheduleUpdates();
   registerPaletteShortcut();
   updateTray();
   openDashboard();
@@ -404,6 +543,9 @@ app.on("will-quit", () => globalShortcut.unregisterAll());
 
 app.on("before-quit", () => {
   if (refreshTimer) clearInterval(refreshTimer);
+  if (uploadTimer) clearInterval(uploadTimer);
+  if (updateTimer) clearInterval(updateTimer);
+  if (lookupTimer) clearInterval(lookupTimer);
   if (listener) listener.stop();
   if (assistant) assistant.endSession();
 });

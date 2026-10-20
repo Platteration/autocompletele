@@ -268,3 +268,30 @@ test("a warning and an offer on the same word arrive together, warning first", (
   assert.equal(actions[0].type, "warning");
   assert.deepEqual(actions[0].hits.map((h) => h.rule.id), ["warn", "offer"]);
 });
+
+test("a missing attachment warns until a document is attached, and shown warnings are counted", () => {
+  const engine = make({ policy: orgPolicy.parse({
+    documents: { shortcuts: [{ trigger: "/sld", label: "Shipping", documents: [{ title: "Packing list", path: "S:/p.pdf" }] }] },
+    keywordRules: [
+      { id: "attach", action: "warn", keywords: ["attached"], detect: ["missing-attachment"], apps: ["outlook"], message: "Nothing is attached yet." },
+      { id: "iban", action: "warn", detect: ["iban"], message: "No bank details by mail." },
+    ],
+  }) });
+  engine.focusChanged({ process: "OUTLOOK.EXE" });
+  const first = engine.type("Please find attached ");
+  assert.equal(first[0].type, "warning");
+  assert.deepEqual(first[0].hits.map((h) => h.rule.id), ["attach"]);
+  assert.deepEqual(engine.ledger.entries().map((e) => [e.kind, e.trigger, e.app]), [["warning", "attach", "outlook"]]);
+  assert.equal(engine.ledger.summary().expansions, 0, "a shown warning is not an insert");
+
+  engine.focusChanged({ process: "OUTLOOK.EXE" });
+  engine.recordInsert({ kind: "document", trigger: "/sld", count: 1 });
+  assert.deepEqual(engine.type("Please find attached "), [], "attached in this field");
+  engine.type("IBAN GB82 WEST 1234 5698 7654 32 ");
+  assert.deepEqual(engine.ledger.entries().filter((e) => e.kind === "warning").map((e) => e.trigger), ["attach", "iban"]);
+  assert.equal(engine.ledger.summary().byKind.warning, 2);
+  assert.equal(engine.ledger.summary().expansions, 1, "only the document insert counts");
+
+  engine.focusChanged({ process: "notepad" });
+  assert.deepEqual(engine.type("Please find attached "), [], "not a mail client");
+});

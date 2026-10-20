@@ -67,6 +67,49 @@ jobs:
       - name: Headless simulation
         run: cd corporate && npm run simulate
 
+  corporate-desktop:
+    name: Corporate desktop installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Install (downloads Electron, builds the keyboard listener)
+        run: cd corporate/desktop && npm ci --no-audit --no-fund
+      - name: Package without signing
+        run: cd corporate/desktop && npm run dist
+        env:
+          # No certificate in CI: the installers are unsigned. An organisation adds
+          # CSC_LINK / CSC_KEY_PASSWORD (and APPLE_* for notarisation) to sign them.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Check the packaged layout
+        if: runner.os == 'Linux'
+        run: cd corporate/desktop && npm run check:package -- dist/linux-unpacked
+      - name: Check the packaged layout
+        if: runner.os == 'Windows'
+        run: cd corporate/desktop && npm run check:package -- dist/win-unpacked
+      - name: Check the packaged layout
+        if: runner.os == 'macOS'
+        run: cd corporate/desktop && npm run check:package -- "$(ls -d dist/mac*/*.app | head -n 1)/Contents"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: actle-corporate-${{ matrix.os }}
+          path: |
+            corporate/desktop/dist/*.exe
+            corporate/desktop/dist/*.dmg
+            corporate/desktop/dist/*.zip
+            corporate/desktop/dist/*.deb
+            corporate/desktop/dist/*.AppImage
+            corporate/desktop/dist/*.yml
+            corporate/desktop/dist/*.blockmap
+          if-no-files-found: error
+
   windows:
     name: Windows app build and tests
     runs-on: windows-latest

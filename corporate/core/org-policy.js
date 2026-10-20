@@ -11,6 +11,7 @@ const keywords = require("./keyword-rules.js");
 const documents = require("./documents.js");
 const metrics = require("./metrics.js");
 const miner = require("./phrase-miner.js");
+const lookupsModule = require("./lookups.js");
 
 const VERSION = 1;
 
@@ -27,12 +28,15 @@ function empty() {
     capture: capture.createPolicy({}),
     keywordRules: [],
     documents: { shortcuts: [] },
+    lookups: [],
     library: [],
     learning: { minCount: miner.DEFAULTS.minCount, minLength: miner.DEFAULTS.minLength, minWords: miner.DEFAULTS.minWords },
     retention: { metricsDays: 365, corpusDays: 90 },
     paused: { active: false, message: "" },
     serial: null,
-    reporting: { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 },
+    licence: null,
+    updates: { url: null, channel: "latest" },
+    reporting: { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12, endpoint: null, uploadEvery: "week", uploadToken: null },
     warnings: [],
   };
 }
@@ -69,6 +73,8 @@ function merge(layers) {
   const out = {};
   for (const layer of list) {
     if (typeof layer.organization === "string") out.organization = layer.organization;
+    if (typeof layer.licence === "string" && layer.licence.trim()) out.licence = layer.licence;
+    if (isObject(layer.updates) && typeof layer.updates.url === "string" && layer.updates.url.trim()) out.updates = Object.assign({}, layer.updates);
     for (const section of ["typing", "learning", "retention", "reporting"]) {
       if (isObject(layer[section])) out[section] = Object.assign({}, out[section], layer[section]);
     }
@@ -87,6 +93,8 @@ function merge(layers) {
   const docs = list.map((layer) => isObject(layer.documents) && Array.isArray(layer.documents.shortcuts) ? layer.documents.shortcuts : [])
     .filter((l) => l.length);
   if (docs.length) out.documents = { shortcuts: byKey(docs, "trigger") };
+  const lookups = list.map((layer) => Array.isArray(layer.lookups) ? layer.lookups : []).filter((l) => l.length);
+  if (lookups.length) out.lookups = byKey(lookups, "trigger");
   return out;
 }
 
@@ -134,6 +142,10 @@ function parse(input) {
   policy.documents = { shortcuts: catalog.shortcuts };
   policy.warnings.push(...catalog.warnings);
 
+  const lookups = lookupsModule.normalizeLookups(source.lookups);
+  policy.lookups = lookups.lookups;
+  policy.warnings.push(...lookups.warnings);
+
   const library = source.library && typeof source.library === "object" && Array.isArray(source.library.shorthands)
     ? source.library.shorthands : Array.isArray(source.library) ? source.library : [];
   policy.library = expander.sanitizeList(library);
@@ -165,6 +177,8 @@ function parse(input) {
   // Nothing is expanded, offered or learned while paused; nothing is deleted.
   policy.paused = pausedOf(source.paused);
   if (Number.isSafeInteger(source.serial) && source.serial > 0) policy.serial = source.serial;
+  // The business licence token (see core/license.js); checked by the desk, not here.
+  policy.licence = typeof source.licence === "string" && source.licence.trim() ? source.licence.trim() : null;
 
   const reporting = isObject(source.reporting) ? source.reporting : {};
   policy.reporting.team = String(reporting.team == null ? "" : reporting.team).trim();
@@ -173,6 +187,21 @@ function parse(input) {
   policy.reporting.includeApps = reporting.includeApps === true;
   policy.reporting.period = ["day", "week", "month"].includes(reporting.period) ? reporting.period : "week";
   policy.reporting.periods = Math.min(366, Math.floor(positive(reporting.periods, 12)));
+  // Upload only over https: the report names organisation shortcuts and teams.
+  const endpoint = typeof reporting.endpoint === "string" ? reporting.endpoint.trim() : "";
+  if (endpoint && !/^https:\/\//i.test(endpoint)) policy.warnings.push("reporting.endpoint ignored: only https:// is allowed");
+  policy.reporting.endpoint = /^https:\/\//i.test(endpoint) ? endpoint : null;
+  policy.reporting.uploadEvery = ["day", "week"].includes(reporting.uploadEvery) ? reporting.uploadEvery : "week";
+  policy.reporting.uploadToken = typeof reporting.uploadToken === "string" && reporting.uploadToken.trim() ? reporting.uploadToken.trim() : null;
+
+  // Software updates: a desk only ever fetches from an https server the policy names (see desktop/updater.js).
+  const updates = isObject(source.updates) ? source.updates : {};
+  const updateUrl = typeof updates.url === "string" ? updates.url.trim().replace(/\/+$/, "") : "";
+  if (updateUrl && !/^https:\/\//i.test(updateUrl)) policy.warnings.push("updates.url ignored: only https:// is allowed");
+  policy.updates.url = /^https:\/\//i.test(updateUrl) ? updateUrl : null;
+  const channel = typeof updates.channel === "string" ? updates.channel.trim() : "";
+  if (channel && !/^[a-z][a-z0-9-]{0,31}$/.test(channel)) policy.warnings.push("updates.channel ignored: use lower-case letters, digits and dashes");
+  policy.updates.channel = /^[a-z][a-z0-9-]{0,31}$/.test(channel) ? channel : "latest";
 
   const retention = source.retention && typeof source.retention === "object" ? source.retention : {};
   policy.retention.metricsDays = Math.floor(positive(retention.metricsDays, policy.retention.metricsDays));

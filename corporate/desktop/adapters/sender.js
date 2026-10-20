@@ -176,7 +176,16 @@ function createSender(options) {
     });
   }
 
-  return { replace, undo, isAvailable, unavailableReason, platform: settings.platform, hostname: os.hostname() };
+  /** Send the paste keystroke only; whatever is on the clipboard (text or files) is pasted. */
+  function paste() {
+    return enqueue(async () => {
+      if (!isAvailable()) throw new Error(unavailableReason());
+      await impl.keys(join(settings.platform, [impl.paste()]));
+      return { ok: true };
+    });
+  }
+
+  return { replace, undo, paste, isAvailable, unavailableReason, platform: settings.platform, hostname: os.hostname() };
 }
 
-module.exports = { createSender, RESTORE_DELAY_MS };
+module.exports = { createSender, RESTORE_DELAY_MS, run, which };

@@ -22,6 +22,8 @@ const FILES = Object.freeze({
   policyCacheDir: "policy-cache",
   corpusKey: "corpus.key",
   suggestions: "suggestions.json",
+  uploadState: "upload-state.json",
+  lookupCacheDir: "lookup-cache",
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -32,6 +34,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   startWithSystem: false,
   installId: null,            // random id that lets an administrator count a desk's reports once
   paletteShortcut: "CommandOrControl+Shift+Space", // global hotkey for the search palette; "" turns it off
+  keyboardLayout: "auto",     // a layout id from desktop/adapters/layouts.js, or "auto" to follow the system
+  deferUpdates: false,        // true: an available update is only downloaded when the person asks
 });
 
 function createStore(dir) {
@@ -154,6 +158,8 @@ function createStore(dir) {
     out.captureApps = Array.isArray(out.captureApps) ? out.captureApps : [];
     out.installId = typeof out.installId === "string" && out.installId ? out.installId : null;
     out.paletteShortcut = typeof out.paletteShortcut === "string" ? out.paletteShortcut.trim() : DEFAULT_SETTINGS.paletteShortcut;
+    out.keyboardLayout = typeof out.keyboardLayout === "string" && out.keyboardLayout.trim() ? out.keyboardLayout.trim() : "auto";
+    out.deferUpdates = out.deferUpdates === true;
     return out;
   }
 
@@ -353,6 +359,27 @@ function createStore(dir) {
     writeJson(FILES.suggestions, { queued: Array.isArray(queued) ? queued : [] });
   }
 
+  function lookupCacheName(id) {
+    const safe = String(id).replace(/[^a-z0-9]/gi, "");
+    return path.join(FILES.lookupCacheDir, (safe || "lookup") + ".json");
+  }
+
+  function loadLookupCache(id) {
+    return readJson(lookupCacheName(id), null);
+  }
+
+  function saveLookupCache(id, value) {
+    writeJson(lookupCacheName(id), value);
+  }
+
+  function loadUploadState() {
+    return readJson(FILES.uploadState, null);
+  }
+
+  function saveUploadState(state) {
+    writeJson(FILES.uploadState, state);
+  }
+
   function exportLibraryJson() {
     return JSON.stringify({ version: 1, shorthands: loadLibrary() }, null, 2) + "\n";
   }
@@ -419,6 +446,10 @@ function createStore(dir) {
     loadAudit,
     loadSuggestions,
     saveSuggestions,
+    loadUploadState,
+    saveUploadState,
+    loadLookupCache,
+    saveLookupCache,
   };
 }
 

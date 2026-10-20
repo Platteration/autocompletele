@@ -203,3 +203,27 @@ test("redirects to plain http are refused, and known sizes are checked before re
   const real = createPolicySource({ deployment: { policySources: [{ layer: "org", path: good }], publicKeys: [pair.publicKey] } });
   assert.equal((await real.refresh()).sources[0].status, "fresh", "the default file reader works");
 });
+
+test("the same policy re-signed with a new key replaces the cached copy, so the old key can be retired", async () => {
+  const keyB = signing.generateKeyPair();
+  const policyText = JSON.stringify({ layer: "org", serial: 3, organization: "Rotating" });
+  const env = setup({ [ORG]: JSON.stringify(signing.signPolicy(policyText, pair.privateKey)), [TEAM]: signed({ layer: "team", serial: 1 }) });
+  await env.source.refresh();
+  assert.equal(env.cache.load(env.source.deployment.sources[0].id).keyId, pair.keyId);
+  // Rotation: both keys pinned, the same policy text signed with key B.
+  const both = createPolicySource({
+    deployment: { policySources: [{ layer: "org", url: ORG }], publicKeys: [pair.publicKey, keyB.publicKey] },
+    cache: env.cache,
+    fetch: async () => ({ ok: true, status: 200, url: ORG, text: async () => JSON.stringify(signing.signPolicy(policyText, keyB.privateKey)) }),
+  });
+  const result = await both.refresh();
+  assert.equal(result.sources[0].status, "unchanged");
+  assert.equal(env.cache.load(both.deployment.sources[0].id).keyId, keyB.keyId, "the cache now holds the copy signed by the new key");
+  // Old key retired: the last good copy still verifies offline.
+  const retired = createPolicySource({
+    deployment: { policySources: [{ layer: "org", url: ORG }], publicKeys: [keyB.publicKey] },
+    cache: env.cache,
+    fetch: async () => { throw new Error("offline"); },
+  });
+  assert.deepEqual(retired.loadCached().layers.map((l) => l.organization), ["Rotating"]);
+});

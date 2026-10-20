@@ -29,6 +29,8 @@ test("a corrupt file is moved aside with a warning and defaults are used", () =>
   const settings = store.loadSettings();
   assert.equal(settings.enabled, true);
   assert.equal(settings.charsPerMinute, null);
+  assert.equal(settings.keyboardLayout, "auto");
+  assert.equal(settings.deferUpdates, false);
   const warnings = store.warnings();
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /settings\.json could not be read/);
@@ -94,4 +96,15 @@ test("deployment, policy cache, policy state and audit log persist", () => {
   assert.equal(store.loadAudit()[0].at, 1);
   assert.equal(typeof store.loadAudit()[1].at, "number");
   assert.deepEqual(store.loadAudit(2).map((e) => e.event), ["b", "c"]);
+});
+
+test("settings that drive native behaviour are normalised to safe values", () => {
+  const store = createStore(temp());
+  store.saveSettings({ keyboardLayout: "  ", deferUpdates: "yes", paletteShortcut: 5 });
+  const settings = store.loadSettings();
+  assert.equal(settings.keyboardLayout, "auto");
+  assert.equal(settings.deferUpdates, false, "only a real true defers downloads");
+  assert.equal(settings.paletteShortcut, "CommandOrControl+Shift+Space");
+  store.saveSettings({ keyboardLayout: "de-DE", deferUpdates: true });
+  assert.deepEqual([store.loadSettings().keyboardLayout, store.loadSettings().deferUpdates], ["de-DE", true]);
 });

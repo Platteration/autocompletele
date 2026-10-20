@@ -79,13 +79,22 @@ function createAssistant(options) {
   }
   if (!managed && rawPolicy == null && settings.policy) rawPolicy = settings.policy;
 
+  // Licence state of this desk, recomputed with every policy.
+  let licence = { status: "unenforced", reason: "", licence: null, keyId: null, daysLeft: null };
+
   function buildPolicy() {
-    const policy = core.orgPolicy.parse(rawPolicy == null ? {} : rawPolicy);
+    let policy = core.orgPolicy.parse(rawPolicy == null ? {} : rawPolicy);
+    licence = core.license.licenceState(policy.licence, {
+      now: settings.now(),
+      publicKeys: settings.vendorPublicKeys,
+      organization: policy.organization,
+    });
     // The person's own capture rules take precedence over the organisation's.
     const own = core.capturePolicy.createPolicy({ defaultMode: policy.capture.defaultMode, apps: userSettings.captureApps });
     policy.capture = { defaultMode: policy.capture.defaultMode, apps: own.apps.concat(policy.capture.apps), warnings: policy.capture.warnings.concat(own.warnings) };
     if (userSettings.charsPerMinute) policy.typing.charsPerMinute = userSettings.charsPerMinute;
-    return policy;
+    // The tier is applied last so that a person's own learn rule cannot restore learning on an unlicensed desk.
+    return core.license.applyTier(policy, core.license.entitlements(licence));
   }
 
   let policy = buildPolicy();
@@ -135,6 +144,10 @@ function createAssistant(options) {
         audit({ event: key === "ok" ? "policy-source-recovered" : "policy-source-problem", source: source.label, location: source.location, status: source.status, error: source.error || null });
       }
     }
+    const licenceKey = licence.status + ":" + (licence.licence ? licence.licence.id : "");
+    if (state.licence !== licenceKey && licence.status !== "unenforced") {
+      audit({ event: "licence-changed", status: licence.status, id: licence.licence ? licence.licence.id : null, seats: licence.licence ? licence.licence.seats : null, expiresAt: licence.licence ? licence.licence.expiresAt : null });
+    }
     if (state.hash !== hash) {
       audit({
         event: "policy-applied",
@@ -147,7 +160,7 @@ function createAssistant(options) {
         warnings: policy.warnings.length,
       });
     }
-    store.savePolicyState({ hash, appliedAt: settings.now(), sourceStatus });
+    store.savePolicyState({ hash, appliedAt: settings.now(), sourceStatus, licence: licenceKey });
   }
 
   // Apply a new policy without disturbing the field being typed in: the
@@ -161,6 +174,7 @@ function createAssistant(options) {
   function applyPolicy(origin) {
     policy = buildPolicy();
     applyEngineSettings();
+    buildLookupStore();
     cachedCandidates = null;
     recordPolicyAudit(origin);
   }
@@ -297,6 +311,7 @@ function createAssistant(options) {
     }
     policy = buildPolicy();
     applyEngineSettings();
+    buildLookupStore();
     cachedCandidates = null;
     return userSettings;
   }
@@ -309,16 +324,26 @@ function createAssistant(options) {
   // remembering its trigger.
   function paletteSearch(query, limit) {
     if (policy.paused.active) return [];
-    const items = core.paletteSearch.items(engine.library, policy.documents);
-    return core.paletteSearch.search(items, query, limit).map((item) => ({
+    const direct = core.paletteSearch.lookupQuery(query, policy.lookups);
+    const first = direct ? [{ kind: "lookup", trigger: direct.lookup.trigger, argument: direct.argument, source: "organization", needsInput: false, preview: direct.lookup.trigger + " " + direct.argument + ": " + direct.lookup.label }] : [];
+    const items = core.paletteSearch.items(engine.library, policy.documents, policy.lookups);
+    return first.concat(core.paletteSearch.search(items, query, limit).map((item) => ({
       kind: item.kind, trigger: item.trigger, source: item.source, needsInput: item.needsInput, preview: item.preview,
-    }));
+    })));
   }
 
   /** The action for a palette choice. The query and Enter count as keystrokes spent. */
   function paletteChoose(choice) {
     if (policy.paused.active || !choice) return null;
     const spentKeystrokes = core.metrics.graphemes(String(choice.query == null ? "" : choice.query)) + 1;
+    if (choice.kind === "lookup") {
+      const parsed = core.paletteSearch.lookupQuery(choice.query, policy.lookups);
+      const argument = String(choice.argument || (parsed && parsed.trigger === choice.trigger ? parsed.argument : "") || "").trim();
+      const lookup = policy.lookups.find((l) => l.trigger === choice.trigger);
+      if (!lookup) return null;
+      if (!argument) return { type: "lookup-needs-argument", trigger: lookup.trigger, message: "Type " + lookup.trigger + " followed by a " + lookup.source.key + " to look up " + lookup.label + "." };
+      return resolveLookup({ trigger: lookup.trigger, argument, typed: "", backspaces: 0, via: "palette", spentKeystrokes });
+    }
     if (choice.kind === "documents") {
       const set = policy.documents.shortcuts.find((s) => s.trigger === choice.trigger);
       return set ? { type: "documents", trigger: set.trigger, label: set.label, documents: set.documents.slice(), backspaces: 0, via: "palette" } : null;
@@ -336,6 +361,7 @@ function createAssistant(options) {
   /** Record a palette expansion after the shell inserted it. */
   function paletteInserted(action) {
     if (!action || action.type !== "expand") return null;
+    if (action.lookup) return lookupInserted(action);
     return engine.recordInsert({ kind: "palette", trigger: action.trigger, source: action.source, inserted: action.text, typed: "", spentKeystrokes: action.spentKeystrokes });
   }
 
@@ -392,7 +418,75 @@ function createAssistant(options) {
       includeApps: policy.reporting.includeApps,
       hourlyRate: policy.reporting.hourlyRate,
       currency: policy.reporting.currency,
+      licenceId: licence.licence ? licence.licence.id : "",
     });
+  }
+
+  // Data behind the policy's lookups, cached under lookup-cache/.
+  let lookupWarnings = [];
+  let lookupStore = null;
+  function buildLookupStore() {
+    lookupStore = core.lookups.createLookupStore({
+      lookups: policy.lookups,
+      fetch: settings.fetch,
+      readFile: settings.readFile,
+      cache: { load: store.loadLookupCache, save: store.saveLookupCache },
+      now: settings.now,
+    });
+    lookupStore.loadCached();
+    lookupWarnings = [];
+  }
+  buildLookupStore();
+
+  /** Fetch lookup sources (only the ones due, unless `all`). Failures keep the last good copy. */
+  async function refreshLookups(all) {
+    const result = await lookupStore.refresh(all ? undefined : lookupStore.due());
+    lookupWarnings = result.warnings;
+    return result;
+  }
+
+  /** Turn a lookup action into an expansion, or a miss the shell reports without deleting anything. */
+  function resolveLookup(action) {
+    const lookup = policy.lookups.find((l) => l.trigger === action.trigger);
+    const row = lookup ? lookupStore.find(action.trigger, action.argument) : null;
+    if (!lookup || !row) {
+      return { type: "lookup-miss", trigger: action.trigger, argument: action.argument, message: "No " + (lookup ? lookup.label : action.trigger) + " found for " + JSON.stringify(action.argument) + "." };
+    }
+    const rendered = core.lookups.render(lookup, row, new Date(settings.now()));
+    return {
+      type: "expand", trigger: lookup.trigger, argument: action.argument, text: rendered.text, cursorOffset: rendered.cursorOffset,
+      backspaces: action.backspaces || 0, typed: action.typed || "", source: "organization", via: action.via || "lookup", lookup: true, spentKeystrokes: action.spentKeystrokes || 0,
+    };
+  }
+
+  function lookupInserted(action) {
+    return engine.recordInsert({ kind: "lookup", trigger: action.trigger, inserted: action.text, typed: action.typed, source: "organization", spentKeystrokes: action.spentKeystrokes });
+  }
+
+  const uploader = core.reportUpload.createUploader({
+    policy: () => policy,
+    buildReport: usageReport,
+    fetch: settings.fetch,
+    state: { load: store.loadUploadState, save: store.saveUploadState },
+    now: settings.now,
+    audit,
+  });
+
+  function licenceInfo() {
+    const ent = core.license.entitlements(licence);
+    return {
+      status: licence.status,
+      reason: licence.reason,
+      enforced: ent.enforced,
+      entitled: ent.learning,
+      id: licence.licence ? licence.licence.id : null,
+      organization: licence.licence ? licence.licence.organization : null,
+      seats: licence.licence ? licence.licence.seats : null,
+      expiresAt: licence.licence ? licence.licence.expiresAt : null,
+      graceDays: licence.licence ? licence.licence.graceDays : null,
+      daysLeft: licence.daysLeft,
+      freeTierNote: core.license.FREE_TIER_NOTE,
+    };
   }
 
   function policyInfo() {
@@ -408,6 +502,9 @@ function createAssistant(options) {
       retention: Object.assign({}, policy.retention),
       paused: Object.assign({}, policy.paused),
       reporting: Object.assign({}, policy.reporting),
+      updates: Object.assign({}, policy.updates),
+      licence: licenceInfo(),
+      lookups: lookupStore.status().lookups,
       managed,
       refreshMinutes: managed ? policySource.deployment.refreshMinutes : null,
       sources: sourceReport.sources.map((source) => Object.assign({}, source)),
@@ -444,9 +541,16 @@ function createAssistant(options) {
     summary: (query) => ledger.summary(query),
     series: (query) => ledger.series(query),
     byApp: (query) => ledger.byApp(query),
-    warnings: () => warnings.concat(sourceReport.warnings, policy.warnings, store.warnings()),
+    warnings: () => warnings.concat(sourceReport.warnings, policy.warnings, lookupWarnings, store.warnings()),
+    refreshLookups,
+    resolveLookup,
+    lookupInserted,
+    lookupStatus: () => lookupStore.status(),
     refreshPolicy,
     usageReport,
+    uploadReport: () => uploader.upload(),
+    uploadDue: () => uploader.due(),
+    uploadStatus: () => uploader.status(),
     corpusInfo,
     clearLearning,
     paletteSearch,
@@ -457,7 +561,9 @@ function createAssistant(options) {
     suggestions: () => store.loadSuggestions(),
     suggestionsExport,
     audit: (limit) => store.loadAudit(limit),
+    record: (entry) => audit(entry),
     get managed() { return managed; },
+    licence: licenceInfo,
     get paused() { return policy.paused.active; },
     log,
   };

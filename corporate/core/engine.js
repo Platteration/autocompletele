@@ -8,6 +8,7 @@ const { expander, template } = require("./personal.js");
 const capture = require("./capture-policy.js");
 const keywords = require("./keyword-rules.js");
 const documents = require("./documents.js");
+const lookups = require("./lookups.js");
 const metrics = require("./metrics.js");
 const orgPolicy = require("./org-policy.js");
 
@@ -53,6 +54,8 @@ function createEngine(options) {
 
   let buffer = "";
   let fieldText = "";
+  // Documents attached in the current field, for the missing-attachment detector.
+  let attachmentsInField = 0;
   let context = {};
   let decision = { mode: policy.capture.defaultMode, reason: "default", rule: null };
   let session = null;
@@ -142,6 +145,7 @@ function createEngine(options) {
     clearUndo();
     buffer = "";
     fieldText = "";
+    attachmentsInField = 0;
     keywordState.reset();
     const ended = flushSession();
     context = nextContext && typeof nextContext === "object" ? Object.assign({}, nextContext) : {};
@@ -155,6 +159,7 @@ function createEngine(options) {
     clearUndo();
     buffer = "";
     fieldText = "";
+    attachmentsInField = 0;
     keywordState.reset();
     const ended = flushSession();
     if (decision.mode === "learn") startSession();
@@ -260,13 +265,33 @@ function createEngine(options) {
       });
       return actions;
     }
+    // "/cust 12345 ": the space after the argument completes a lookup. The
+    // shell resolves it; on a miss nothing is deleted, so the field text and
+    // the learning session are only adjusted when the shell records the insert.
+    if (text === " " && policy.lookups && policy.lookups.length) {
+      const hit = lookups.findArgument(buffer, policy.lookups);
+      if (hit) {
+        buffer = "";
+        actions.push({
+          type: "lookup",
+          trigger: hit.lookup.trigger,
+          label: hit.lookup.label,
+          argument: hit.argument,
+          typed: hit.typed,
+          backspaces: Math.max(0, settings.swallowsTriggerKey ? hit.typed.length - 1 : hit.typed.length),
+        });
+        return actions;
+      }
+    }
     // Keywords are checked when a word ends, so "invoices" is not offered on "inv".
     if (policy.keywordRules.length && !expander.isBoundary(buffer[buffer.length - 2]) && expander.isBoundary(text[text.length - 1])) {
-      const hits = keywords.detect(fieldText, policy.keywordRules, keywordState);
+      const hits = keywords.detect(fieldText, policy.keywordRules, keywordState, { context: { app: appName(), attachments: attachmentsInField } });
       // One action for all hits, warnings first: the shell shows one popover,
       // so a warning is never replaced by an offer that fired on the same word.
       const warnings = hits.filter((hit) => hit.rule.action === "warn");
       const offers = hits.filter((hit) => hit.rule.action !== "warn");
+      // A shown warning is counted per rule (never as an insert) so reports can say how often it appears.
+      for (const hit of warnings) ledger.record({ kind: "warning", trigger: hit.rule.id, source: "organization", keystrokesSaved: 0, app: appName() });
       if (hits.length) actions.push({ type: warnings.length ? "warning" : "keyword", hits: warnings.concat(offers) });
     }
     return actions;
@@ -285,11 +310,12 @@ function createEngine(options) {
     // are subtracted so the statistics do not flatter the palette.
     const spent = Math.max(0, Math.floor(Number(data.spentKeystrokes) || 0));
     if (inserted) insertedText(typed.length, inserted);
+    if (kind === "document") attachmentsInField += Math.max(1, Math.floor(Number(data.count) || 1));
     const fixedSeconds = kind === "document"
       ? Math.max(1, Math.floor(Number(data.count) || 1)) * policy.typing.secondsPerAttachment
       : Number(data.fixedSeconds) || 0;
-    // Keyword rules and document sets only exist in the organisation policy.
-    const source = kind === "document" || kind === "keyword" ? "organization" : data.source;
+    // Keyword rules, document sets and lookups only exist in the organisation policy.
+    const source = kind === "document" || kind === "keyword" || kind === "lookup" ? "organization" : data.source;
     const keystrokesSaved = Math.max(0, metrics.keystrokesSaved(inserted, typed) - spent);
     return ledger.record({ kind, trigger: data.trigger, source, keystrokesSaved, fixedSeconds, app: appName() });
   }
