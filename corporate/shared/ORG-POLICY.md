@@ -13,6 +13,7 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `version` | `1`. A newer number is accepted with a warning; unknown fields are ignored. |
 | `serial` | Positive integer, required for a signed policy. Raise it every time the policy changes; desks refuse a signed policy whose serial is lower than the one they already accepted for that source, or the same serial with different content. |
 | `layer` | Required for a signed policy: the name of the layer it is for, matching the `layer` of the deployment source it is published at. A desk refuses a policy signed for another layer, so an old organisation policy cannot be replayed at a team's location. |
+| `licence` | The business licence token issued by the vendor (`actle-admin license issue`). The desk verifies it offline; see "Licensing" below. Later layers override earlier ones. |
 | `paused` | Kill switch. `true` or `{ "message": "…" }` pauses every desk that receives the policy: nothing is expanded, offered or learned, and the dashboard and tray offer no way to resume it. Nothing is deleted. Remove it (or set `{ "active": false }`) to resume. It is an administrative control, not a security boundary: `deployment.json` lives in the person's own data folder, so someone who edits that file can leave central management. |
 | `organization` | Name shown on the dashboard. |
 | `typing.charsPerMinute` | Typing-speed assumption behind "time saved" (default 200, which is 40 words per minute). Changing it re-estimates history. |
@@ -81,6 +82,39 @@ node admin/actle-admin.js verify org.signed.json --pub keys/policy-signing.pub
 
 `sign` refuses a policy that has warnings unless `--allow-warnings` is
 given, and `keygen` refuses to overwrite an existing key.
+
+## Licensing
+
+A business licence is a signed token (`actlebiz1.…`) issued by the vendor,
+never by the organisation: it is signed with the vendor's key, whose public
+part is built into the desktop app (`core/license.js`), so a policy signer
+cannot grant itself seats. It states the organisation, the number of seats,
+an expiry date and a grace period. Put the token in the policy as `licence`
+and sign the policy as usual.
+
+What the desk checks, every time a policy is applied: the signature, that
+the licence names the policy's organisation, and the dates. Valid, or
+expired but within the grace period: every feature is on. Expired past the
+grace period, missing, invalid or issued to another organisation: the desk
+runs the **free tier**. Shortcuts (own and organisation), templates, the
+palette, statistics and the local usage report keep working; learning,
+keyword rules and warnings, document shortcuts, lookups and report upload
+are off, including the person's own learn rules. Typing is never blocked.
+The Policy tab shows the licence and the reason for the tier; the change
+log records licence changes (id and status only).
+
+Seats are a contract term. Desks cannot see each other, so the desk never
+refuses on seat count; the administrator's roll-up (`actle-admin report
+--policy org.json`) counts desks per licence id and warns when a licence
+is over its seats.
+
+While no vendor key is built into a version, licences cannot be checked:
+the desk reports licensing as not enforced and keeps every feature on.
+
+```
+node admin/actle-admin.js license issue --key vendor.key --org "Example Logistics Ltd" --seats 50 --expires 2027-12-31 --grace 30 --out licence.txt
+node admin/actle-admin.js license show licence.txt --pub vendor.pub
+```
 
 ## Usage reports
 

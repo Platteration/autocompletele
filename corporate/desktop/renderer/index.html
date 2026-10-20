@@ -11,6 +11,7 @@
   <header>
     <h1>actle Corporate</h1>
     <span class="org" id="org"></span>
+    <span class="org" id="licence-badge"></span>
     <span class="spacer"></span>
     <label class="row m0"><input type="checkbox" id="enabled"> Enabled</label>
   </header>
@@ -118,7 +119,9 @@
         <button class="plain" id="policy-refresh">Check for policy updates</button>
         <span class="hint" id="policy-refresh-result"></span>
       </div>
-      <h2>Policy sources</h2>
+      <h2>Licence</h2>
+      <table><tbody id="licence"></tbody></table>
+      <h2 class="mt">Policy sources</h2>
       <table><thead><tr><th>Source</th><th>Status</th><th class="num">Serial</th><th>Key</th><th>Note</th></tr></thead><tbody id="policy-sources"></tbody></table>
       <h2 class="mt">Change log</h2>
       <p class="hint">Policy changes, policy sources that failed or recovered, and changes to your own capture rules. Typed text is never recorded here.</p>

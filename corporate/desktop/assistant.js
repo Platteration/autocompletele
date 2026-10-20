@@ -79,13 +79,22 @@ function createAssistant(options) {
   }
   if (!managed && rawPolicy == null && settings.policy) rawPolicy = settings.policy;
 
+  // Licence state of this desk, recomputed with every policy.
+  let licence = { status: "unenforced", reason: "", licence: null, keyId: null, daysLeft: null };
+
   function buildPolicy() {
-    const policy = core.orgPolicy.parse(rawPolicy == null ? {} : rawPolicy);
+    let policy = core.orgPolicy.parse(rawPolicy == null ? {} : rawPolicy);
+    licence = core.license.licenceState(policy.licence, {
+      now: settings.now(),
+      publicKeys: settings.vendorPublicKeys,
+      organization: policy.organization,
+    });
     // The person's own capture rules take precedence over the organisation's.
     const own = core.capturePolicy.createPolicy({ defaultMode: policy.capture.defaultMode, apps: userSettings.captureApps });
     policy.capture = { defaultMode: policy.capture.defaultMode, apps: own.apps.concat(policy.capture.apps), warnings: policy.capture.warnings.concat(own.warnings) };
     if (userSettings.charsPerMinute) policy.typing.charsPerMinute = userSettings.charsPerMinute;
-    return policy;
+    // The tier is applied last so that a person's own learn rule cannot restore learning on an unlicensed desk.
+    return core.license.applyTier(policy, core.license.entitlements(licence));
   }
 
   let policy = buildPolicy();
@@ -135,6 +144,10 @@ function createAssistant(options) {
         audit({ event: key === "ok" ? "policy-source-recovered" : "policy-source-problem", source: source.label, location: source.location, status: source.status, error: source.error || null });
       }
     }
+    const licenceKey = licence.status + ":" + (licence.licence ? licence.licence.id : "");
+    if (state.licence !== licenceKey && licence.status !== "unenforced") {
+      audit({ event: "licence-changed", status: licence.status, id: licence.licence ? licence.licence.id : null, seats: licence.licence ? licence.licence.seats : null, expiresAt: licence.licence ? licence.licence.expiresAt : null });
+    }
     if (state.hash !== hash) {
       audit({
         event: "policy-applied",
@@ -147,7 +160,7 @@ function createAssistant(options) {
         warnings: policy.warnings.length,
       });
     }
-    store.savePolicyState({ hash, appliedAt: settings.now(), sourceStatus });
+    store.savePolicyState({ hash, appliedAt: settings.now(), sourceStatus, licence: licenceKey });
   }
 
   // Apply a new policy without disturbing the field being typed in: the
@@ -392,7 +405,25 @@ function createAssistant(options) {
       includeApps: policy.reporting.includeApps,
       hourlyRate: policy.reporting.hourlyRate,
       currency: policy.reporting.currency,
+      licenceId: licence.licence ? licence.licence.id : "",
     });
+  }
+
+  function licenceInfo() {
+    const ent = core.license.entitlements(licence);
+    return {
+      status: licence.status,
+      reason: licence.reason,
+      enforced: ent.enforced,
+      entitled: ent.learning,
+      id: licence.licence ? licence.licence.id : null,
+      organization: licence.licence ? licence.licence.organization : null,
+      seats: licence.licence ? licence.licence.seats : null,
+      expiresAt: licence.licence ? licence.licence.expiresAt : null,
+      graceDays: licence.licence ? licence.licence.graceDays : null,
+      daysLeft: licence.daysLeft,
+      freeTierNote: core.license.FREE_TIER_NOTE,
+    };
   }
 
   function policyInfo() {
@@ -408,6 +439,7 @@ function createAssistant(options) {
       retention: Object.assign({}, policy.retention),
       paused: Object.assign({}, policy.paused),
       reporting: Object.assign({}, policy.reporting),
+      licence: licenceInfo(),
       managed,
       refreshMinutes: managed ? policySource.deployment.refreshMinutes : null,
       sources: sourceReport.sources.map((source) => Object.assign({}, source)),
@@ -458,6 +490,7 @@ function createAssistant(options) {
     suggestionsExport,
     audit: (limit) => store.loadAudit(limit),
     get managed() { return managed; },
+    licence: licenceInfo,
     get paused() { return policy.paused.active; },
     log,
   };

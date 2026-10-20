@@ -8,6 +8,8 @@
 //   node admin/actle-admin.js layers <org.json> [<team.json> ...]
 //   node admin/actle-admin.js report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
 //   node admin/actle-admin.js suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
+//   node admin/actle-admin.js license issue --key <vendor.key> --org <name> --seats N --expires YYYY-MM-DD [--grace DAYS] [--id ID] [--out <file>]
+//   node admin/actle-admin.js license show <token|file|policy.json> [--pub <vendor.pub>]
 "use strict";
 
 const fs = require("node:fs");
@@ -16,6 +18,7 @@ const signing = require("../core/policy-signing.js");
 const orgPolicy = require("../core/org-policy.js");
 const report = require("../core/report.js");
 const suggestions = require("../core/suggestions.js");
+const license = require("../core/license.js");
 
 const USAGE = `actle Corporate admin tool
 
@@ -29,7 +32,11 @@ const USAGE = `actle Corporate admin tool
   report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
                                   roll desks' usage reports up into a team view
   suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
-                                  rank phrases people suggested; write a library to review`;
+                                  rank phrases people suggested; write a library to review
+  license issue --key <vendor.key> --org <name> --seats N --expires YYYY-MM-DD [--grace DAYS] [--id ID] [--out <file>]
+                                  issue a business licence token (vendor only)
+  license show <token | file with the token | policy.json> [--pub <vendor.pub>]
+                                  print what a licence token says and, with --pub, whether it verifies`;
 
 function parseArgs(argv) {
   const positional = [];
@@ -220,6 +227,19 @@ function run(argv, io) {
         if (merged.byShortcut.length) out("\norganisation shortcuts by use");
         for (const s of merged.byShortcut) out("  " + (s.kind + " " + s.trigger).padEnd(30) + String(s.inserts).padStart(6) + " inserts on " + s.desks + " desk(s)");
         if (merged.unused.length) out("\nnever used: " + merged.unused.map((s) => (s.kind ? s.kind + " " : "") + s.trigger).join(", "));
+        for (const row of merged.licences) {
+          let seats = null;
+          if (policy && policy.licence) {
+            try {
+              const payload = JSON.parse(Buffer.from(policy.licence.split(".")[1], "base64url").toString("utf8"));
+              if (payload.id === row.id) seats = payload.seats;
+            } catch (error) {
+              seats = null;
+            }
+          }
+          out("licence " + row.id + ": " + row.desks + " desk(s)" + (seats != null ? " of " + seats + " seats" : ""));
+          if (seats != null && row.desks > seats) err("warning: licence " + row.id + " is over its " + seats + " seats by " + (row.desks - seats));
+        }
         if (merged.complianceWarnings.shown) {
           out("\ncompliance warnings shown: " + merged.complianceWarnings.shown);
           for (const w of merged.complianceWarnings.byRule) out("  " + w.id.padEnd(30) + String(w.count).padStart(6));
@@ -258,6 +278,60 @@ function run(argv, io) {
           out("\nlibrary written to " + target + "; review it, then add it to the policy's library and sign");
         }
         return ranked.desks ? 0 : 1;
+      }
+      case "license": {
+        const sub = rest[0];
+        if (sub === "issue") {
+          const keyFile = one(args.flags, "key");
+          const org = one(args.flags, "org");
+          const seats = Number(one(args.flags, "seats"));
+          const expires = one(args.flags, "expires");
+          if (!keyFile || !org || !expires || !(seats >= 1)) throw new Error("license issue needs --key, --org, --seats and --expires");
+          const graceFlag = one(args.flags, "grace");
+          const token = license.issueLicence({
+            id: one(args.flags, "id") || "LIC-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
+            organization: org,
+            seats: Math.floor(seats),
+            issuedAt: new Date().toISOString().slice(0, 10),
+            expiresAt: expires,
+            graceDays: graceFlag === undefined ? 30 : Number(graceFlag),
+          }, fs.readFileSync(keyFile, "utf8"));
+          const target = one(args.flags, "out");
+          if (target) {
+            fs.writeFileSync(target, token + "\n", "utf8");
+            out("licence written to " + target + "; put the token in the policy as \"licence\" and sign the policy");
+          } else {
+            out(token);
+          }
+          return 0;
+        }
+        if (sub === "show") {
+          const source = rest[1];
+          if (!source) throw new Error("license show needs a token, a file holding one, or a policy file");
+          let token = source;
+          if (fs.existsSync(source)) {
+            const text = fs.readFileSync(source, "utf8").trim();
+            try {
+              const parsed = JSON.parse(text);
+              token = parsed && parsed.format === signing.FORMAT ? JSON.parse(parsed.payload).licence : parsed && parsed.licence;
+            } catch (error) {
+              token = text;
+            }
+          }
+          const parts = String(token || "").split(".");
+          if (parts.length !== 3 || parts[0] !== license.PREFIX) throw new Error("no business licence token found");
+          const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+          for (const key of ["id", "organization", "seats", "issuedAt", "expiresAt", "graceDays"]) out((key + ":").padEnd(14) + payload[key]);
+          const pubs = (args.flags.pub || []).map((file) => fs.readFileSync(file, "utf8"));
+          if (pubs.length) {
+            const result = license.verifyLicence(token, pubs);
+            out("signature:    " + (result.ok ? "valid (key " + result.keyId + ")" : "NOT VALID: " + result.error));
+            return result.ok ? 0 : 1;
+          }
+          out("signature:    not checked (pass --pub <vendor.pub>)");
+          return 0;
+        }
+        throw new Error("license needs issue or show");
       }
       case undefined:
       case "help":

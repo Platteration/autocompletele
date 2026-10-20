@@ -425,6 +425,23 @@
       ? "This desk receives a signed policy from your organisation and checks for updates every " + info.refreshMinutes + " minutes."
       : "This desk is not centrally managed; it uses a local policy file if one is installed.");
     $("policy-refresh").hidden = !info.managed;
+    const lic = info.licence || {};
+    const licenceRows = !lic.enforced
+      ? [["Status", "Not enforced in this version"], ["Why", lic.reason || ""]]
+      : [
+        ["Status", { valid: "Valid", grace: "Expired, in grace period", expired: "Expired", missing: "No licence", invalid: "Invalid licence", mismatch: "Issued to another organisation" }[lic.status] || lic.status],
+        ["Licence", lic.id || "none"],
+        ["Issued to", lic.organization || ""],
+        ["Seats", lic.seats == null ? "" : lic.seats + " (a contract term; seats are counted in the organisation's roll-up, never on this desk)"],
+        ["Expires", lic.expiresAt ? new Date(lic.expiresAt).toLocaleDateString() + (lic.graceDays ? ", then " + lic.graceDays + " days of grace" : "") : ""],
+        ["Note", lic.entitled ? (lic.reason || "All features are on.") : lic.reason + " " + lic.freeTierNote],
+      ];
+    const licenceBody = $("licence");
+    licenceBody.textContent = "";
+    for (const [label, value] of licenceRows) {
+      if (value) licenceBody.append(el("tr", {}, [el("th", { scope: "row", text: label }), el("td", { text: value })]));
+    }
+    text($("licence-badge"), !lic.enforced ? "" : lic.entitled ? (lic.status === "grace" ? "licence in grace period" : "licensed") : "free tier");
     const sources = $("policy-sources");
     sources.textContent = "";
     for (const source of info.sources || []) {

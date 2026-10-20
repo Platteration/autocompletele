@@ -77,6 +77,7 @@ function focus(context) {
 
 print("actle Corporate simulation");
 print("policy: " + (assistant.policyInfo().organization || "(none)") + "; warnings: " + (assistant.warnings().join("; ") || "none"));
+print("licence: " + assistant.licence().status + (assistant.licence().enforced ? "" : " (no vendor key built in; nothing is switched off)"));
 print("data folder: " + dataDir);
 
 // Three near-identical order confirmations in Outlook (learn mode), then a

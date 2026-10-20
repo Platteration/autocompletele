@@ -16,6 +16,7 @@ module.exports = {
   orgPolicy: require("./org-policy.js"),
   policySigning: require("./policy-signing.js"),
   policySource: require("./policy-source.js"),
+  license: require("./license.js"),
   engine: require("./engine.js"),
   report: require("./report.js"),
   suggestions: require("./suggestions.js"),

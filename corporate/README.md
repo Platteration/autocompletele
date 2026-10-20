@@ -35,6 +35,10 @@ adds what a business asks for:
 - **Phrase suggestions**: a person can suggest learned proposals to the
   organisation; the administrator ranks suggestions across desks and turns
   the best into shared shortcuts.
+- **Per-seat licensing**: a vendor-signed licence inside the policy; an
+  unlicensed or expired desk keeps shortcuts and statistics and loses the
+  organisation features, never the ability to type. Seats are counted in the
+  administrator's roll-up.
 - **Usage reports**: a counts-only report a person previews and exports, and
   an administrator roll-up with hours saved per team, estimated value,
   shortcuts by use and shortcuts nobody uses.
@@ -79,13 +83,14 @@ corporate/
     org-policy.js             the organisation policy parser and layer merge (skips bad parts, never refuses)
     policy-signing.js         Ed25519 signing and verification of policy files
     policy-source.js          fetch signed layers, verify, refuse replays, keep the last good copy
+    license.js                vendor-signed per-seat licences, licence state, free tier
     report.js                 counts-only usage reports, team roll-up, CSV
     suggestions.js            phrase suggestions a person shares, ranked across desks
     crypto-box.js             AES-256-GCM records for the learning corpus
     engine.js                 headless assistant: keys + focus in, actions out
     store.js                  app-data files: library, policy, settings, metrics log, learning corpus, audit log
   admin/
-    actle-admin.js            keygen, sign, verify, validate, layers, report, suggestions
+    actle-admin.js            keygen, sign, verify, validate, layers, report, suggestions, license
   test/                       node --test suites for every module, plus the shared conformance suite
   shared/
     ORG-POLICY.md             policy file format
@@ -172,9 +177,9 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
 
 ## Follow-ups
 
-- Licensing and installer packaging for organisations (per-seat, signed
-  installers, silent install). Nothing from the personal premium preview is
-  wired in. Policy signing and distribution exist (see ORG-POLICY.md).
+- Installer packaging for organisations (signed installers, silent install).
+- Licensing is built but not enforced until the vendor's public key is pasted
+  into `core/license.js` (see ORG-POLICY.md, Licensing).
 - Dead keys and input methods: the listener maps a US layout; other layouts
   need a per-platform translation (the personal Windows app has the same
   limit).

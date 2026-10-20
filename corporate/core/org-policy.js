@@ -32,6 +32,7 @@ function empty() {
     retention: { metricsDays: 365, corpusDays: 90 },
     paused: { active: false, message: "" },
     serial: null,
+    licence: null,
     reporting: { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 },
     warnings: [],
   };
@@ -69,6 +70,7 @@ function merge(layers) {
   const out = {};
   for (const layer of list) {
     if (typeof layer.organization === "string") out.organization = layer.organization;
+    if (typeof layer.licence === "string" && layer.licence.trim()) out.licence = layer.licence;
     for (const section of ["typing", "learning", "retention", "reporting"]) {
       if (isObject(layer[section])) out[section] = Object.assign({}, out[section], layer[section]);
     }
@@ -165,6 +167,8 @@ function parse(input) {
   // Nothing is expanded, offered or learned while paused; nothing is deleted.
   policy.paused = pausedOf(source.paused);
   if (Number.isSafeInteger(source.serial) && source.serial > 0) policy.serial = source.serial;
+  // The business licence token (see core/license.js); checked by the desk, not here.
+  policy.licence = typeof source.licence === "string" && source.licence.trim() ? source.licence.trim() : null;
 
   const reporting = isObject(source.reporting) ? source.reporting : {};
   policy.reporting.team = String(reporting.team == null ? "" : reporting.team).trim();
