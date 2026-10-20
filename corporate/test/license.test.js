@@ -274,3 +274,69 @@ test("the admin tool issues and shows licences and counts desks against seats", 
   assert.match(rolled.text, /licence LIC-9: 4 desk\(s\) of 3 seats/);
   assert.match(rolled.errors, /over its 3 seats by 1/);
 });
+
+test("the admin tool checks a policy against its tier's caps before signing, and names tiers in issue, show and report", () => {
+  const dir = fs.mkdtempSync(path.join(process.env.ACTLE_TEST_TMP || os.tmpdir(), "actle-tieradmin-"));
+  fs.writeFileSync(path.join(dir, "vendor.key"), vendor.privateKey);
+  fs.writeFileSync(path.join(dir, "vendor.pub"), vendor.publicKey);
+  const keys = signing.generateKeyPair();
+  fs.writeFileSync(path.join(dir, "signing.key"), keys.privateKey);
+  const out = [];
+  const err = [];
+  const cli = (argv) => ({ code: run(argv, { stdout: (l) => out.push(l), stderr: (l) => err.push(l) }), text: out.splice(0).join("\n"), errors: err.splice(0).join("\n") });
+  const issue = (extra) => cli(["license", "issue", "--key", path.join(dir, "vendor.key"), "--org", "Example Ltd", "--seats", "3", "--expires", "2030-01-01", "--id", "LIC-T"].concat(extra || []));
+  const team = issue(["--tier", "team"]);
+  assert.equal(team.code, 0, team.errors);
+  const token = team.text.trim();
+  assert.equal(license.verifyLicence(token, [vendor.publicKey]).licence.tier, "team");
+  assert.equal(issue(["--tier", "free"]).code, 1, "free is not a licence");
+  assert.equal(issue(["--tier", "team", "--seats", "26"]).code, 1, "over the Team seat cap");
+  assert.match(cli(["license", "issue", "--key", path.join(dir, "vendor.key"), "--org", "Example Ltd", "--seats", "26", "--expires", "2030-01-01", "--tier", "team"]).errors, /Team tier allows at most 25 seats/);
+  const shown = cli(["license", "show", token]);
+  assert.match(shown.text, /tier:\s+Team\n/);
+  assert.match(shown.text, /caps:\s+25 seats, 1000 organisation shortcuts, 2 policy layers/);
+  const business = issue([]);
+  assert.match(cli(["license", "show", business.text.trim()]).text, /tier:\s+Business\n/);
+
+  // Thirty shortcuts: fine for Team, five over the Free cap.
+  const library = [];
+  for (let i = 0; i < 30; i++) library.push({ trigger: "s" + i + "/", expansion: "entry " + i });
+  const policyFile = path.join(dir, "policy.json");
+  fs.writeFileSync(policyFile, JSON.stringify({ organization: "Example Ltd", licence: token, library }));
+  const ok = cli(["validate", policyFile]);
+  assert.equal(ok.code, 0, ok.errors);
+  assert.match(ok.text, /tier:\s+Team \(from the licence in the policy, not verified\)/);
+  const over = cli(["validate", policyFile, "--tier", "free"]);
+  assert.equal(over.code, 1);
+  assert.match(over.errors, /warning: 5 organisation shortcuts ignored: the Free tier allows 25/);
+  assert.equal(cli(["validate", policyFile, "--tier", "platinum"]).code, 1);
+  fs.writeFileSync(path.join(dir, "nolicence.json"), JSON.stringify({ organization: "Example Ltd", library }));
+  const unknown = cli(["validate", path.join(dir, "nolicence.json")]);
+  assert.equal(unknown.code, 0, "no tier known: caps are not checked and nothing fails");
+  assert.match(unknown.text, /tier:\s+not known \(no licence in these files; pass --tier\); caps not checked/);
+
+  const refused = cli(["sign", policyFile, "--key", path.join(dir, "signing.key"), "--serial", "1", "--layer", "org", "--tier", "free", "--out", path.join(dir, "org.signed.json")]);
+  assert.equal(refused.code, 1);
+  assert.match(refused.errors, /5 organisation shortcuts ignored[\s\S]*not signed/);
+  assert.equal(fs.existsSync(path.join(dir, "org.signed.json")), false);
+  const signedOk = cli(["sign", policyFile, "--key", path.join(dir, "signing.key"), "--serial", "1", "--layer", "org", "--out", path.join(dir, "org.signed.json")]);
+  assert.equal(signedOk.code, 0, signedOk.errors + signedOk.text);
+  const forced = cli(["sign", policyFile, "--key", path.join(dir, "signing.key"), "--serial", "2", "--layer", "org", "--tier", "free", "--allow-warnings", "--out", path.join(dir, "org2.signed.json")]);
+  assert.equal(forced.code, 0, forced.errors);
+
+  for (const name of ["dept", "team"]) fs.writeFileSync(path.join(dir, name + ".json"), JSON.stringify({ library: [{ trigger: name + "/", expansion: name }] }));
+  const layered = cli(["layers", policyFile, path.join(dir, "dept.json"), path.join(dir, "team.json")]);
+  assert.equal(layered.code, 1, "three layers on a Team licence");
+  assert.match(layered.errors, /warning: policy layers: 3 applied, the Team tier allows 2; nothing was dropped/);
+  assert.equal(cli(["layers", policyFile, path.join(dir, "dept.json")]).code, 0, "two layers are within the Team cap");
+  assert.equal(cli(["layers", policyFile, path.join(dir, "dept.json"), path.join(dir, "team.json"), "--tier", "enterprise"]).code, 0);
+
+  const reportModule = require("../core/report.js");
+  for (const [id, tier] of [["a", "team"], ["b", "team"], ["c", "free"]]) {
+    fs.writeFileSync(path.join(dir, id + ".json"), JSON.stringify(reportModule.buildReport([], { now: Date.now(), installId: id, licenceId: "LIC-T", tier })));
+  }
+  const rolled = cli(["report", path.join(dir, "a.json"), path.join(dir, "b.json"), path.join(dir, "c.json"), "--policy", policyFile]);
+  assert.equal(rolled.code, 0, rolled.errors);
+  assert.match(rolled.text, /licence LIC-T: 3 desk\(s\) of 3 seats, Team tier/);
+  assert.match(rolled.errors, /licence LIC-T: 1 desk\(s\) report the Free tier, not the licence's Team \(a testing override, or an older version\)/);
+});
