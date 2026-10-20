@@ -166,7 +166,9 @@
    * 3+ words or 12+ characters, at least one word outside FUNCTION_WORDS, and
    * must not start with WEAK_STARTS or end with WEAK_ENDINGS. Of a phrase and a
    * longer qualifying phrase containing it, the shorter is dropped when the
-   * longer is seen as often. Identical texts count once.
+   * longer is seen as often; of two phrases seen equally often where every
+   * occurrence of one overlaps the other, only the higher ranked is offered.
+   * Texts that differ only in spacing count once.
    *
    * @param {string[]} texts
    * @param {{limit?: number, dismissed?: string[], shorthands?: Array<{trigger: string, expansion: string}>}} [options]
@@ -219,7 +221,6 @@
     }
 
     const qualified = [];
-    let order = 0;
     for (const candidate of candidates.values()) {
       // Places are in reading order, so taking each one that starts after the
       // last taken one ends gives the most non-overlapping occurrences.
@@ -232,7 +233,7 @@
       }
       const first = candidate.places[0];
       if (taken.length < MIN_COUNT || !qualifies(segments[first.segment], first.first, candidate.count, candidate.key)) continue;
-      qualified.push({ key: candidate.key, words: candidate.count, seen: taken.length, taken, first, order: order++ });
+      qualified.push({ key: candidate.key, words: candidate.count, seen: taken.length, taken, first });
     }
     const byKey = new Map(qualified.map((phrase) => [phrase.key, phrase]));
 
@@ -248,12 +249,11 @@
       }
     }
 
-    // First seen breaks ties; candidates were found shortest first, so use the
-    // position of the first occurrence instead of discovery order.
-    const position = (phrase) => [phrase.first.segment, phrase.first.first];
+    // The first seen breaks ties: two phrases of the same length never start
+    // at the same word.
     const ranked = qualified.filter((phrase) => !dominated.has(phrase.key)).sort((a, b) =>
       b.seen * b.words - a.seen * a.words || b.words - a.words
-      || position(a)[0] - position(b)[0] || position(a)[1] - position(b)[1] || a.order - b.order);
+      || a.first.segment - b.first.segment || a.first.first - b.first.first);
 
     const excluded = new Set();
     if (Array.isArray(opts.dismissed)) {

@@ -94,8 +94,12 @@ test("a phrase that ends on an article, preposition or conjunction is a fragment
 });
 
 test("a phrase that starts with and, or, but or so is offered without that word (beyond the spec)", () => {
-  const texts = ["And as you can see it works.", "and as you can see it fails.", "So as you can see it rains."];
+  // Without this, "and as you can see it" (seen 3 times) would hide "as you can see it".
+  const texts = ["And as you can see it works.", "and as you can see it fails.", "AND as you can see it rains."];
   assert.deepEqual(phrases(texts), ["as you can see it"]);
+  for (const word of ["or", "but", "so"]) {
+    assert.deepEqual(phrases(texts.map((text) => text.replace(/^and/i, word))), ["as you can see it"], word);
+  }
 });
 
 test("dismissed phrases are not offered, in any spelling, and do not resurface as a shorter phrase", () => {
@@ -170,8 +174,9 @@ test("display is the most frequent spelling, ties going to the first seen, with 
 
 test("suggestions rank by count times words, then longer first, and stop at the limit", () => {
   const texts = [0, 1, 2, 3, 4, 5, 6].map((n) => `Item ${n}. Quarterly report.`
-    + (n < 3 ? " Please find it attached." : "") + (n < 4 ? " See you soon." : ""));
-  // 2 words x 7 = 14; 4 x 3 = 12; 3 x 4 = 12, so the 4-word phrase goes first of the tie.
+    + (n < 4 ? " See you soon." : "") + (n < 3 ? " Please find it attached." : ""));
+  // 2 words x 7 = 14; 4 x 3 = 12; 3 x 4 = 12, so the 4-word phrase goes first of
+  // the tie although "see you soon" is written first.
   assert.deepEqual(phrases(texts), ["quarterly report", "please find it attached", "see you soon"]);
   assert.deepEqual(phrases(texts, { limit: 2 }), ["quarterly report", "please find it attached"]);
   assert.deepEqual(phrases(texts, { limit: 0 }), []);
@@ -191,14 +196,16 @@ test("the same draft saved more than once counts once, even with different spaci
 });
 
 test("a phrase longer than eight words is offered once, not once per eight-word window", () => {
+  // Ten words: three 8-word windows, and "further questions" sits in the last
+  // window but outside the first, so only the maximal-phrase rule drops it.
   const texts = [
-    "Please let me know if you have any questions.",
-    "Thanks! Please let me know if you have any questions.",
-    "please let me know if you have any questions",
+    "Please let me know if you have any further questions.",
+    "Thanks! Please let me know if you have any further questions.",
+    "please let me know if you have any further questions",
   ];
   const found = findRepeatedPhrases(texts);
-  assert.equal(found.length, 1);
-  assert.deepEqual([found[0].words, found[0].count], [8, 3]);
+  assert.deepEqual(found.map(({ phrase, words, count }) => [phrase, words, count]),
+    [["please let me know if you have any", 8, 3]]);
   // Dismissing that window does not bring the other window back.
   assert.deepEqual(findRepeatedPhrases(texts, { dismissed: [found[0].phrase] }), []);
 });

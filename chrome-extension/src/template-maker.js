@@ -90,10 +90,8 @@
 
   function each(pattern, text, visit) {
     pattern.lastIndex = 0;
-    for (let match; (match = pattern.exec(text)) !== null;) {
-      visit(match);
-      if (match[0] === "") pattern.lastIndex++;
-    }
+    // None of the patterns can match an empty string, so this always advances.
+    for (let match; (match = pattern.exec(text)) !== null;) visit(match);
   }
 
   function digitCount(value) {
@@ -263,8 +261,10 @@
     const limit = signoffStart(source);
     const unsafe = unsafeStart(source);
     const candidates = [];
+    // The sign-off starts a line and no value spans a line break, so a value
+    // that starts before it also ends before it.
     const add = (kind, start, end) => {
-      if (end <= start || start >= limit || end > limit || unsafe(start)) return;
+      if (start >= limit || unsafe(start)) return;
       candidates.push({ start, end, value: source.slice(start, end), kind: kind === "repeat" ? "name" : kind, priority: PRIORITY[kind] });
     };
     greetingNames(source, add);
