@@ -117,7 +117,8 @@ to 20 deleted drafts kept for **Recently deleted drafts**, the pad's
 preferences (writing suggestions on or off, the last open draft) and up to 200
 phrases the user chose not to have suggested again use local storage only, in
 both browsers. They do not sync, are excluded from snippet exports, and are
-not transmitted. Pad suggestions are computed locally from pad drafts only.
+not transmitted. Pad suggestions are computed locally from pad drafts only;
+a suggestion becomes a library snippet only when the user saves it.
 
 **Context menus:** Adds one right-click item, shown only when text is
 selected, that opens the library with that selection as a draft expansion.

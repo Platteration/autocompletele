@@ -124,7 +124,33 @@ with. **Your library** in its header leads back.
 - The **Suggestions** panel has a **Writing suggestions** switch, on by default
   and remembered. Suggestions come only from your drafts in the pad, never from
   text you type on websites; while the switch is off, nothing you write is
-  analyzed.
+  analyzed. They are worked out again 1.5 seconds after you stop typing, and
+  when you open a draft.
+  - **Shortcut ideas.** A phrase of 2 to 8 words that you have written at least
+    three times across your drafts ("You've written “as you can see” 4 times.")
+    is offered with a trigger made of its initials, such as `aycs/` (`aycs2/`
+    when that one is taken). You can change the trigger; **Make shortcut**
+    checks it as the library does (not empty, no spaces, not already used) and
+    adds the phrase to your library. **Not now** hides the idea until the pad is
+    opened again; **Don't suggest this** hides it for good on this device.
+    Three ideas show at a time, and phrases that already are a shortcut's text
+    are not offered. In a very large pad, only the open draft and then the
+    newest drafts, about 100,000 characters in all, are searched.
+  - **Fill-in template.** A draft of 20 words or more that contains a greeting
+    name ("Hi Sam,"), email address, link, phone number, date, weekday, time,
+    amount or order number can be turned into a fill-in template. The draft is
+    shown with each such value as a chip: click it, or press Space on it, to
+    keep that value as written, and rename the blanks in the list under it.
+    Nothing from a sign-off such as "Best regards," on becomes a blank.
+    **Save as template** adds it to your library under the trigger shown (the
+    initials of the title's first two or three words, else `draft/`); typing
+    that trigger opens the fill-in form for the blanks. **Not now** hides it
+    for that draft until the pad is opened again.
+
+  Shortcuts and templates made here are ordinary library shortcuts, stored
+  and, in Chrome, synced like any other. Chrome sync allows about 8 KB per
+  shortcut, so a long draft may not save as a template; the panel then shows
+  the browser's reason, as the library does.
 
 Drafts, Recently deleted drafts, the pad's preferences (the suggestions switch
 and which draft was open last) and phrases you asked not to be suggested again
@@ -309,6 +335,9 @@ Use the appropriate `autocomplete` tokens on credential and payment controls.
 | `src/options.*`       | Library manager, previewed imports, export, excluded sites     |
 | `src/pad.*`           | Writing pad: drafts that save as you type, with shortcuts working |
 | `src/pad-store.js`    | Writing pad drafts, Recently deleted drafts and preferences (local storage) |
+| `src/pad-suggestions.js` | Writing pad Suggestions panel: shortcut ideas and the fill-in template card |
+| `src/phrase-miner.js` | Pure: phrases repeated across pad drafts, with proposed triggers |
+| `src/template-maker.js` | Pure: values in a draft that become blanks, and the escaped template text |
 | `src/popup.*`         | Toolbar search/copy palette plus global and per-site controls  |
 | `test/`               | Unit tests (`npm test` in `chrome-extension/`)                 |
 | `scripts/build.js`    | Browser-specific manifests and reproducible release ZIPs      |

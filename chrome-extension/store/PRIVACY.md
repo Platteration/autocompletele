@@ -79,7 +79,10 @@ created and last edited), copies of up to 20 recently deleted drafts with the
 time each was deleted, the pad's preferences (whether writing suggestions are
 on, and which draft was open last), and up to 200 phrases you chose not to have
 suggested again use extension `storage.local` on this device. They do not sync,
-are not included in snippet exports, and are never sent anywhere.
+are not included in snippet exports, and are never sent anywhere. If you choose
+**Make shortcut** or **Save as template** on a writing suggestion, that phrase,
+or the draft's text with the blanks you chose, becomes a saved snippet in your
+library, with the storage and sync behavior above.
 
 When you delete a snippet, the extension keeps a copy of it on this device
 under **Recently deleted** so that you can restore it: its trigger, expansion
