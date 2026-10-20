@@ -1,5 +1,5 @@
-// Lists the files behind a document shortcut; the chosen paths are copied to
-// the clipboard (and optionally revealed) so they can be attached.
+// Lists the files behind a document shortcut: Attach puts the chosen files
+// into the message being written; Copy file paths and Reveal are the fallbacks.
 "use strict";
 
 (async function () {
@@ -24,9 +24,10 @@
     list.append(item);
   });
   const selected = () => Array.from(list.querySelectorAll("input:checked")).map((box) => Number(box.dataset.index));
+  document.getElementById("attach").addEventListener("click", () => window.actle.submitPopover({ action: "attach", selected: selected() }));
   document.getElementById("copy").addEventListener("click", () => window.actle.submitPopover({ action: "copy", selected: selected() }));
   document.getElementById("reveal").addEventListener("click", () => window.actle.submitPopover({ action: "reveal", selected: selected() }));
   document.getElementById("cancel").addEventListener("click", () => window.actle.closePopover());
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") window.actle.closePopover(); });
-  document.getElementById("copy").focus();
+  document.getElementById("attach").focus();
 })();

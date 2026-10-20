@@ -96,6 +96,19 @@ to start over a bad file.
   Expansions are pasted, so the previous clipboard text is restored shortly
   after each insert.
 
+## Attaching documents
+
+A document shortcut's popover has **Attach**. The files go into the message
+being written in this order: in Outlook on Windows, straight into the open
+message through COM; in Thunderbird, a new compose window with the files
+attached; anywhere else, the files are put on the clipboard as files (a
+Windows file drop list, macOS file references, Linux `text/uri-list` via
+`xclip`) and a paste keystroke is sent, which attaches them in Outlook, Apple
+Mail, Gmail in a browser, Teams and most editors. When none of that is
+possible (Wayland, no `xclip`, a tool failing), the paths are copied as text
+and a notification says so; such an attempt is not counted. **Copy file
+paths** and **Reveal in folder** remain.
+
 ## Simulation
 
 `npm run simulate` builds the same assistant object the tray app uses, with a
@@ -120,9 +133,12 @@ Electron and without the native `uiohook-napi` build:
 - `npm start` has not been run on any platform; the tray, windows and
   popovers are unverified by eye in any theme.
 - `adapters/input.js` (uiohook events, key translation on real keyboards),
-  `adapters/active-window.js` (PowerShell, osascript, xdotool) and
+  `adapters/active-window.js` (PowerShell, osascript, xdotool),
   `adapters/sender.js` (SendKeys, System Events, xdotool paste and caret
-  moves) have not been exercised against real applications.
+  moves) and `adapters/attach.js` (Outlook COM, Thunderbird `-compose`, file
+  drop lists, `osascript` file references, `xclip`) have not been exercised
+  against real applications; their scripts are checked by tests with a
+  stand-in process runner.
 - The uiohook keycode table is built from the module's own `UiohookKey`
   export at run time, so it does not depend on exact codes, but the mapping
   has only been checked with a synthetic table.

@@ -19,8 +19,9 @@ adds what a business asks for:
   "shipment" together, "office hours"), the assistant offers to insert
   predetermined text, a saved shortcut or a document set.
 - **Document shortcuts**: typing `/sld` lists the files the organisation marked
-  as the standard hand-outs for "shipping logistics department", so they can be
-  attached in one step.
+  as the standard hand-outs for "shipping logistics department"; Attach puts
+  them into the message being written (Outlook directly, Thunderbird's
+  compose window, or as pasted files elsewhere).
 - **Lookups**: `/cust 1001 ` inserts the customer block for id 1001 from a
   CSV or JSON file the organisation keeps on a share or an https address,
   rendered from a template; cached per desk, refreshed on a schedule.
@@ -189,9 +190,8 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
 - Dead keys and input methods: the listener maps a US layout; other layouts
   need a per-platform translation (the personal Windows app has the same
   limit).
-- Attaching files directly into a mail client's compose window is
-  platform-specific; the shell copies the paths and reveals the files, and
-  counts an attachment only when the person confirms it.
+- Attaching files is done through Outlook COM, Thunderbird or pasted file
+  references; a client that accepts none of these gets the paths as text.
 - Usage reports travel as files the person saves, or, when the policy names
   an https collection endpoint, are posted automatically (counts only; the
   Policy tab shows every body sent).

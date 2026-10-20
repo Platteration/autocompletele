@@ -8,6 +8,7 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, shell, nativeImage, 
 const { createAssistant } = require("./assistant.js");
 const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
+const { createAttacher } = require("./adapters/attach.js");
 const { personal } = require("../core/index.js");
 
 const SINGLE = app.requestSingleInstanceLock();
@@ -21,6 +22,7 @@ if (!SINGLE) {
 let assistant = null;
 let listener = null;
 let sender = null;
+let attacher = null;
 let tray = null;
 let dashboard = null;
 let popover = null;
@@ -176,7 +178,18 @@ async function submitPopover(payload) {
     if (payload.action === "reveal") {
       for (const doc of chosen) shell.showItemInFolder(doc.path);
     }
-    if (chosen.length) {
+    if (chosen.length && payload.action === "attach") {
+      if (state.backspaces) await sender.replace({ backspaces: state.backspaces, text: "", cursorOffset: 0 });
+      const result = await attacher.attach({ paths: chosen.map((doc) => doc.path), context: lastContext });
+      if (result.ok) {
+        // Counted only when the files really went in.
+        assistant.recordInsert({ kind: "document", trigger: state.trigger, count: chosen.length });
+        notify(chosen.length + " file" + (chosen.length === 1 ? "" : "s") + " attached" + (result.note ? " (" + result.note + ")" : "") + ".");
+      } else {
+        clipboard.writeText(chosen.map((doc) => doc.path).join("\n"));
+        notify("Could not attach the files here (" + result.error + "). Their paths were copied instead; paste or drag them into the attachment area.");
+      }
+    } else if (chosen.length) {
       clipboard.writeText(chosen.map((doc) => doc.path).join("\n"));
       if (state.backspaces) await sender.replace({ backspaces: state.backspaces, text: "", cursorOffset: 0 });
       assistant.recordInsert({ kind: "document", trigger: state.trigger, count: chosen.length });
@@ -386,6 +399,7 @@ function registerIpc() {
   handle("app:status", () => ({
     listener: listenerStatus,
     sender: { available: sender.isAvailable(), reason: sender.isAvailable() ? null : sender.unavailableReason() },
+    attach: { available: attacher.isAvailable(lastContext), reason: attacher.unavailableReason(lastContext) },
     warnings: assistant.warnings(),
     dataDir: assistant.store.root,
     mode: assistant.engine.mode,
@@ -409,6 +423,7 @@ function start() {
     log: (line) => console.log(line),
   });
   sender = createSender({ clipboard, notify });
+  attacher = createAttacher({ notify, paste: () => sender.paste() });
   listener = createInputListener({
     onKey: (key) => {
       if (dashboardFocused) return;
