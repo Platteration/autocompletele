@@ -33,6 +33,9 @@ adds what a business asks for:
 - **Central management**: signed policy files fetched from an intranet URL or
   a file share, layered organisation, department and team; rollback
   protection; an administrator kill switch; and a change log on every desk.
+- **Keyboard layouts**: English (US and UK), German, French, Spanish,
+  Swedish, Norwegian, Danish, Dutch and Portuguese, with AltGr and dead
+  keys, detected from the system or chosen on the dashboard.
 - **Search palette**: Ctrl+Shift+Space (Cmd+Shift+Space on macOS) opens a
   search over every shortcut and document set in any application; Enter
   inserts the choice where the person was typing.
@@ -187,9 +190,7 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
 - Installer packaging for organisations (signed installers, silent install).
 - Licensing is built but not enforced until the vendor's public key is pasted
   into `core/license.js` (see ORG-POLICY.md, Licensing).
-- Dead keys and input methods: the listener maps a US layout; other layouts
-  need a per-platform translation (the personal Windows app has the same
-  limit).
+- Keyboard layouts beyond the ten built in, and input methods (IME).
 - Attaching files is done through Outlook COM, Thunderbird or pasted file
   references; a client that accepts none of these gets the paths as text.
 - Usage reports travel as files the person saves, or, when the policy names

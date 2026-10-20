@@ -99,6 +99,17 @@
       <table><thead><tr><th>Application</th><th>Mode</th><th></th></tr></thead><tbody id="rules"></tbody></table>
       <h2 class="mt">Organisation rules</h2>
       <table><thead><tr><th>Application</th><th>Mode</th></tr></thead><tbody id="org-rules"></tbody></table>
+      <h2 class="mt">Keyboard</h2>
+      <p class="hint">The listener turns key presses into characters with a layout table. Only English (US) is exact; the others cover the usual national keys, AltGr and dead keys (´ ` ^ ¨ ~) and are best effort. If a shortcut does not fire, type its trigger in the test box: the box shows what actle sees, and nothing typed there is kept.</p>
+      <div class="row mb">
+        <label class="m0"><span>Layout</span>
+          <select id="keyboard-layout" aria-label="Keyboard layout"><option value="auto">Follow the system</option></select>
+        </label>
+        <button class="plain" id="keyboard-detect">Detect again</button>
+        <span class="hint" id="keyboard-info"></span>
+      </div>
+      <label><span>Type here to test</span><input type="text" id="keyboard-test" autocomplete="off" spellcheck="false" placeholder="Click here, then type"></label>
+      <p class="hint mono" id="keyboard-seen"></p>
       <h2 class="mt">Typing speed</h2>
       <label><span>Characters per minute used for the time estimate (blank = organisation default)</span><input type="number" id="cpm" min="20" max="2000"> <button class="plain" id="cpm-save">Save</button></label>
     </section>
@@ -109,7 +120,7 @@
     </section>
 
     <section id="tab-documents" role="tabpanel" hidden>
-      <p class="hint">Type a document shortcut in any application to list its files; the paths are copied so they can be pasted into an attachment area.</p>
+      <p class="hint">Type a document shortcut in any application to list its files. Attach puts the chosen files into the message you are writing (Outlook directly, Thunderbird's compose window, otherwise pasted as files); Copy file paths and Reveal in folder are the fallbacks.</p>
       <div id="documents"></div>
       <h2 class="mt">Lookups</h2>
       <p class="hint">Type a lookup trigger, a space, a key and a space (for example <span class="mono">/cust 1001 </span>) to insert the matching block from your organisation's data. The data is fetched from the organisation and kept in the data folder; nothing you type is sent anywhere.</p>

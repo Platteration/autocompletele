@@ -316,6 +316,33 @@
     $("rule-title").value = "";
     announce("Rule added");
   });
+  // Keyboard layout
+  let keyboardSeen = [];
+  async function renderKeyboard() {
+    const info = await api.getKeyboardInfo();
+    const select = $("keyboard-layout");
+    const current = select.value;
+    while (select.options.length > 1) select.remove(1);
+    for (const layout of info.layouts) select.append(el("option", { value: layout.id, text: layout.name + (layout.id === "en-US" ? "" : " (best effort)") }));
+    select.value = info.setting === "auto" || !info.layouts.some((l) => l.id === info.setting) ? "auto" : info.setting;
+    if (current && select.value !== current && document.activeElement === select) select.value = current;
+    const detected = info.detected ? (info.layouts.find((l) => l.id === info.detected) || { name: info.detected }).name : "not recognised, English (US) assumed";
+    const inUse = (info.layouts.find((l) => l.id === info.inUse) || { name: info.inUse }).name;
+    text($("keyboard-info"), "System: " + detected + ". In use: " + inUse + ".");
+  }
+  $("keyboard-layout").addEventListener("change", async () => {
+    await api.saveSettings({ keyboardLayout: $("keyboard-layout").value });
+    announce("Keyboard layout saved");
+  });
+  $("keyboard-detect").addEventListener("click", async () => { await api.detectKeyboard(); await renderKeyboard(); });
+  $("keyboard-test").addEventListener("focus", () => { keyboardSeen = []; text($("keyboard-seen"), ""); api.setKeyboardTest(true); });
+  $("keyboard-test").addEventListener("blur", () => { api.setKeyboardTest(false); $("keyboard-test").value = ""; });
+  api.onKeyboardKey((key) => {
+    keyboardSeen.push(key.isBackspace ? "⌫" : key.text === "\n" ? "⏎" : key.text === "\t" ? "⇥" : key.text === "" ? (key.resetsBuffer ? "⟲" : "·") : key.text);
+    keyboardSeen = keyboardSeen.slice(-40);
+    text($("keyboard-seen"), "actle sees: " + keyboardSeen.join(" "));
+  });
+
   $("cpm-save").addEventListener("click", async () => {
     const value = Number($("cpm").value);
     await api.saveSettings({ charsPerMinute: value > 0 ? value : null });
@@ -392,6 +419,9 @@
     "corpus-key-replaced": "Learning key replaced",
     "corpus-encrypted": "Learned text encrypted",
     "corpus-deleted": "Learned text deleted",
+    "report-uploaded": "Usage report sent",
+    "report-upload-failed": "Usage report not sent",
+    "licence-changed": "Licence changed",
   };
 
   function auditDetail(entry) {
@@ -408,6 +438,12 @@
         return entry.sessions + " message(s)";
       case "corpus-key-replaced":
         return "the previous key could not be read and protected nothing; kept as " + entry.aside;
+      case "report-uploaded":
+        return entry.bytes + " bytes to " + entry.endpoint + " (HTTP " + entry.status + ")";
+      case "report-upload-failed":
+        return (entry.error || "failed") + " (" + entry.endpoint + ")";
+      case "licence-changed":
+        return (entry.id || "no licence") + ": " + entry.status + (entry.seats ? ", " + entry.seats + " seats" : "") + (entry.expiresAt ? ", expires " + String(entry.expiresAt).slice(0, 10) : "");
       case "policy-source-problem":
         return entry.source + ": " + (entry.error || entry.status);
       case "policy-source-recovered":
@@ -547,13 +583,14 @@
   }
 
   async function renderAll(change) {
-    const what = change || { metrics: true, library: true, learning: true, settings: true, status: true, context: true, policy: true };
+    const what = change || { metrics: true, library: true, learning: true, settings: true, status: true, context: true, policy: true, keyboard: true };
     if (what.status || what.context) await renderStatus();
     if (what.settings || what.library || what.learning) await renderPolicyTabs();
     if (what.metrics || what.settings) await renderOverview();
     if (what.library) await renderLibrary();
     if (what.learning || what.library) await renderLearning();
     if (what.settings) await renderApps();
+    if (what.settings || what.keyboard) await renderKeyboard();
     if (what.settings || what.policy) {
       await renderPolicy();
       await renderUpload();

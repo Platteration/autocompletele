@@ -9,6 +9,8 @@ const { createAssistant } = require("./assistant.js");
 const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
 const { createAttacher } = require("./adapters/attach.js");
+const { detectLayout } = require("./adapters/keyboard-layout.js");
+const layouts = require("./adapters/layouts.js");
 const { personal } = require("../core/index.js");
 
 const SINGLE = app.requestSingleInstanceLock();
@@ -32,6 +34,8 @@ let dashboardFocused = false;
 let lastContext = {};
 let paletteWindow = null;
 let paletteStatus = { accelerator: "", registered: false, error: null };
+let detectedLayout = null;
+let keyboardTest = false; // while true, translated keys go to the dashboard's test box instead of the engine
 
 function notify(body) {
   if (Notification.isSupported()) new Notification({ title: "actle", body }).show();
@@ -68,7 +72,7 @@ function openDashboard() {
   dashboard.once("ready-to-show", () => dashboard.show());
   dashboard.on("focus", () => setOwnWindow(true));
   dashboard.on("blur", () => setOwnWindow(false));
-  dashboard.on("closed", () => { dashboard = null; setOwnWindow(false); });
+  dashboard.on("closed", () => { dashboard = null; keyboardTest = false; setOwnWindow(false); });
 }
 
 // Typing inside the dashboard (for example a trigger into the editor) must
@@ -342,6 +346,32 @@ async function choosePalette(choice) {
   return { ok: true };
 }
 
+// Keyboard layout: the setting, or the system's layout when the setting is "auto".
+function chosenLayout() {
+  const setting = assistant.settings().keyboardLayout;
+  if (setting && setting !== "auto" && layouts.LAYOUTS[setting]) return setting;
+  return detectedLayout || "en-US";
+}
+
+async function applyKeyboardLayout() {
+  if (assistant.settings().keyboardLayout === "auto" && detectedLayout == null) {
+    detectedLayout = await detectLayout(process.platform);
+  }
+  const inUse = listener.setLayout(chosenLayout());
+  broadcast({ keyboard: true });
+  return inUse;
+}
+
+function keyboardInfo() {
+  return {
+    setting: assistant.settings().keyboardLayout,
+    detected: detectedLayout,
+    inUse: listener.layout,
+    exact: listener.layout === "en-US",
+    layouts: layouts.names().map((id) => ({ id, name: layouts.LAYOUTS[id].name })),
+  };
+}
+
 function registerIpc() {
   const handle = (channel, fn) => ipcMain.handle(channel, (event, payload) => fn(payload));
   handle("metrics:summary", (q) => assistant.summary(q || {}));
@@ -377,7 +407,16 @@ function registerIpc() {
   handle("policy:refresh", () => refreshPolicy());
   handle("policy:audit", () => assistant.audit(100));
   handle("settings:get", () => assistant.settings());
-  handle("settings:save", (next) => { const r = assistant.saveSettings(next || {}); updateTray(); broadcast({ settings: true }); return r; });
+  handle("settings:save", (next) => {
+    const r = assistant.saveSettings(next || {});
+    updateTray();
+    broadcast({ settings: true });
+    if (next && Object.hasOwn(next, "keyboardLayout")) applyKeyboardLayout().catch((error) => assistant.log("layout: " + error));
+    return r;
+  });
+  handle("keyboard:info", () => keyboardInfo());
+  handle("keyboard:test", (on) => { keyboardTest = !!on; return { ok: true }; });
+  handle("keyboard:detect", async () => { detectedLayout = await detectLayout(process.platform); await applyKeyboardLayout(); return keyboardInfo(); });
   handle("settings:enabled", (value) => { const r = assistant.setEnabled(value !== false); updateTray(); broadcast({ settings: true }); return r; });
   handle("learning:candidates", () => assistant.candidates());
   handle("learning:accept", (c) => { const r = assistant.acceptCandidate(c || {}); broadcast({ library: true, learning: true }); return r; });
@@ -406,6 +445,7 @@ function registerIpc() {
     paused: assistant.paused,
     pausedMessage: assistant.policyInfo().paused.message,
     palette: paletteStatus,
+    keyboard: keyboardInfo(),
     context: lastContext,
     version: app.getVersion(),
   }));
@@ -426,6 +466,11 @@ function start() {
   attacher = createAttacher({ notify, paste: () => sender.paste() });
   listener = createInputListener({
     onKey: (key) => {
+      if (keyboardTest && dashboard && !dashboard.isDestroyed()) {
+        // The dashboard's "type here to test" box shows what the layout makes of each key; nothing is stored.
+        dashboard.webContents.send("keyboard:key", { text: key.text, isBackspace: key.isBackspace, resetsBuffer: key.resetsBuffer });
+        return;
+      }
       if (dashboardFocused) return;
       for (const action of assistant.keyTyped(key)) handleAction(action);
     },
@@ -449,6 +494,7 @@ function start() {
   updateTray();
   registerIpc();
   listener.start();
+  applyKeyboardLayout().catch((error) => assistant.log("layout: " + error));
   if (!sender.isAvailable()) notify("Expansions cannot be typed into other applications: " + sender.unavailableReason());
   for (const warning of assistant.warnings()) notify(warning);
   schedulePolicyRefresh();

@@ -37,6 +37,14 @@ contextBridge.exposeInMainWorld("actle", {
   saveSuggestions: invoke("suggestions:save"),
   clearLearning: invoke("learning:clear"),
   getStatus: invoke("app:status"),
+  getKeyboardInfo: invoke("keyboard:info"),
+  setKeyboardTest: invoke("keyboard:test"),
+  detectKeyboard: invoke("keyboard:detect"),
+  onKeyboardKey: (listener) => {
+    const handler = (event, payload) => listener(payload);
+    ipcRenderer.on("keyboard:key", handler);
+    return () => ipcRenderer.removeListener("keyboard:key", handler);
+  },
   // Search palette window.
   paletteSearch: invoke("palette:search"),
   paletteChoose: invoke("palette:choose"),

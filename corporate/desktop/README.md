@@ -47,7 +47,7 @@ Everything is in Electron's `userData` folder for the app
 | ----------------- | --------------------------------------------------------------- |
 | `library.json`    | Own shortcuts, in the shared `shorthands.json` format (version 1) |
 | `policy.json`     | The organisation policy, if one was installed                   |
-| `settings.json`   | Enabled flag, own capture rules, typing-speed override, palette hotkey (`paletteShortcut`, an Electron accelerator; `""` turns it off) |
+| `settings.json`   | Enabled flag, own capture rules, typing-speed override, palette hotkey (`paletteShortcut`, an Electron accelerator; `""` turns it off), `keyboardLayout` (`auto` or a layout id) |
 | `metrics.jsonl`   | One line per insert: time, kind, application, keystrokes saved, whether the shortcut was the organisation's or the person's |
 | `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
@@ -96,6 +96,22 @@ to start over a bad file.
   Expansions are pasted, so the previous clipboard text is restored shortly
   after each insert.
 
+## Keyboard layouts
+
+The listener maps key presses to characters with a layout table
+(`adapters/layouts.js`): plain, Shift, AltGr and Shift+AltGr levels and
+dead-key composition (´ ` ^ ¨ ~ followed by a letter; Space types the mark
+itself). English (US) is exact. English (UK), German, French, Spanish,
+Swedish, Norwegian, Danish, Dutch and Portuguese cover the alphanumeric
+block of the usual national variants and are best effort until checked on
+a real keyboard. The setting `keyboardLayout` is `auto` by default: the
+system layout is read at start (Windows `Get-WinUserLanguageList`, macOS
+`AppleSelectedInputSources`, Linux `setxkbmap -query`) and an unrecognised
+one falls back to English (US). The Applications tab has the layout choice,
+"Detect again", and a test box that shows what actle makes of each key
+while the box has the focus; nothing typed there is kept. Input methods
+(IME) are still not handled.
+
 ## Attaching documents
 
 A document shortcut's popover has **Attach**. The files go into the message
@@ -141,7 +157,10 @@ Electron and without the native `uiohook-napi` build:
   stand-in process runner.
 - The uiohook keycode table is built from the module's own `UiohookKey`
   export at run time, so it does not depend on exact codes, but the mapping
-  has only been checked with a synthetic table.
+  has only been checked with a synthetic table; whether uiohook exposes the
+  ISO key left of Z as `IntlBackslash` is unverified. Non-US layout tables,
+  AltGr reporting (Ctrl+Alt on Windows, right Alt elsewhere) and the layout
+  detection commands have not been tried on a real keyboard.
 - Package installation ran with `--ignore-scripts` to produce the lockfile;
   the Electron download and the uiohook native build were not performed.
 - `safeStorage` (the keychain behind corpus encryption), the policy refresh
