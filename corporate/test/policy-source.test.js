@@ -52,7 +52,12 @@ test("deployment files are validated; plain http and keyless setups are refused 
   assert.ok(d.warnings.some((w) => /only https/.test(w)));
   const keyless = normalizeDeployment({ policySources: [{ layer: "org", url: ORG }] });
   assert.ok(keyless.warnings.some((w) => /no usable public key/.test(w)));
-  assert.deepEqual(normalizeDeployment(null), { sources: [], publicKeys: [], refreshMinutes: 60, warnings: [] });
+  assert.deepEqual(normalizeDeployment(null), { sources: [], publicKeys: [], groups: [], refreshMinutes: 60, warnings: [] });
+  const grouped = normalizeDeployment({ groups: ["Engineering", " shipping ", "shipping", "*", "ops team", 5] });
+  assert.deepEqual(grouped.groups, ["engineering", "shipping"], "trimmed, lower-cased, deduplicated; * and spaces are not group names");
+  assert.deepEqual(grouped.warnings.filter((w) => /deployment: group/.test(w)).length, 3);
+  assert.ok(grouped.warnings.includes("deployment: group \"*\" ignored: use lower-case letters, digits and dashes"));
+  assert.deepEqual(normalizeDeployment({ groups: "shipping" }).groups, ["shipping"], "a single string is accepted");
 });
 
 test("refresh fetches, verifies and caches every layer in order", async () => {
