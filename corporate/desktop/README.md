@@ -1,0 +1,92 @@
+# actle Corporate – desktop shell
+
+Tray application that runs the business edition in every program on Windows,
+macOS and Linux. It listens for keys globally, expands shortcuts through the
+clipboard, learns recurring text in the applications a person allowed, offers
+keyword inserts and document sets, and shows keystrokes and time saved.
+
+The logic lives in [`../core`](../core) and is tested there with plain Node.
+This folder adds the Electron shell and the two platform adapters.
+
+## Install and run
+
+```
+cd corporate/desktop
+npm install          # downloads Electron and builds the uiohook-napi listener
+npm start            # starts the tray app and opens the dashboard
+npm run simulate     # headless walk-through, no Electron needed (see below)
+```
+
+An organisation policy is read from `policy.json` in the data folder, or from
+the file named by the `ACTLE_POLICY_FILE` environment variable on first start.
+See [`../shared/ORG-POLICY.md`](../shared/ORG-POLICY.md) and the example in
+`../shared/org-policy.example.json`.
+
+## Where data lives
+
+Everything is in Electron's `userData` folder for the app
+(`%APPDATA%\actle-corporate-desktop` on Windows,
+`~/Library/Application Support/actle-corporate-desktop` on macOS,
+`~/.config/actle-corporate-desktop` on Linux):
+
+| File              | Contents                                                        |
+| ----------------- | --------------------------------------------------------------- |
+| `library.json`    | Own shortcuts, in the shared `shorthands.json` format (version 1) |
+| `policy.json`     | The organisation policy, if one was installed                   |
+| `settings.json`   | Enabled flag, own capture rules, typing-speed override          |
+| `metrics.jsonl`   | One line per insert: time, kind, application, keystrokes saved  |
+| `corpus.jsonl`    | Scrubbed text from learn-mode applications, pruned by retention |
+| `learned.json`    | Proposals the person dismissed                                  |
+
+A file that cannot be parsed is moved aside (`*.corrupt-<timestamp>`), the
+dashboard shows a warning, and the app starts with defaults. Nothing refuses
+to start over a bad file.
+
+## Platform notes
+
+- **Windows.** No extra permission. Text is typed with PowerShell's
+  `SendKeys`; the foreground window is read through a small P/Invoke shim
+  kept in one PowerShell process. Programs running as administrator are not
+  visible to a normal-privilege listener; run the app as administrator too.
+- **macOS.** Grant the app *Accessibility* (to type and read the front
+  window) and *Input Monitoring* (for the key listener) under System Settings
+  → Privacy & Security. While a password field has secure input on, nothing is
+  read and the engine is told so.
+- **Linux.** X11 only: `xdotool` is required both to read the active window
+  and to type. On Wayland the listener may start but typing is reported as
+  unavailable in the dashboard banner.
+- Keys are mapped with a US layout plus Shift. Dead keys, AltGr layouts and
+  IME composition are not handled; keep triggers to ASCII such as `sig/`.
+- The listener observes keys and cannot swallow them, so the character that
+  completes a trigger lands in the field and is deleted with the rest.
+  Expansions are pasted, so the previous clipboard text is restored shortly
+  after each insert.
+
+## Simulation
+
+`npm run simulate` builds the same assistant object the tray app uses, with a
+temporary data folder and a fixed clock, and drives it with a script: three
+near-identical order confirmations in Outlook (learn mode), a refund email
+containing a card number and a password (both scrubbed before the corpus is
+written), a document shortcut, an undo, a password manager and a banking
+portal (never learned / off), then a message the next day. It prints every
+action the shell would carry out, the day/week/month/all-time summaries, the
+per-application table and the learning candidates, including the template
+proposal with its detected slots. It exits 0 when the pipeline works.
+
+## Not verified
+
+This shell was written in a Linux container without a display, without
+Electron and without the native `uiohook-napi` build:
+
+- `npm start` has not been run on any platform; the tray, windows and
+  popovers are unverified by eye in any theme.
+- `adapters/input.js` (uiohook events, key translation on real keyboards),
+  `adapters/active-window.js` (PowerShell, osascript, xdotool) and
+  `adapters/sender.js` (SendKeys, System Events, xdotool paste and caret
+  moves) have not been exercised against real applications.
+- The uiohook keycode table is built from the module's own `UiohookKey`
+  export at run time, so it does not depend on exact codes, but the mapping
+  has only been checked with a synthetic table.
+- Package installation ran with `--ignore-scripts` to produce the lockfile;
+  the Electron download and the uiohook native build were not performed.

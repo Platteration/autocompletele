@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>actle Corporate</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>actle Corporate</h1>
+    <span class="org" id="org"></span>
+    <span class="spacer"></span>
+    <label class="row m0"><input type="checkbox" id="enabled"> Enabled</label>
+  </header>
+  <nav role="tablist" aria-label="Sections">
+    <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button role="tab" data-tab="library" aria-selected="false">Library</button>
+    <button role="tab" data-tab="learning" aria-selected="false">Learning</button>
+    <button role="tab" data-tab="apps" aria-selected="false">Applications</button>
+    <button role="tab" data-tab="keywords" aria-selected="false">Keywords</button>
+    <button role="tab" data-tab="documents" aria-selected="false">Documents</button>
+  </nav>
+  <main>
+    <div class="banner" id="banner" hidden role="alert"></div>
+
+    <section id="tab-overview" role="tabpanel">
+      <div class="toolbar">
+        <label class="m0"><span>Period</span>
+          <select id="period">
+            <option value="day">Today</option>
+            <option value="week" selected>This week</option>
+            <option value="month">This month</option>
+            <option value="all">All time</option>
+          </select>
+        </label>
+        <label class="m0"><span>Chart</span>
+          <select id="chart-period">
+            <option value="day" selected>Per day (14)</option>
+            <option value="week">Per week (12)</option>
+            <option value="month">Per month (12)</option>
+          </select>
+        </label>
+        <span class="spacer"></span>
+        <span class="hint" id="context"></span>
+      </div>
+      <div class="cards">
+        <div class="card"><div class="value" id="m-keystrokes">0</div><div class="label">keystrokes saved</div></div>
+        <div class="card"><div class="value" id="m-time">0 s</div><div class="label">estimated time saved</div></div>
+        <div class="card"><div class="value" id="m-inserts">0</div><div class="label">expansions and inserts</div></div>
+      </div>
+      <div class="chart" id="chart" role="img" aria-label="Keystrokes saved per period"></div>
+      <h2>By application</h2>
+      <table><thead><tr><th>Application</th><th class="num">Inserts</th><th class="num">Keystrokes</th><th class="num">Time saved</th></tr></thead><tbody id="by-app"></tbody></table>
+      <p class="hint" id="typing-note"></p>
+    </section>
+
+    <section id="tab-library" role="tabpanel" hidden>
+      <div class="toolbar">
+        <button class="primary" id="add">Add shortcut</button>
+        <button class="plain" id="import">Import JSON…</button>
+        <button class="plain" id="export">Export JSON…</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+        <span class="hint" id="library-count"></span>
+      </div>
+      <p class="hint">Shortcuts marked <em>organisation</em> come from the policy and can only be changed by the administrator. Your own shortcut with the same trigger takes precedence.</p>
+      <table><thead><tr><th>Trigger</th><th>Expansion</th><th></th></tr></thead><tbody id="library"></tbody></table>
+    </section>
+
+    <section id="tab-learning" role="tabpanel" hidden>
+      <p class="hint">Proposals from the applications you allowed in learn mode. Accept one to save it as a shortcut; dismiss it and it is not proposed again. Highlighted parts of a template become fill-in blanks.</p>
+      <div id="candidates"></div>
+    </section>
+
+    <section id="tab-apps" role="tabpanel" hidden>
+      <p class="hint"><strong>Triggers</strong> keeps only the last 200 characters in memory to spot a trigger; nothing is written. <strong>Learn</strong> keeps the text you type in that application, with card numbers, passwords and tokens masked, so recurring phrases can be proposed. <strong>Off</strong> reads nothing. Credential prompts, password managers and terminals are never learned.</p>
+      <h2>Your rules</h2>
+      <div class="row" class="mb">
+        <input type="text" id="rule-process" placeholder="Process name, e.g. outlook.exe" aria-label="Process name">
+        <input type="text" id="rule-title" placeholder="or window title pattern, e.g. Gmail" aria-label="Window title pattern">
+        <select id="rule-mode" aria-label="Mode"><option value="learn">Learn</option><option value="triggers">Triggers</option><option value="off">Off</option></select>
+        <button class="primary" id="rule-add">Add</button>
+      </div>
+      <table><thead><tr><th>Application</th><th>Mode</th><th></th></tr></thead><tbody id="rules"></tbody></table>
+      <h2 class="mt">Organisation rules</h2>
+      <table><thead><tr><th>Application</th><th>Mode</th></tr></thead><tbody id="org-rules"></tbody></table>
+      <h2 class="mt">Typing speed</h2>
+      <label><span>Characters per minute used for the time estimate (blank = organisation default)</span><input type="number" id="cpm" min="20" max="2000"> <button class="plain" id="cpm-save">Save</button></label>
+    </section>
+
+    <section id="tab-keywords" role="tabpanel" hidden>
+      <p class="hint">When these words appear in what you write, a small offer appears. Rules come from the organisation policy.</p>
+      <table><thead><tr><th>Rule</th><th>Keywords</th><th>Match</th><th>Inserts</th></tr></thead><tbody id="keywords"></tbody></table>
+    </section>
+
+    <section id="tab-documents" role="tabpanel" hidden>
+      <p class="hint">Type a document shortcut in any application to list its files; the paths are copied so they can be pasted into an attachment area.</p>
+      <div id="documents"></div>
+    </section>
+  </main>
+
+  <dialog id="editor">
+    <form method="dialog" id="editor-form">
+      <h2 id="editor-title">Add shortcut</h2>
+      <label><span>Trigger</span><input type="text" id="editor-trigger" required autocomplete="off"></label>
+      <label><span>Expansion (placeholders {date}, {time}, {datetime}, {cursor}; blanks [[name]])</span><textarea id="editor-expansion"></textarea></label>
+      <p class="hint" id="editor-error" role="alert"></p>
+      <div class="row" class="end">
+        <button class="plain" type="button" id="editor-cancel">Cancel</button>
+        <button class="primary" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+  <div class="status" role="status" aria-live="polite" id="status"></div>
+  <script src="dashboard.js"></script>
+</body>
+</html>
