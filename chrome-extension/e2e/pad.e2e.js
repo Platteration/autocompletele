@@ -1,6 +1,7 @@
 // The Writing pad: drafts that save on this device as you type.
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const { launch } = require("./helper.js");
 
 function padUrl(app) {
@@ -227,9 +228,13 @@ test("one tab edits a draft at a time", async (t) => {
   });
 
   await t.test("Edit here instead moves editing to this tab after the other saves", async () => {
-    await first.bringToFront();
-    await typeInBody(first, ", and more"); // still waiting for its 400 ms save
-    await second.bringToFront();
+    // Hold back the first tab's 400 ms autosave, so only being taken over
+    // saves what it types next. Neither tab changes visibility from here on.
+    await first.evaluate(() => {
+      const setTimeoutBefore = window.setTimeout;
+      window.setTimeout = (callback, delay, ...rest) => delay === 400 ? 0 : setTimeoutBefore(callback, delay, ...rest);
+    });
+    await typeInBody(first, ", and more");
     await second.click("#padTakeOver");
     await first.waitForSelector("#padLockNotice", { state: "visible" });
     assert.equal(await first.locator("#padBody").evaluate((el) => el.readOnly), true);
@@ -246,6 +251,29 @@ test("one tab edits a draft at a time", async (t) => {
   await t.test("reports no page errors", () => {
     assert.deepEqual(app.errors, []);
   });
+});
+
+test("Copy text and Download .txt", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openPad(app);
+  await page.fill("#padTitle", "Reply: Sam/Venue");
+  await typeInBody(page, "Hi Sam,\nThe room is booked.");
+  await waitSaved(page);
+
+  await page.click("#copyBtn");
+  await page.waitForFunction(() => document.getElementById("padMsg").textContent === "Copied. Paste it wherever you need it.");
+  await app.page.bringToFront();
+  await app.page.click("#ta");
+  await app.page.keyboard.press("Control+v");
+  assert.equal(await app.page.inputValue("#ta"), "Hi Sam,\nThe room is booked.");
+
+  await page.bringToFront();
+  const [download] = await Promise.all([page.waitForEvent("download"), page.click("#downloadBtn")]);
+  assert.equal(download.suggestedFilename(), "Reply Sam Venue.txt");
+  assert.equal(fs.readFileSync(await download.path(), "utf8"), "Reply: Sam/Venue\n\nHi Sam,\nThe room is booked.");
+  assert.equal(await page.textContent("#padMsg"), "Downloaded Reply Sam Venue.txt.");
+  assert.deepEqual(app.errors, []);
 });
 
 test("a save over another tab's newer version keeps both versions", async (t) => {
