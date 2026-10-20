@@ -113,6 +113,17 @@ test("reporting settings are validated with safe defaults", () => {
   assert.ok(plain.warnings.some((w) => /reporting.endpoint ignored: only https/.test(w)));
 });
 
+test("licensing.allowTierOverride is a boolean that a later layer may change", () => {
+  assert.deepEqual(orgPolicy.parse({}).licensing, { allowTierOverride: false });
+  assert.equal(orgPolicy.parse({ licensing: { allowTierOverride: true } }).licensing.allowTierOverride, true);
+  const loose = orgPolicy.parse({ licensing: { allowTierOverride: "yes" } });
+  assert.equal(loose.licensing.allowTierOverride, false);
+  assert.ok(loose.warnings.some((w) => /licensing.allowTierOverride ignored: use true or false/.test(w)));
+  assert.equal(orgPolicy.parse({ licensing: "x" }).licensing.allowTierOverride, false);
+  assert.equal(orgPolicy.parse(orgPolicy.merge([{ licensing: { allowTierOverride: true } }, { licensing: { allowTierOverride: false } }])).licensing.allowTierOverride, false);
+  assert.equal(orgPolicy.parse(orgPolicy.merge([{ licensing: { allowTierOverride: true } }, {}])).licensing.allowTierOverride, true);
+});
+
 test("update servers are https only, channels are plain names, and later layers replace the whole block", () => {
   assert.deepEqual(orgPolicy.parse({}).updates, { url: null, channel: "latest" });
   assert.deepEqual(orgPolicy.parse({ updates: { url: " https://updates.example/actle/ ", channel: "beta" } }).updates, { url: "https://updates.example/actle", channel: "beta" });

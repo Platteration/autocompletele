@@ -31,6 +31,7 @@ test("a corrupt file is moved aside with a warning and defaults are used", () =>
   assert.equal(settings.charsPerMinute, null);
   assert.equal(settings.keyboardLayout, "auto");
   assert.equal(settings.deferUpdates, false);
+  assert.equal(settings.tierOverride, null);
   const warnings = store.warnings();
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /settings\.json could not be read/);
@@ -105,6 +106,10 @@ test("settings that drive native behaviour are normalised to safe values", () =>
   assert.equal(settings.keyboardLayout, "auto");
   assert.equal(settings.deferUpdates, false, "only a real true defers downloads");
   assert.equal(settings.paletteShortcut, "CommandOrControl+Shift+Space");
-  store.saveSettings({ keyboardLayout: "de-DE", deferUpdates: true });
-  assert.deepEqual([store.loadSettings().keyboardLayout, store.loadSettings().deferUpdates], ["de-DE", true]);
+  store.saveSettings({ keyboardLayout: "de-DE", deferUpdates: true, tierOverride: "team" });
+  assert.deepEqual([store.loadSettings().keyboardLayout, store.loadSettings().deferUpdates, store.loadSettings().tierOverride], ["de-DE", true, "team"]);
+  for (const bad of ["platinum", 5, true, ""]) {
+    store.saveSettings({ tierOverride: bad });
+    assert.equal(store.loadSettings().tierOverride, null, "tierOverride " + JSON.stringify(bad) + " is not a tier");
+  }
 });

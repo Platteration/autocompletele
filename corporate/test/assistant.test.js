@@ -177,3 +177,99 @@ test("a policy refresh keeps the learning session and field state of the field b
   assert.equal(assistant.engine.session, null);
   assert.equal(assistant.corpusInfo().sessions, 1);
 });
+
+test("the testing tier override lowers an unenforced desk live and is only honoured downwards once enforced", async () => {
+  const license = require("../core/license.js");
+  const vendor = signing.generateKeyPair();
+  const dataDir = temp();
+  fs.writeFileSync(path.join(dataDir, "policy.json"), JSON.stringify({
+    organization: "Example Ltd",
+    capture: { defaultMode: "learn" },
+    library: [{ trigger: "sig/", expansion: "Kind regards" }],
+    keywordRules: [{ id: "r", keywords: ["refund"], insert: "Policy text" }],
+    lookups: [{ trigger: "/cust", label: "Customer", source: { kind: "csv", path: "S:/x.csv", key: "id" }, template: "[[id]]" }],
+    reporting: { endpoint: "https://collect.example/actle" },
+  }));
+  const keychain = { isEncryptionAvailable: () => true, encryptString: (t) => Buffer.from("K" + t), decryptString: (b) => Buffer.from(b).toString().slice(1) };
+  const desk = createAssistant({ dataDir, keychain, now: () => Date.UTC(2026, 5, 1) });
+  desk.saveSettings({ captureApps: [{ label: "Notepad", mode: "learn", match: { process: "notepad" } }] });
+  assert.deepEqual([desk.licence().status, desk.licence().tier, desk.licence().tierSource], ["unenforced", "enterprise", "unenforced"]);
+  assert.equal(desk.licence().override.allowed, true);
+  assert.equal(desk.licence().usage.shortcuts, 1);
+
+  desk.saveSettings({ tierOverride: "free" });
+  assert.deepEqual([desk.licence().tier, desk.licence().tierSource, desk.licence().entitled], ["free", "override", false]);
+  assert.equal(desk.focusChanged({ process: "notepad" }).mode, "triggers", "the person's own learn rule cannot restore learning on Free");
+  let actions = [];
+  for (const ch of "about the refund sig/") actions = actions.concat(desk.keyTyped({ text: ch }));
+  assert.deepEqual(actions.map((a) => a.type), ["expand"], "no keyword offer; the shortcut still expands");
+  assert.ok(desk.warnings().some((w) => /^Testing override: this desk runs the Free tier/.test(w)));
+  assert.ok(desk.warnings().some((w) => /^Free tier/.test(w)));
+  assert.deepEqual(desk.policyInfo().lookups, []);
+  assert.equal(desk.policyInfo().reporting.endpoint, null);
+  assert.equal(desk.usageReport().tier, "free");
+  const changed = desk.audit().filter((e) => e.event === "tier-override-changed");
+  assert.deepEqual(changed.map((e) => [e.from, e.to, e.honoured]), [[null, "free", true]]);
+  assert.equal(desk.licence().status, "unenforced", "the licence state itself is untouched");
+
+  desk.saveSettings({ tierOverride: "team" });
+  assert.equal(desk.licence().tier, "team");
+  assert.equal(desk.focusChanged({ process: "notepad" }).mode, "learn");
+  actions = [];
+  for (const ch of "about the refund ") actions = actions.concat(desk.keyTyped({ text: ch }));
+  assert.deepEqual(actions.map((a) => a.type), ["keyword"], "offers are back on Team");
+  assert.deepEqual(desk.policyInfo().lookups, [], "lookups stay off on Team");
+
+  desk.saveSettings({ tierOverride: null });
+  assert.deepEqual([desk.licence().tier, desk.licence().tierSource], ["enterprise", "unenforced"]);
+  assert.equal(desk.policyInfo().lookups.length, 1, "everything is back without a restart");
+  assert.equal(desk.warnings().some((w) => /^Testing override/.test(w)), false);
+
+  // Enforced: a valid Business licence; the override is ignored unless the policy allows it, and never upwards.
+  const token = license.issueLicence({ id: "LIC-7", organization: "Example Ltd", seats: 10, issuedAt: "2026-01-01", expiresAt: "2026-12-31", graceDays: 30 }, vendor.privateKey);
+  const policy = JSON.parse(fs.readFileSync(path.join(dataDir, "policy.json"), "utf8"));
+  fs.writeFileSync(path.join(dataDir, "policy.json"), JSON.stringify(Object.assign({ licence: token }, policy)));
+  const enforced = createAssistant({ dataDir, keychain, now: () => Date.UTC(2026, 5, 1), vendorPublicKeys: [vendor.publicKey] });
+  assert.deepEqual([enforced.licence().status, enforced.licence().tier, enforced.licence().licensedTier], ["valid", "business", "business"]);
+  enforced.saveSettings({ tierOverride: "free" });
+  assert.deepEqual([enforced.licence().tier, enforced.licence().override.allowed, enforced.licence().override.honoured], ["business", false, false]);
+  assert.match(enforced.licence().override.note, /does not allow trying other tiers/);
+  assert.equal(enforced.audit().filter((e) => e.event === "tier-override-changed").pop().honoured, false);
+  fs.writeFileSync(path.join(dataDir, "policy.json"), JSON.stringify(Object.assign({ licence: token, licensing: { allowTierOverride: true } }, policy)));
+  const allowed = createAssistant({ dataDir, keychain, now: () => Date.UTC(2026, 5, 1), vendorPublicKeys: [vendor.publicKey] });
+  assert.deepEqual([allowed.licence().tier, allowed.licence().tierSource], ["free", "override"], "the stored override applies once the policy allows it");
+  allowed.saveSettings({ tierOverride: "enterprise" });
+  assert.deepEqual([allowed.licence().tier, allowed.licence().override.honoured], ["business", false], "never above the licence");
+  assert.match(allowed.licence().override.note, /Enterprise is above this desk's Business tier/);
+  assert.equal(JSON.stringify(allowed.audit()).includes("Kind regards"), false);
+});
+
+test("a managed desk over its tier's layer cap applies every layer and warns; the shortcut cap trims the last layer's entries first", async () => {
+  const org = [];
+  for (let i = 0; i < 20; i++) org.push({ trigger: "o" + i + "/", expansion: "org " + i });
+  const team = [];
+  for (let i = 0; i < 10; i++) team.push({ trigger: "t" + i + "/", expansion: "team " + i });
+  const served = {
+    [ORG]: signed({ layer: "org", serial: 1, organization: "Example Ltd", library: org, capture: { apps: [{ id: "bank", label: "Bank", mode: "off", match: { title: "Bank" } }] } }),
+    [TEAM]: signed({ layer: "team", serial: 1, library: team }),
+  };
+  const { assistant } = managedDesk(served);
+  await assistant.refreshPolicy();
+  assert.equal(assistant.policyInfo().organizationLibrary.length, 30);
+  assistant.saveSettings({ tierOverride: "free" });
+  const info = assistant.policyInfo();
+  assert.equal(info.organizationLibrary.length, 25, "Free keeps the first 25 in policy order");
+  assert.deepEqual(info.organizationLibrary.slice(20, 25).map((s) => s.trigger), ["t0/", "t1/", "t2/", "t3/", "t4/"], "the organisation layer comes first, the team layer is cut");
+  assert.ok(assistant.warnings().some((w) => w === "5 organisation shortcuts ignored: the Free tier allows 25 (the first 25 in policy order are kept)"));
+  assert.ok(assistant.warnings().some((w) => w === "policy layers: 2 applied, the Free tier allows 1; nothing was dropped"));
+  assert.equal(info.capture.apps.some((r) => r.label === "Bank" && r.mode === "off"), true, "no layer was dropped: the bank rule from the second layer still applies");
+  assert.deepEqual(assistant.licence().usage, { shortcuts: 30, layers: 2 });
+  assert.deepEqual(assistant.licence().limits, { seats: 1, shortcuts: 25, layers: 1 });
+  assistant.focusChanged({ process: "notepad" });
+  let actions = [];
+  for (const ch of "t9/") actions = actions.concat(assistant.keyTyped({ text: ch }));
+  assert.deepEqual(actions, [], "a trimmed shortcut does not expand");
+  actions = [];
+  for (const ch of "t4/") actions = actions.concat(assistant.keyTyped({ text: ch }));
+  assert.equal(actions[0] && actions[0].text, "team 4");
+});
