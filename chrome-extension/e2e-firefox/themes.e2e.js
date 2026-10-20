@@ -35,8 +35,13 @@ test("Firefox style choice saves locally, restyles the library and keeps overlay
     await waitValue("#inp", "be right back");
     await (await element("#inp")).sendKeys(" ;;");
     await driver.wait(() => driver.executeScript("return !!document.getElementById('shorthand-picker-host')"), 5000);
-    const position = await driver.executeScript("return getComputedStyle(document.getElementById('shorthand-picker-host')).position");
-    assert.equal(position, "fixed", "the overlay's own sheet must still apply next to the shared style sheet");
+    const box = await driver.executeScript(() => {
+      const host = document.getElementById("shorthand-picker-host");
+      return { position: getComputedStyle(host).position, width: host.getBoundingClientRect().width };
+    });
+    assert.equal(box.position, "fixed", "the overlay's own sheet must still apply next to the shared style sheet");
+    // Classic draws a 1px frame around the 340px panel; Swiss Grid's shared sheet draws 2px.
+    assert.ok(box.width >= 343.5 && box.width <= 344.5, `Swiss Grid must restyle the open picker: ${JSON.stringify(box)}`);
     await (await element("#inp")).sendKeys("cool");
     await (await element("#inp")).sendKeys(Key.ENTER);
     await waitValue("#inp", "be right back That is really cool!");
