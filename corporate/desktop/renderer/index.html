@@ -85,6 +85,15 @@
         <button class="plain" id="suggestions-save">Export suggestions…</button>
       </div>
       <table><thead><tr><th>Text</th><th>Your trigger</th><th></th></tr></thead><tbody id="suggestions"></tbody></table>
+      <h2 class="mt">Remembered answers per conversation</h2>
+      <p class="hint">When you fill in a template while writing an email, the answers are kept for that conversation (its subject, per mail application) and offered the next time a template in the same conversation asks for the same blank. Nothing is inserted without you seeing it first.</p>
+      <p class="hint" id="threads-info"></p>
+      <div class="toolbar">
+        <label class="row m0"><input type="checkbox" id="threads-enabled"> Remember my template answers per email conversation</label>
+        <span class="spacer"></span>
+        <button class="plain" id="threads-clear">Forget all…</button>
+      </div>
+      <table><thead><tr><th>Conversation</th><th>Answers</th><th>Updated</th><th></th></tr></thead><tbody id="threads"></tbody></table>
     </section>
 
     <section id="tab-apps" role="tabpanel" hidden>

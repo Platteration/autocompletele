@@ -158,8 +158,12 @@ function handleAction(action) {
       return insertLookup(action).catch((error) => assistant.log("lookup failed: " + error));
     case "undo":
       return sender.undo(action);
-    case "template":
-      return showPopover("template", Object.assign({ kind: "template" }, action), { width: 420, height: 120 + 72 * (action.fields.length + action.variables.length) });
+    case "template": {
+      // Answers given earlier in the same email conversation are offered as defaults.
+      const memory = assistant.templateDefaults(action);
+      const prefilled = Object.keys(memory.values).length > 0;
+      return showPopover("template", Object.assign({ kind: "template", memory }, action), { width: 420, height: 120 + 72 * (action.fields.length + action.variables.length) + (prefilled ? 28 : 0) });
+    }
     case "documents":
       return showPopover("documents", Object.assign({ kind: "documents" }, action), { width: 460, height: 160 + 44 * action.documents.length });
     case "keyword":
@@ -176,10 +180,15 @@ async function submitPopover(payload) {
   if (!state || !payload) return { ok: false };
   if (state.kind === "template") {
     const rendered = personal.template.render(state.expansion, payload.values || {}, new Date(), payload.pronouns || null);
-    await sender.replace({ backspaces: state.backspaces, text: rendered.text, cursorOffset: rendered.cursorOffset });
-    // The trigger was typed into the field only when it has to be deleted
-    // (typed trigger); from a keyword offer or the palette nothing was typed.
-    assistant.recordInsert({ kind: "template", trigger: state.trigger, source: state.source, inserted: rendered.text, typed: state.backspaces ? state.trigger : "", spentKeystrokes: state.spentKeystrokes });
+    const result = await sender.replace({ backspaces: state.backspaces, text: rendered.text, cursorOffset: rendered.cursorOffset });
+    // Counted and remembered only once the text is in the field: a failed
+    // insert must neither count nor teach. The trigger was typed into the
+    // field only when it has to be deleted (typed trigger); from a keyword
+    // offer or the palette nothing was typed.
+    if (result && result.ok) {
+      assistant.templateInserted(state, payload, rendered.text);
+      broadcast({ learning: true });
+    }
   } else if (state.kind === "documents") {
     const chosen = state.documents.filter((doc, index) => (payload.selected || []).includes(index));
     if (payload.action === "reveal") {
@@ -320,6 +329,9 @@ function openPalette() {
     paletteWindow.focus();
     return;
   }
+  // The window that has the focus now is where the choice will be inserted
+  // and whose conversation remembered answers belong to.
+  assistant.paletteOpened();
   paletteWindow = new BrowserWindow(windowOptions({
     width: 560, height: 420, frame: false, alwaysOnTop: true, resizable: false, skipTaskbar: true, center: true, title: "actle search",
   }));
@@ -438,6 +450,9 @@ function registerIpc() {
   handle("learning:accept", (c) => { const r = assistant.acceptCandidate(c || {}); broadcast({ library: true, learning: true }); return r; });
   handle("learning:dismiss", (text) => { const r = assistant.dismissCandidate(text); broadcast({ learning: true }); return r; });
   handle("learning:info", () => assistant.corpusInfo());
+  handle("threads:list", () => assistant.threads());
+  handle("threads:forget", (id) => { const r = assistant.forgetThread(id); broadcast({ learning: true }); return { ok: true, removed: r }; });
+  handle("threads:clear", () => { const r = assistant.forgetThreads(); broadcast({ learning: true, policy: true }); return { ok: true, removed: r }; });
   handle("suggestions:add", (candidate) => { const r = assistant.suggest(candidate || {}); broadcast({ learning: true }); return r; });
   handle("suggestions:remove", (text) => { const r = assistant.unsuggest(String(text || "")); broadcast({ learning: true }); return r; });
   handle("suggestions:list", () => assistant.suggestions());
