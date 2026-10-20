@@ -71,9 +71,11 @@
       <span><strong id="suggestToggleLabel">Writing suggestions</strong><small id="suggestToggleHint"></small></span>
       <input type="checkbox" id="suggestToggle" aria-labelledby="suggestToggleLabel" aria-describedby="suggestToggleHint" disabled>
     </label>
-    <!-- Suggestion cards render inside #padSuggestions. pad.js empties and hides
-         it while suggestions are off; see self.ActlePad in pad.js. -->
-    <div id="padSuggestions" class="suggestion-panel" data-pad-suggestions aria-live="polite" hidden></div>
+    <!-- pad-suggestions.js renders its cards inside #padSuggestions, with its
+         own status lines: the cards hold the draft's text, which must not be
+         read out on every change. pad.js empties and hides it while
+         suggestions are off; see self.ActlePad in pad.js. -->
+    <div id="padSuggestions" class="suggestion-panel" data-pad-suggestions hidden></div>
   </aside>
   </div>
   </div>
@@ -92,6 +94,9 @@
   <script src="premium-client.js"></script>
   <script src="content.js"></script>
   <script src="pad-store.js"></script>
+  <script src="phrase-miner.js"></script>
+  <script src="template-maker.js"></script>
   <script src="pad.js"></script>
+  <script src="pad-suggestions.js"></script>
 </body>
 </html>

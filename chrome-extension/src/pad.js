@@ -6,8 +6,7 @@
 // draft is not switched away from or deleted while its text is unsaved, and a
 // save over a version another tab wrote is kept as a new draft instead.
 //
-// Suggestions hook, for the suggestion engines (load their scripts after this
-// one):
+// Suggestions hook, used by pad-suggestions.js (loaded after this script):
 //
 //   self.ActlePad.panel
 //     The element to render suggestion cards into. pad.js empties and hides
@@ -17,9 +16,11 @@
 //     Registers fn(currentDraft, allDraftTexts); a later call replaces it and
 //     onSuggest(null) removes it. fn is called only while suggestions are on:
 //     1.5 s after the last edit (so at most once per 1.5 s of idle typing),
-//     right after it is registered, when suggestions are turned on, and when
-//     another draft is opened. currentDraft is { id, title, body }, with the
-//     editor's current text; id is null for a new draft not saved yet.
+//     right after it is registered, when suggestions are turned on, when
+//     another draft is opened, and when the open draft changes without an
+//     input event or loads a newer save from another tab. currentDraft is
+//     { id, title, body }, with the editor's current text; id is null for a
+//     new draft not saved yet.
 //     allDraftTexts is a string[] of the bodies of every draft in the pad,
 //     with the editor's text in place of the open draft's saved copy. Its
 //     return value is ignored; an error it throws or rejects with is logged

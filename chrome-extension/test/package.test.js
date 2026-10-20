@@ -94,6 +94,16 @@ test("browser packages contain only runtime files and installable manifests", as
     for (const file of padScripts) assert.ok(files.includes(`src/${file}`), `The pad loads ${file}, which must ship`);
     const storeIndex = padScripts.indexOf("pad-store.js");
     assert.ok(storeIndex > padScripts.indexOf("content.js") && storeIndex < padScripts.indexOf("pad.js"), "The pad's storage must load before the pad");
+    // The Suggestions panel uses the pad's hook, the library storage and both engines.
+    assert.ok(files.includes("src/pad-suggestions.js"), "pad-suggestions.js must ship in both browser packages");
+    const panelIndex = padScripts.indexOf("pad-suggestions.js");
+    for (const name of ["storage.js", "phrase-miner.js", "template-maker.js", "pad.js"]) {
+      const index = padScripts.indexOf(name);
+      assert.ok(index >= 0 && index < panelIndex, `The pad must load ${name} before pad-suggestions.js`);
+    }
+    for (const name of ["phrase-miner.js", "template-maker.js"]) {
+      assert.ok(padScripts.indexOf(name) < padScripts.indexOf("pad.js"), `The pad loads ${name} before pad.js`);
+    }
     assert.doesNotMatch(pad, /<script(?![^>]*\bsrc=)[^>]*>/, "Extension pages allow no inline scripts");
     assert.doesNotMatch(pad, /\son[a-z]+\s*=/i, "Extension pages allow no inline event handlers");
     const popup = fs.readFileSync(path.join(directory, manifest.action.default_popup), "utf8");

@@ -248,3 +248,104 @@ test("the 320px writing pad keeps long drafts and every action on screen", async
   assert.equal(await page.isVisible("#draftSelect"), true, "narrow screens choose drafts from a list box");
   assert.equal(await page.isVisible("#draftList"), false);
 });
+
+// The Writing pad's Suggestions panel with a shortcut idea and a fill-in
+// template on screen.
+const SUGGEST_LETTER = "Hi Sam,\n\nThanks for the call on Tuesday. As you can see in the attached plan, the kickoff is on "
+  + "October 28, 2026 at 3:30 pm, and the deposit of $1,200.50 is due by then. Please send questions to support@example.com.\n\nBest regards,\nAlex";
+
+async function openSuggestingPad(app, theme, width, height = 900, letter = SUGGEST_LETTER) {
+  const seed = await app.context.newPage();
+  await seed.goto(`chrome-extension://${app.extensionId}/src/pad.html`);
+  await seed.waitForFunction(() => !document.getElementById("suggestToggle").disabled);
+  await seed.evaluate(async (body) => {
+    const store = self.ActlePadStore;
+    await store.createDraft({ title: "Launch notes", body: "As you can see, the numbers are up. As you can see, retention held. As you can see, we are on time." });
+    const draft = await store.createDraft({ title: "Follow up with Sam", body });
+    await store.savePrefs({ lastDraftId: draft.id });
+  }, letter);
+  await seed.close();
+  const page = await app.context.newPage();
+  await page.setViewportSize({ width, height });
+  await page.emulateMedia({ colorScheme: theme });
+  await page.goto(`chrome-extension://${app.extensionId}/src/pad.html`);
+  await page.waitForFunction(() => !document.getElementById("suggestToggle").disabled);
+  await page.waitForSelector(".template-card");
+  await page.waitForSelector('.suggest-card[data-phrase="as you can see"]');
+  return page;
+}
+
+for (const theme of ["light", "dark"]) {
+  test(`writing pad suggestions are readable in the ${theme} theme`, async (t) => {
+    const app = await launch();
+    t.after(() => app.close());
+    const page = await openSuggestingPad(app, theme, 1280);
+    // One chip left as written, so both chip states are measured.
+    await page.locator(".blank-chip").nth(1).click();
+    await page.mouse.move(0, 0);
+    await assertReadable(page, ".suggest-eyebrow, .suggest-text, .suggest-phrase, .suggest-title, .suggest-hint, .suggest-label, .blank-value, .pad-side button");
+    assert.deepEqual(await page.locator(".blank-chip").evaluateAll((all) => all.map((chip) => chip.getAttribute("aria-pressed"))).then((states) => [...new Set(states)].sort()), ["false", "true"]);
+    await assertKeyboardFocus(page, ".blank-chip >> nth=0", "Tab", ".blank-chip >> nth=1");
+    await assertKeyboardFocus(page, "#suggestToggle", "Tab", '.suggest-card[data-phrase="as you can see"] .suggest-trigger');
+
+    await page.fill('.suggest-card[data-phrase="as you can see"] .suggest-trigger', "cool/");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".suggest-msg.error");
+    await assertReadable(page, ".suggest-msg.error");
+    await page.fill('.suggest-card[data-phrase="as you can see"] .suggest-trigger', "aycs/");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector(".suggest-notice").textContent.startsWith("Saved aycs/"));
+    await assertReadable(page, ".suggest-notice, .suggest-notice a");
+
+    await page.click("#newDraftBtn");
+    await page.waitForSelector(".suggest-empty", { state: "visible" });
+    await assertReadable(page, ".suggest-empty p");
+  });
+}
+
+test("on wide screens long suggestions scroll in their own column", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestingPad(app, "light", 1280, 720);
+  const layout = await page.evaluate(() => {
+    const side = document.querySelector(".pad-side");
+    return {
+      page: [document.documentElement.scrollHeight, innerHeight],
+      side: [side.scrollHeight, side.clientHeight],
+      trash: document.getElementById("padTrashSummary").getBoundingClientRect().bottom,
+    };
+  });
+  assert.ok(layout.page[0] <= layout.page[1], `The page must not grow past the window: ${JSON.stringify(layout)}`);
+  assert.ok(layout.side[0] > layout.side[1], `The suggestions column scrolls instead: ${JSON.stringify(layout)}`);
+  assert.ok(layout.trash <= 720, `Recently deleted drafts stays in view: ${JSON.stringify(layout)}`);
+});
+
+test("the 320px writing pad keeps suggestion cards and their controls on screen", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const letter = "Hi Bartholomew-Alexander,\n\nThe full report is at https://example.com/reports/2026/quarterly/without-any-breaks/"
+    + "keeps-going-and-going?with=query&and=more and the contact is a.very.long.address.without.breaks@example-company-name.com, "
+    + "so please check it before October 28, 2026 at 3:30 pm and confirm the amount of $1,200.50 for order #123456789.\n\nBest regards,\nAlex";
+  const page = await openSuggestingPad(app, "light", 320, 640, letter);
+  // Chips left as written show their long values.
+  await page.locator(".blank-chip", { hasText: /^link$/ }).click();
+  await page.locator(".blank-chip", { hasText: /^email$/ }).click();
+  assert.equal(await page.locator('.blank-chip[aria-pressed="false"]').count(), 2);
+  const chips = await page.locator(".template-preview, .blank-chip").evaluateAll((all) => all.map((element) =>
+    ({ text: element.textContent.slice(0, 40), scroll: element.scrollWidth, width: element.clientWidth })));
+  for (const chip of chips) assert.ok(chip.scroll <= chip.width, `Long values wrap inside the preview: ${JSON.stringify(chip)}`);
+  const geometry = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    width: document.documentElement.scrollWidth,
+    boxes: [...document.querySelectorAll(".pad-side button, .pad-side input, .template-preview")]
+      .filter((element) => element.getClientRects().length)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { name: element.textContent || element.value || element.className, left: rect.left, right: rect.right };
+      }),
+  }));
+  assert.ok(geometry.width <= geometry.viewport, `Writing pad overflows: ${JSON.stringify(geometry)}`);
+  for (const box of geometry.boxes) {
+    assert.ok(box.left >= 0 && box.right <= geometry.viewport, `Suggestion controls must be reachable without horizontal scrolling: ${JSON.stringify(box)}`);
+  }
+});

@@ -412,3 +412,535 @@ test("deleting a draft, Undo and Recently deleted drafts", async (t) => {
     assert.deepEqual(app.errors, []);
   });
 });
+
+// ---- the Suggestions panel (pad-suggestions.js) ---------------------------------
+
+const PHRASES = "As you can see, the plan works. Thanks for your patience today. As you can see, it is cheap. "
+  + "Thanks for your patience again. As you can see, we are ready. Thanks for your patience, everyone.";
+const EMAIL = "Hi Sam,\n\nThanks for meeting on October 20, 2026. I will send the signed contract and the final invoice "
+  + "to you by the end of the week, and we can review the rollout plan together.\n\nBest regards,\nAlex";
+
+// A failing suggestion run is only logged as a warning by pad.js; count it.
+async function openSuggestPad(app, page) {
+  page = page || await app.context.newPage();
+  page.on("console", (m) => {
+    if (m.type() === "warning" && /suggestions failed/.test(m.text())) app.errors.push("pad: " + m.text());
+  });
+  return openPad(app, page);
+}
+
+function phraseCard(page, phrase) {
+  return page.locator(`.suggest-card[data-phrase="${phrase}"]`);
+}
+
+function notice(page) {
+  return page.locator(".suggest-notice").textContent();
+}
+
+async function library(app) {
+  return (await app.worker.evaluate(() => self.ShorthandStorage.getAll())).shorthands;
+}
+
+// Fills the editor the way pasting does, without typing through actle's
+// suggestion list.
+async function fillBody(page, text) {
+  await page.fill("#padBody", text);
+}
+
+test("a phrase written three times becomes a shortcut that works everywhere", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+
+  await t.test("twice is not enough", async () => {
+    await fillBody(page, "As you can see, the plan works. As you can see, it is cheap.");
+    await waitSaved(page);
+    await page.waitForTimeout(2000); // past the 1.5 s idle wait
+    assert.equal(await page.locator(".suggest-card").count(), 0);
+    assert.equal(await page.isVisible(".suggest-empty"), true, "the panel says there is nothing yet");
+  });
+
+  await t.test("the third time offers it with an initials trigger", async () => {
+    await fillBody(page, "As you can see, the plan works. As you can see, it is cheap. As you can see, we are ready.");
+    const card = phraseCard(page, "as you can see");
+    await card.waitFor();
+    assert.equal(await card.locator(".suggest-text").textContent(), "You've written “As you can see” 3 times.");
+    assert.equal(await card.locator(".suggest-trigger").inputValue(), "aycs/");
+    assert.equal(await page.isVisible(".suggest-empty"), false);
+    assert.equal(await page.locator(".suggest-root > .sr-only[role=status]").textContent(), "New shortcut idea: “As you can see”.",
+      "a new idea is announced in a status line of its own");
+  });
+
+  await t.test("Make shortcut saves it to the library and says so", async () => {
+    await phraseCard(page, "as you can see").getByRole("button", { name: /^Make shortcut/ }).click();
+    await page.waitForFunction(() => document.querySelector(".suggest-notice").textContent.startsWith("Saved"));
+    assert.equal(await notice(page), "Saved aycs/. Type it anywhere to insert “As you can see”. Open library");
+    const link = page.locator(".suggest-notice a");
+    assert.equal(await link.getAttribute("href"), "options.html");
+    assert.equal(await link.getAttribute("target"), "_blank");
+    assert.equal(await phraseCard(page, "as you can see").count(), 0);
+    const saved = (await library(app)).filter((item) => item.trigger === "aycs/");
+    assert.deepEqual(saved.map((item) => item.expansion), ["As you can see"]);
+
+    const options = await app.context.newPage();
+    await options.goto(`chrome-extension://${app.extensionId}/src/options.html`);
+    await options.waitForSelector("#list tbody tr");
+    assert.ok((await options.locator("#list td.trigger").allTextContents()).includes("aycs/"), "the library lists it");
+    await options.close();
+  });
+
+  await t.test("it is not offered again once it is a shortcut", async () => {
+    await fillBody(page, "As you can see, the plan works. As you can see, it is cheap. As you can see, we are ready!");
+    await page.waitForTimeout(2200);
+    assert.equal(await phraseCard(page, "as you can see").count(), 0);
+  });
+
+  await t.test("the new shortcut expands on a web page", async () => {
+    await app.page.bringToFront();
+    await app.page.click("#ta");
+    await app.page.keyboard.type("aycs/");
+    await app.page.waitForFunction(() => document.getElementById("ta").value === "As you can see");
+  });
+
+  await t.test("reports no page errors", () => {
+    assert.deepEqual(app.errors, []);
+  });
+});
+
+test("Make shortcut checks the trigger like the library", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await fillBody(page, PHRASES);
+  const card = phraseCard(page, "as you can see");
+  await card.waitFor();
+  const input = card.locator(".suggest-trigger");
+  const make = card.getByRole("button", { name: /^Make shortcut/ });
+  const message = () => card.locator(".suggest-msg").textContent();
+
+  await t.test("a trigger typed in the card does not expand", async () => {
+    await input.click();
+    await input.press("Control+a");
+    await page.keyboard.type("cool/");
+    await page.waitForTimeout(300);
+    assert.equal(await input.inputValue(), "cool/");
+  });
+
+  await t.test("a used trigger is refused", async () => {
+    await make.click();
+    await card.locator(".suggest-msg.error").waitFor();
+    assert.equal(await message(), "That trigger is already used.");
+    assert.equal(await input.evaluate((el) => el === document.activeElement), true, "focus goes back to the trigger");
+  });
+
+  await t.test("an empty trigger and spaces are refused", async () => {
+    await input.fill("   ");
+    await make.click();
+    assert.equal(await message(), "Trigger cannot be empty.");
+    await input.fill("as you");
+    await input.press("Enter");
+    assert.equal(await message(), "Trigger cannot contain spaces.");
+    assert.equal((await library(app)).some((item) => item.expansion === "As you can see"), false);
+  });
+
+  await t.test("a trigger the person typed survives the next suggestion run", async () => {
+    await input.fill("seeit/");
+    await fillBody(page, PHRASES + " As you can see, more.");
+    await page.waitForFunction(() => document.querySelector('.suggest-card[data-phrase="as you can see"] .suggest-text')
+      .textContent.includes("4 times"));
+    assert.equal(await input.inputValue(), "seeit/");
+  });
+
+  await t.test("a failing save shows the library's error and keeps the card", async () => {
+    await page.evaluate(() => {
+      window.realSyncSet = chrome.storage.sync.set;
+      chrome.storage.sync.set = () => Promise.reject(new Error("Resource::kQuotaBytesPerItem quota exceeded"));
+    });
+    await make.click();
+    await card.locator(".suggest-msg.error").waitFor();
+    assert.equal(await message(), "Could not save: Resource::kQuotaBytesPerItem quota exceeded");
+    assert.equal(await input.inputValue(), "seeit/");
+    await page.evaluate(() => { chrome.storage.sync.set = window.realSyncSet; });
+    await make.click();
+    await page.waitForFunction(() => document.querySelector(".suggest-notice").textContent.startsWith("Saved seeit/."));
+    assert.deepEqual((await library(app)).filter((item) => item.trigger === "seeit/").map((item) => item.expansion), ["As you can see"]);
+  });
+
+  await t.test("reports no page errors", () => {
+    assert.deepEqual(app.errors, []);
+  });
+});
+
+test("Not now and Don't suggest this", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  let page = await openSuggestPad(app);
+  await fillBody(page, PHRASES);
+  await phraseCard(page, "as you can see").waitFor();
+  await phraseCard(page, "thanks for your patience").waitFor();
+
+  await t.test("Not now hides a phrase until the pad is opened again", async () => {
+    await phraseCard(page, "as you can see").getByRole("button", { name: /^Not now/ }).click();
+    assert.equal(await phraseCard(page, "as you can see").count(), 0);
+    assert.equal(await notice(page), "“As you can see” is hidden until you open the pad again.");
+    assert.equal(await page.evaluate(() => document.activeElement.closest(".suggest-card")?.dataset.phrase),
+      "thanks for your patience", "keyboard focus moves to the next idea");
+    await fillBody(page, PHRASES + " Again.");
+    await page.waitForTimeout(2200);
+    assert.equal(await phraseCard(page, "as you can see").count(), 0);
+    assert.equal(await phraseCard(page, "thanks for your patience").count(), 1);
+    await page.reload();
+    await waitReady(page);
+    await phraseCard(page, "as you can see").waitFor();
+  });
+
+  await t.test("Don't suggest this is remembered on this device", async () => {
+    await phraseCard(page, "thanks for your patience").getByRole("button", { name: /^Don't suggest this/ }).click();
+    await page.waitForFunction(() => document.querySelector(".suggest-notice").textContent === "“Thanks for your patience” will not be suggested again.");
+    assert.deepEqual((await stored(app))["pad-dismissed"], ["thanks for your patience"]);
+    const sync = await app.worker.evaluate(() => chrome.storage.sync.get(null));
+    assert.equal(Object.keys(sync).some((key) => key.startsWith("pad-")), false);
+    await page.close();
+    page = await openSuggestPad(app);
+    await phraseCard(page, "as you can see").waitFor();
+    await page.waitForTimeout(500);
+    assert.equal(await phraseCard(page, "thanks for your patience").count(), 0);
+  });
+
+  await t.test("at most three ideas show; hiding one makes room for the next", async () => {
+    const four = PHRASES + " Keep the receipts safe. Keep the receipts safe. Keep the receipts safe."
+      + " Call the front desk. Call the front desk. Call the front desk.";
+    await fillBody(page, four);
+    await page.waitForFunction(() => document.querySelectorAll(".suggest-card[data-phrase]").length === 3);
+    await page.waitForTimeout(500);
+    const shown = await page.locator(".suggest-card[data-phrase]").evaluateAll((all) => all.map((li) => li.dataset.phrase));
+    assert.equal(shown.length, 3);
+    assert.equal(shown.includes("thanks for your patience"), false, "dismissed phrases stay away");
+    const hidden = ["as you can see", "keep the receipts safe", "call the front desk"].find((phrase) => !shown.includes(phrase));
+    assert.equal(hidden, undefined, "the three remaining ideas all show");
+    await fillBody(page, four + " Bring a pen. Bring a pen. Bring a pen. Book the big room. Book the big room. Book the big room.");
+    await page.waitForTimeout(2200);
+    const before = await page.locator(".suggest-card[data-phrase]").evaluateAll((all) => all.map((li) => li.dataset.phrase));
+    assert.equal(before.length, 3);
+    await phraseCard(page, before[0]).getByRole("button", { name: /^Not now/ }).click();
+    await page.waitForFunction((gone) => {
+      const now = [...document.querySelectorAll(".suggest-card[data-phrase]")].map((li) => li.dataset.phrase);
+      return now.length === 3 && !now.includes(gone);
+    }, before[0]);
+    await page.reload();
+    await waitReady(page);
+    await fillBody(page, PHRASES);
+    await page.waitForTimeout(2200);
+  });
+
+  await t.test("a shortcut added elsewhere removes its idea without typing", async () => {
+    await app.worker.evaluate(() => self.ShorthandStorage.saveShorthand({ trigger: "see/", expansion: "as you can see" }));
+    await phraseCard(page, "as you can see").waitFor({ state: "detached" });
+    assert.equal(await page.isVisible(".suggest-empty"), true);
+  });
+
+  await t.test("reports no page errors", () => {
+    assert.deepEqual(app.errors, []);
+  });
+});
+
+test("an email draft becomes a fill-in template", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  const card = page.locator(".template-card");
+  const chips = card.locator(".blank-chip");
+  const message = () => card.locator(".suggest-msg").textContent();
+
+  await t.test("a draft under 20 words gets no template", async () => {
+    await fillBody(page, "Hi Sam,\n\nSee you on October 20, 2026.\n\nBest regards,\nAlex");
+    await waitSaved(page);
+    await page.waitForTimeout(2000);
+    assert.equal(await card.count(), 0);
+  });
+
+  await t.test("the greeting name and the date are offered as blanks", async () => {
+    await page.fill("#padTitle", "Follow up with Sam");
+    await fillBody(page, EMAIL);
+    await card.waitFor();
+    assert.equal(await card.locator(".suggest-title").textContent(), "Turn this draft into a fill-in template");
+    assert.deepEqual(await chips.allTextContents(), ["name", "date"]);
+    assert.deepEqual(await chips.evaluateAll((all) => all.map((chip) => chip.getAttribute("aria-pressed"))), ["true", "true"]);
+    assert.equal(await card.locator(".template-preview").textContent(), EMAIL.replace("Sam", "name").replace("October 20, 2026", "date"));
+    assert.deepEqual(await card.locator(".blank-name").evaluateAll((all) => all.map((input) => input.value)), ["name", "date"]);
+    assert.equal(await card.locator(".suggest-trigger").inputValue(), "fuw/", "initials of the first three title words");
+    assert.equal(await page.locator(".template-preview").evaluate((el) => !el.closest("[aria-live], [role=status]")), true,
+      "the draft's text is not in a live region, so it is not read out on every change");
+  });
+
+  await t.test("Save as template saves [[name]] and [[date]]", async () => {
+    await card.getByRole("button", { name: "Save as template" }).click();
+    await page.waitForFunction(() => document.querySelector(".suggest-notice").textContent.startsWith("Saved"));
+    assert.equal(await notice(page), "Saved fuw/. Typing it opens the fill-in form. Open library");
+    const [saved] = (await library(app)).filter((item) => item.trigger === "fuw/");
+    assert.equal(saved.expansion, "Hi [[name]],\n\nThanks for meeting on [[date]]. I will send the signed contract and the final invoice "
+      + "to you by the end of the week, and we can review the rollout plan together.\n\nBest regards,\nAlex");
+    assert.equal(await card.count(), 0, "the card stays away until the draft changes");
+  });
+
+  await t.test("on a web page the template asks for each blank and inserts the email", async () => {
+    await app.page.bringToFront();
+    await app.page.click("#ta");
+    await app.page.keyboard.type("fuw/");
+    await app.page.waitForSelector("#shorthand-template-host", { timeout: 5000 });
+    await app.page.keyboard.type("Ana");
+    await app.page.keyboard.press("Tab");
+    await app.page.keyboard.type("November 3, 2026");
+    await app.page.keyboard.press("Enter");
+    await app.page.waitForSelector("#shorthand-template-host", { state: "detached", timeout: 5000 });
+    assert.equal(await app.page.inputValue("#ta"), EMAIL.replace("Sam", "Ana").replace("October 20, 2026", "November 3, 2026"));
+  });
+
+  await t.test("reports no page errors", () => {
+    assert.deepEqual(app.errors, []);
+  });
+});
+
+test("the template's trigger stays clear of the shortcut ideas' triggers", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await page.fill("#padTitle", "See you soon notes");
+  await fillBody(page, EMAIL + "\nSee you soon. See you soon. See you soon.");
+  await phraseCard(page, "see you soon").waitFor();
+  await page.locator(".template-card").waitFor();
+  assert.equal(await phraseCard(page, "see you soon").locator(".suggest-trigger").inputValue(), "sys/");
+  assert.equal(await page.locator(".template-card .suggest-trigger").inputValue(), "sys2/");
+  assert.deepEqual(app.errors, []);
+});
+
+test("template chips, blank names and Not now", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await fillBody(page, EMAIL);
+  const card = page.locator(".template-card");
+  await card.waitFor();
+  const chips = card.locator(".blank-chip");
+  const save = card.getByRole("button", { name: "Save as template" });
+  const message = () => card.locator(".suggest-msg").textContent();
+
+  await t.test("the prefilled trigger is draft/ without a title, and avoids used triggers", async () => {
+    assert.equal(await card.locator(".suggest-trigger").inputValue(), "draft/");
+    await app.worker.evaluate(() => self.ShorthandStorage.saveShorthand({ trigger: "draft/", expansion: "Draft" }));
+    await page.waitForFunction(() => document.querySelector(".template-card .suggest-trigger").value === "draft2/");
+  });
+
+  await t.test("Space on a chip keeps its value as written", async () => {
+    await chips.first().focus();
+    await page.keyboard.press("Space");
+    assert.equal(await chips.first().getAttribute("aria-pressed"), "false");
+    assert.equal(await chips.first().textContent(), "Sam");
+    assert.deepEqual(await card.locator(".blank-name").evaluateAll((all) => all.map((input) => input.value)), ["date"]);
+    await page.keyboard.press("Enter");
+    assert.equal(await chips.first().getAttribute("aria-pressed"), "true");
+    await page.keyboard.press("Space");
+    assert.equal(await chips.first().evaluate((el) => el === document.activeElement), true, "focus stays on the chip");
+  });
+
+  await t.test("a blank name is edited in the list and checked", async () => {
+    const name = card.locator(".blank-name").first();
+    await name.fill("");
+    await save.click();
+    assert.equal(await message(), "Give every blank a name.");
+    assert.equal(await name.evaluate((el) => el === document.activeElement), true);
+    await name.fill("[day]");
+    await save.click();
+    assert.equal(await message(), "A blank name cannot contain [ or ].");
+    await name.fill("meeting day");
+    assert.equal(await chips.nth(1).textContent(), "meeting day");
+  });
+
+  await t.test("the template's trigger is checked like the library's", async () => {
+    await card.locator(".suggest-trigger").fill("cool/");
+    await save.click();
+    await card.locator(".suggest-msg.error").waitFor();
+    assert.equal(await message(), "That trigger is already used.");
+    await card.locator(".suggest-trigger").fill("sam /");
+    await save.click();
+    assert.equal(await message(), "Trigger cannot contain spaces.");
+    await card.locator(".suggest-trigger").fill("");
+    await save.click();
+    assert.equal(await message(), "Trigger cannot be empty.");
+  });
+
+  await t.test("the saved template has only the chosen blanks, under the chosen names", async () => {
+    await card.locator(".suggest-trigger").fill("sam/");
+    await save.click();
+    await page.waitForFunction(() => document.querySelector(".suggest-notice").textContent.startsWith("Saved sam/."));
+    const [saved] = (await library(app)).filter((item) => item.trigger === "sam/");
+    assert.match(saved.expansion, /^Hi Sam,\n\nThanks for meeting on \[\[meeting day\]\]\. I will send/);
+  });
+
+  await t.test("Not now hides the template for this draft until the pad is opened again", async () => {
+    await fillBody(page, EMAIL + "\nP.S. See you there.");
+    await card.waitFor();
+    await card.getByRole("button", { name: /^Not now/ }).click();
+    assert.equal(await card.count(), 0);
+    assert.equal(await notice(page), "The fill-in template for this draft is hidden until you open the pad again.");
+    await fillBody(page, EMAIL + "\nP.S. See you there!");
+    await page.waitForTimeout(2200);
+    assert.equal(await card.count(), 0);
+    await page.reload();
+    await waitReady(page);
+    await card.waitFor();
+  });
+
+  await t.test("reports no page errors", () => {
+    assert.deepEqual(app.errors, []);
+  });
+});
+
+test("switching suggestions off removes the cards and stays off", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await fillBody(page, PHRASES + "\n\n" + EMAIL);
+  await phraseCard(page, "as you can see").waitFor();
+  await page.locator(".template-card").waitFor();
+
+  await page.click("#suggestToggle");
+  assert.equal(await page.locator("#padSuggestions").evaluate((el) => el.hidden), true);
+  assert.equal(await page.locator("#padSuggestions").evaluate((el) => el.childElementCount), 0);
+  await page.waitForFunction(async () => (await chrome.storage.local.get("pad-prefs"))["pad-prefs"].suggestions === false);
+
+  await page.reload();
+  await waitReady(page);
+  assert.equal(await page.isChecked("#suggestToggle"), false);
+  await fillBody(page, PHRASES + "\n\n" + EMAIL + " More.");
+  await page.waitForTimeout(2200);
+  assert.equal(await page.locator("#padSuggestions").evaluate((el) => el.hidden), true);
+  assert.equal(await page.locator("#padSuggestions").evaluate((el) => el.childElementCount), 0, "nothing is analyzed or shown");
+
+  await page.click("#suggestToggle");
+  await phraseCard(page, "as you can see").waitFor();
+  await page.locator(".template-card").waitFor();
+
+  // A run still reading the library when suggestions go off shows nothing.
+  await page.evaluate(() => {
+    const getAll = self.ShorthandStorage.getAll;
+    self.ShorthandStorage.getAll = () => new Promise((resolve) => setTimeout(resolve, 1000)).then(getAll);
+  });
+  await fillBody(page, PHRASES + "\n\n" + EMAIL + " Once more.");
+  await page.waitForTimeout(1700); // the run has started and waits for the library
+  await page.click("#suggestToggle");
+  await page.waitForTimeout(1200);
+  assert.equal(await page.locator("#padSuggestions").evaluate((el) => el.childElementCount), 0);
+  assert.deepEqual(app.errors, []);
+});
+
+test("an older suggestion run never replaces a newer one", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await fillBody(page, "Nothing repeats here yet.");
+  await page.locator(".suggest-empty").waitFor();
+  // The next run reads the library slowly; the one after it does not.
+  await page.evaluate(() => {
+    const getAll = self.ShorthandStorage.getAll;
+    let calls = 0;
+    self.ShorthandStorage.getAll = () => ++calls === 1
+      ? new Promise((resolve) => setTimeout(resolve, 3000)).then(getAll) : getAll();
+  });
+  await fillBody(page, PHRASES);
+  await page.waitForTimeout(1700); // the slow run has started
+  await fillBody(page, "Nothing repeats here now.");
+  await page.waitForTimeout(3500); // the fast run renders, then the slow one finishes
+  assert.equal(await phraseCard(page, "as you can see").count(), 0);
+  assert.equal(await page.isVisible(".suggest-empty"), true);
+  assert.deepEqual(app.errors, []);
+});
+
+test("phrases are looked for in the open draft first, then the newest drafts", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  // A long newest draft with no repeated phrase, and an older one that has one.
+  await app.worker.evaluate(async () => {
+    let seed = 2463534242;
+    const word = () => {
+      let text = "";
+      for (let i = 0; i < 6; i++) {
+        seed ^= seed << 13;
+        seed ^= seed >>> 17;
+        seed ^= seed << 5;
+        text += String.fromCharCode(97 + (seed >>> 0) % 26);
+      }
+      return text;
+    };
+    let long = "";
+    while (long.length < 110000) long += word() + " ";
+    await chrome.storage.local.set({
+      "pad-draft:long": { id: "long", title: "Long notes", body: long, createdAt: 2, updatedAt: 2000, rev: 1 },
+      "pad-draft:older": { id: "older", title: "Older", body: "As you can see, one. As you can see, two. As you can see, three.", createdAt: 1, updatedAt: 1000, rev: 1 },
+    });
+  });
+  const page = await openSuggestPad(app);
+  assert.equal(await page.inputValue("#padTitle"), "Long notes");
+  await page.locator(".suggest-empty").waitFor();
+  await page.waitForTimeout(500);
+  assert.equal(await phraseCard(page, "as you can see").count(), 0, "drafts past the first 100,000 characters are not read");
+
+  await page.locator("#draftList .draft-item", { hasText: "Older" }).click();
+  await phraseCard(page, "as you can see").waitFor();
+  assert.deepEqual(app.errors, []);
+});
+
+test("a library that cannot be read pauses suggestions and says why", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await fillBody(page, PHRASES);
+  await phraseCard(page, "as you can see").waitFor();
+  await page.evaluate(() => {
+    window.realGetAll = self.ShorthandStorage.getAll;
+    self.ShorthandStorage.getAll = () => Promise.reject(new Error("Sync is unavailable"));
+  });
+  await fillBody(page, PHRASES + " Again.");
+  await page.locator(".suggest-notice.error").waitFor();
+  assert.equal(await notice(page), "Suggestions are paused: your library could not be read. Sync is unavailable");
+  assert.equal(await page.locator(".suggest-card").count(), 0);
+  assert.equal(await page.isVisible(".suggest-empty"), false);
+  assert.equal(await page.inputValue("#padBody"), PHRASES + " Again.", "the draft is untouched");
+
+  await page.evaluate(() => { self.ShorthandStorage.getAll = window.realGetAll; });
+  await fillBody(page, PHRASES + " Again!");
+  await phraseCard(page, "as you can see").waitFor();
+  assert.equal(await notice(page), "");
+  assert.deepEqual(app.errors, []);
+});
+
+test("a template save that ends after another draft opens leaves that draft's card alone", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await page.fill("#padTitle", "Letter to Sam");
+  await fillBody(page, EMAIL);
+  await waitSaved(page);
+  await page.click("#newDraftBtn");
+  await page.fill("#padTitle", "Letter to Ana");
+  await fillBody(page, EMAIL.replace("Sam", "Ana"));
+  await page.locator(".template-card").waitFor();
+  await page.evaluate(() => {
+    const save = self.ShorthandStorage.saveShorthand;
+    self.ShorthandStorage.saveShorthand = (item) => new Promise((resolve) => setTimeout(resolve, 2000)).then(() => save(item));
+  });
+  await page.locator(".template-card").getByRole("button", { name: "Save as template" }).click();
+  await page.locator("#draftList .draft-item", { hasText: "Letter to Sam" }).click();
+  await page.waitForFunction(() => document.getElementById("padTitle").value === "Letter to Sam");
+  await page.waitForFunction(() => document.querySelector(".template-card .suggest-trigger")?.value === "lts/");
+  // Someone working in the open draft's card while the other save finishes.
+  await page.evaluate(() => { document.querySelector(".template-card").dataset.mark = "working"; });
+  await page.locator(".template-card .suggest-trigger").fill("mine/");
+  await page.waitForFunction(() => document.querySelector(".suggest-notice").textContent.startsWith("Saved lta/."));
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator(".template-card[data-mark=working]").count(), 1, "the open draft's template card stays as it was");
+  assert.equal(await page.evaluate(() => document.activeElement.matches(".template-card .suggest-trigger")), true, "focus stays in it");
+  assert.equal(await page.locator(".template-card .suggest-trigger").inputValue(), "mine/");
+  assert.deepEqual((await library(app)).filter((item) => item.trigger === "lta/").map((item) => item.expansion.slice(0, 11)), ["Hi [[name]]"]);
+  assert.deepEqual(app.errors, []);
+});
