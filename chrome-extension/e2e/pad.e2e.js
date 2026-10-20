@@ -293,7 +293,12 @@ test("on narrow windows the drafts list box opens a draft only when chosen", asy
   t.after(() => app.close());
   const seed = await openPad(app);
   await seed.evaluate(async () => {
-    for (const title of ["Alpha", "Bravo", "Charlie", "Delta"]) await self.ActlePadStore.createDraft({ title, body: title + " text" });
+    // Drafts made in the same millisecond have no newest one, so each gets its own.
+    let last = 0;
+    for (const title of ["Alpha", "Bravo", "Charlie", "Delta"]) {
+      while (Date.now() <= last) await new Promise((resolve) => setTimeout(resolve, 1));
+      last = (await self.ActlePadStore.createDraft({ title, body: title + " text" })).createdAt;
+    }
   });
   await seed.close();
   const page = await app.context.newPage();
