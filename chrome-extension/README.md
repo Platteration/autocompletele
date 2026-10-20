@@ -83,6 +83,58 @@ shorthand without one.
 In Chrome, the deletion itself still syncs to your other devices; only the
 device where you deleted it has the copy.
 
+## Writing pad
+
+**Writing pad** in the toolbar popup, or **06 Writing pad** in the library's
+sidebar, opens a page of its own in a new tab: a quiet place to write an email
+or notes without any risk of sending them, because the pad has nothing to send
+with. **Your library** in its header leads back.
+
+- Drafts save as you type: 0.4 seconds after you stop, and at once when you
+  leave the editor, switch or start a draft, or hide or close the tab. The
+  line under the editor says **Saving…** or **Saved** with the time. If the
+  browser refuses a save, it says **Not saved** and why; the text stays in the
+  editor for you to copy or download, the next change tries again, and the pad
+  does not switch away from that draft until its text is saved. Closing the tab
+  while a save is pending or has failed asks first. Ctrl+S (⌘S on a Mac) saves
+  at once.
+- A draft is created when you first type, so opening the pad never makes an
+  empty one. **New draft** starts another. The list of drafts (a drop-down on
+  narrow windows) shows each one's title, or its first line, when it was last
+  edited, and its word count.
+- **Copy text** copies the draft's text. **Download .txt** saves its title and
+  text as a plain text file named after the title.
+- Your shortcuts work in the pad as in the library playground: triggers expand,
+  the suggestion list and paragraph completion appear, `;;` opens the search
+  overlay and fill-in templates open their form. Like the playground's, these
+  insertions count toward the daily allowance whenever it is enabled (see
+  [Plans and support](#plans-and-support)).
+- One tab edits a draft at a time. A draft that is open in another tab shows
+  here read-only, with **Edit here instead**; that tab then saves what it has
+  and becomes read-only itself. If two tabs still save the same draft (for
+  example where the browser offers no Web Locks), the later save does not
+  overwrite the earlier one: its text is kept as a new draft titled
+  "… (copy from another tab)".
+- **Delete draft** asks first, then offers **Undo**. Deleted drafts go to
+  **Recently deleted drafts** at the bottom of the list, which keeps the 20 most
+  recent; deleting another drops the oldest. **Restore** brings one back (as a
+  separate draft if a draft now uses its place), **Delete for good** removes
+  one, and **Empty** removes them all after a confirmation. A draft whose copy
+  cannot be kept is not deleted.
+- The **Suggestions** panel has a **Writing suggestions** switch, on by default
+  and remembered. Suggestions come only from your drafts in the pad, never from
+  text you type on websites; while the switch is off, nothing you write is
+  analyzed.
+
+Drafts, Recently deleted drafts, the pad's preferences (the suggestions switch
+and which draft was open last) and phrases you asked not to be suggested again
+stay in this browser's extension local storage on this device, in Chrome and
+Firefox alike. They are never synced, never part of the library's JSON export,
+and never sent anywhere. Chrome limits an extension's local storage to about
+10 MB in all; if it fills, saving fails visibly as described above. Removing
+the extension deletes its storage, drafts included, so download anything you
+want to keep first.
+
 ## Search overlay
 
 Typing `;;` in a supported field opens a search overlay listing every shorthand: type
@@ -199,7 +251,7 @@ are not configured yet; no price or payment provider has been selected.
 The prepared free plan allows **100 auto completes per browser profile per
 day**, resetting at local midnight. Complete triggers, accepted suggestions,
 picker selections, and confirmed templates each count as one successful
-insertion, including the library playground. Opening or cancelling a template
+insertion, including the library playground and the Writing pad. Opening or cancelling a template
 does not count. Undo remains available and does not refund the original use.
 Your library, editing, import/export, and toolbar copying remain free at the
 limit. A denied insertion leaves the trigger in place; a denied template keeps
@@ -255,6 +307,8 @@ Use the appropriate `autocomplete` tokens on credential and payment controls.
 | `src/premium-client.js` | Insertion allowance, accounting, and limit notices            |
 | `src/premium-ui.js`   | Plan, usage, and license controls in the library and toolbar     |
 | `src/options.*`       | Library manager, previewed imports, export, excluded sites     |
+| `src/pad.*`           | Writing pad: drafts that save as you type, with shortcuts working |
+| `src/pad-store.js`    | Writing pad drafts, Recently deleted drafts and preferences (local storage) |
 | `src/popup.*`         | Toolbar search/copy palette plus global and per-site controls  |
 | `test/`               | Unit tests (`npm test` in `chrome-extension/`)                 |
 | `scripts/build.js`    | Browser-specific manifests and reproducible release ZIPs      |

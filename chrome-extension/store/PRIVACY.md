@@ -4,7 +4,7 @@
 
 **Privacy contact:** https://github.com/Platteration/autocompletele/issues
 
-**Effective date:** October 18, 2026
+**Effective date:** October 20, 2026
 
 This policy covers the actle browser extension. The contact page is
 public; do not include snippets, credentials, or other private information when
@@ -25,6 +25,11 @@ locally, and compare the words you type with the openings of your saved
 snippets to offer finishing one. They do not learn from your typing history or
 request suggestions from a remote service. Suggestions are enabled by default
 and can be turned off; paragraph completion can also be turned off on its own.
+
+The extension's **Writing pad** page saves what you write there as drafts. Its
+optional writing suggestions are computed in your browser from your pad
+drafts only, never from text you type on websites, and nothing is analyzed
+while they are turned off. Drafts are stored as described below.
 
 The extension saves the triggers and expansion text you create, their ordering,
 and your settings. Settings include whether expansion is enabled, the search
@@ -68,6 +73,13 @@ selection as actle shorthand** from the right-click menu, the selected text
 is held in `storage.local` as a one-time draft until the library page shows
 it in the editor; it becomes a saved snippet, with the storage and sync
 behavior above, only if you give it a trigger and save it.
+
+In both browsers, Writing pad drafts (their title, text, and when they were
+created and last edited), copies of up to 20 recently deleted drafts with the
+time each was deleted, the pad's preferences (whether writing suggestions are
+on, and which draft was open last), and up to 200 phrases you chose not to have
+suggested again use extension `storage.local` on this device. They do not sync,
+are not included in snippet exports, and are never sent anywhere.
 
 When you delete a snippet, the extension keeps a copy of it on this device
 under **Recently deleted** so that you can restore it: its trigger, expansion
@@ -113,7 +125,9 @@ to verify that the edit came from you. Export creates a JSON file containing
 your snippets; the extension does not encrypt that file. Import reads the JSON
 file you select to preview and import its snippets. Exported files may contain
 information you saved in your snippets. Text you copy or insert may also contain
-answers you supplied to a fill-in template.
+answers you supplied to a fill-in template. In the Writing pad, **Copy text**
+writes the open draft's text to your clipboard, and **Download .txt** creates
+an unencrypted text file with its title and text.
 
 ## Your controls
 
@@ -130,6 +144,10 @@ empty Recently deleted, or 50 newer deletions replace it. In Chrome,
 propagation to other devices and retention by the sync service are controlled
 by the browser provider. Deletion does not remove JSON files you exported or
 copies you placed in webpages or on the clipboard.
+
+Deleting a Writing pad draft works the same way with **Recently deleted
+drafts**, which keeps the 20 most recent. Removing the extension deletes its
+local storage, drafts included; it does not remove text files you downloaded.
 
 ## Contact and changes
 

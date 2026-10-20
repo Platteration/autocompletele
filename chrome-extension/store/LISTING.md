@@ -112,6 +112,13 @@ deleted snippets kept for **Recently deleted** also use local storage only
 and are excluded from snippet exports. The draft becomes a snippet only when
 the user gives it a trigger and saves it in the library.
 
+Writing pad drafts (title, text, and creation and edit times), copies of up
+to 20 deleted drafts kept for **Recently deleted drafts**, the pad's
+preferences (writing suggestions on or off, the last open draft) and up to 200
+phrases the user chose not to have suggested again use local storage only, in
+both browsers. They do not sync, are excluded from snippet exports, and are
+not transmitted. Pad suggestions are computed locally from pad drafts only.
+
 **Context menus:** Adds one right-click item, shown only when text is
 selected, that opens the library with that selection as a draft expansion.
 Nothing is saved as a snippet until the user saves it there.
