@@ -45,7 +45,14 @@ function buildReport(entries, options) {
 
   const shortcuts = new Map();
   const personal = { inserts: 0, keystrokesSaved: 0 };
+  // Compliance warnings shown, per rule id (ids are organisation-defined).
+  const warnings = { shown: 0, byRule: new Map() };
   for (const entry of inRange) {
+    if (entry.kind === "warning") {
+      warnings.shown += 1;
+      if (entry.trigger) warnings.byRule.set(entry.trigger, (warnings.byRule.get(entry.trigger) || 0) + 1);
+      continue;
+    }
     if (entry.source === "organization" && entry.trigger) {
       const key = entry.kind + "\u0000" + entry.trigger;
       const row = shortcuts.get(key) || { trigger: entry.trigger, kind: entry.kind, inserts: 0, keystrokesSaved: 0 };
@@ -65,6 +72,7 @@ function buildReport(entries, options) {
     installId: String(settings.installId || ""),
     team: String(settings.team || ""),
     organization: String(settings.organization || ""),
+    licenceId: String(settings.licenceId || ""),
     period,
     range: { from, to },
     assumptions: {
@@ -77,6 +85,10 @@ function buildReport(entries, options) {
     series: series.map((bucket) => Object.assign({ key: bucket.key }, totalsOf(bucket))),
     byShortcut: [...shortcuts.values()].sort((a, b) => b.inserts - a.inserts || a.trigger.localeCompare(b.trigger)),
     personal,
+    warnings: {
+      shown: warnings.shown,
+      byRule: [...warnings.byRule].map(([id, count]) => ({ id, count })).sort((a, b) => b.count - a.count || a.id.localeCompare(b.id)),
+    },
   };
   if (settings.includeApps) {
     report.byApp = ledger.byApp({ from, to }).map((row) => Object.assign({ app: row.app }, totalsOf(row)));
@@ -117,18 +129,18 @@ function zero() {
  */
 function mergeReports(reports, options) {
   const settings = options || {};
-  const warnings = [];
+  const problems = [];
   const latest = new Map();
   let anonymous = 0;
   (Array.isArray(reports) ? reports : []).forEach((report, index) => {
     if (!isReport(report)) {
-      warnings.push("report " + (index + 1) + " skipped: not an actle usage report");
+      problems.push("report " + (index + 1) + " skipped: not an actle usage report");
       return;
     }
     const id = name(report.installId) || "anonymous-" + anonymous++;
     const previous = latest.get(id);
     if (previous) {
-      warnings.push("desk " + id + " sent more than one report; the newest is used");
+      problems.push("desk " + id + " sent more than one report; the newest is used");
       if (previous.generatedAt >= report.generatedAt) return;
     }
     latest.set(id, report);
@@ -138,12 +150,14 @@ function mergeReports(reports, options) {
   const rates = new Set(desks.map((r) => r.assumptions && r.assumptions.hourlyRate).filter((r) => r));
   let hourlyRate = Number(settings.hourlyRate) > 0 ? Number(settings.hourlyRate) : null;
   if (!hourlyRate && rates.size === 1) hourlyRate = [...rates][0];
-  if (!hourlyRate && rates.size > 1) warnings.push("desks report different hourly rates; pass one to estimate value");
+  if (!hourlyRate && rates.size > 1) problems.push("desks report different hourly rates; pass one to estimate value");
   const currencies = new Set(desks.map((r) => r.assumptions && r.assumptions.currency).filter(Boolean));
   const currency = settings.currency || (currencies.size === 1 ? [...currencies][0] : null);
 
   const totals = zero();
   const personal = { inserts: 0, keystrokesSaved: 0 };
+  const warnings = { shown: 0, byRule: new Map() };
+  const licences = new Map();
   const series = new Map();
   const teams = new Map();
   const shortcuts = new Map();
@@ -152,6 +166,15 @@ function mergeReports(reports, options) {
   let to = -Infinity;
   for (const report of desks) {
     addTotals(totals, report.totals);
+    if (report.warnings && typeof report.warnings === "object") {
+      warnings.shown += Number(report.warnings.shown) || 0;
+      for (const item of rows(report.warnings.byRule)) {
+        const id = name(item.id);
+        warnings.byRule.set(id, (warnings.byRule.get(id) || 0) + (Number(item.count) || 0));
+      }
+    }
+    const licenceId = name(report.licenceId);
+    if (licenceId) licences.set(licenceId, (licences.get(licenceId) || 0) + 1);
     personal.inserts += Number(report.personal && report.personal.inserts) || 0;
     personal.keystrokesSaved += Number(report.personal && report.personal.keystrokesSaved) || 0;
     if (report.range) {
@@ -205,7 +228,12 @@ function mergeReports(reports, options) {
     byShortcut: [...shortcuts.values()].sort((a, b) => b.inserts - a.inserts || a.trigger.localeCompare(b.trigger)),
     byApp: [...apps.values()].sort((a, b) => b.secondsSaved - a.secondsSaved || a.app.localeCompare(b.app)),
     unused,
-    warnings,
+    complianceWarnings: {
+      shown: warnings.shown,
+      byRule: [...warnings.byRule].map(([id, count]) => ({ id, count })).sort((a, b) => b.count - a.count || a.id.localeCompare(b.id)),
+    },
+    licences: [...licences].map(([id, desks]) => ({ id, desks })).sort((a, b) => b.desks - a.desks || a.id.localeCompare(b.id)),
+    warnings: problems,
   };
 }
 
@@ -236,6 +264,8 @@ function toCsv(merged) {
   for (const s of merged.byShortcut) rows.push(["shortcut", (s.kind === "expansion" || s.kind === "template" ? "" : s.kind + ":") + s.trigger, s.desks, s.inserts, s.keystrokesSaved, ""]);
   for (const s of merged.unused) rows.push(["unused", (s.kind ? s.kind + ":" : "") + s.trigger, 0, 0, 0, ""]);
   for (const a of merged.byApp) rows.push(["application", a.app, a.desks, a.inserts, a.keystrokesSaved, hours(a.secondsSaved)]);
+  for (const w of (merged.complianceWarnings && merged.complianceWarnings.byRule) || []) rows.push(["warning", w.id, "", w.count, "", ""]);
+  for (const l of merged.licences || []) rows.push(["licence", l.id, l.desks, "", "", ""]);
   return rows.map((row) => row.map(csvCell).join(",")).join("\n") + "\n";
 }
 

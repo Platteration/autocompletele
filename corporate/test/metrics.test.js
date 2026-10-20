@@ -101,3 +101,16 @@ test("an undefined or invalid typing speed keeps the default", () => {
   assert.equal(metrics.createLedger({ charsPerMinute: -5 }).charsPerMinute, 200);
   assert.equal(metrics.createLedger({ charsPerMinute: 300 }).charsPerMinute, 300);
 });
+
+test("a shown warning is counted per kind but is not an insert", () => {
+  const ledger = metrics.createLedger({ now: () => T(2026, 10, 20) });
+  ledger.record({ kind: "expansion", inserted: "abcdef", typed: "a/" });
+  ledger.record({ kind: "warning", trigger: "card-numbers", source: "organization", keystrokesSaved: 0 });
+  ledger.record({ kind: "warning", trigger: "card-numbers", source: "organization", keystrokesSaved: 999 });
+  const s = ledger.summary();
+  assert.equal(s.expansions, 1);
+  assert.equal(s.keystrokesSaved, 4);
+  assert.deepEqual(s.byKind, { expansion: 1, warning: 2 });
+  assert.deepEqual(ledger.byApp().map((a) => a.expansions), [1]);
+  assert.ok(metrics.KINDS.includes("lookup"));
+});

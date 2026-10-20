@@ -220,6 +220,10 @@ function run(argv, io) {
         if (merged.byShortcut.length) out("\norganisation shortcuts by use");
         for (const s of merged.byShortcut) out("  " + (s.kind + " " + s.trigger).padEnd(30) + String(s.inserts).padStart(6) + " inserts on " + s.desks + " desk(s)");
         if (merged.unused.length) out("\nnever used: " + merged.unused.map((s) => (s.kind ? s.kind + " " : "") + s.trigger).join(", "));
+        if (merged.complianceWarnings.shown) {
+          out("\ncompliance warnings shown: " + merged.complianceWarnings.shown);
+          for (const w of merged.complianceWarnings.byRule) out("  " + w.id.padEnd(30) + String(w.count).padStart(6));
+        }
         const csvFile = one(args.flags, "csv");
         if (csvFile) {
           fs.writeFileSync(csvFile, report.toCsv(merged), "utf8");

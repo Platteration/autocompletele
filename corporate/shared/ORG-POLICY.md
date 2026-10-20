@@ -87,7 +87,9 @@ after a preview of everything in it, and hands it to the administrator. A
 report holds totals per period, the use of shortcuts, keyword rules and
 document sets the organisation defined, and one total for the person's own
 shortcuts. It never contains typed or inserted text, the names of a person's
-own shortcuts, or individual timestamps. A random desk id lets the roll-up
+own shortcuts, or individual timestamps. Compliance warnings are counted per
+rule id (the ids the policy defines), never with the message or the text that
+triggered them. A random desk id lets the roll-up
 count a desk once.
 
 ```

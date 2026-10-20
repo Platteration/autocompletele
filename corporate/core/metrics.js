@@ -3,7 +3,9 @@
 "use strict";
 
 const DEFAULT_CHARS_PER_MINUTE = 200; // 40 words per minute at five characters a word
-const KINDS = Object.freeze(["expansion", "suggestion", "template", "learned", "keyword", "document", "palette"]);
+const KINDS = Object.freeze(["expansion", "suggestion", "template", "learned", "keyword", "document", "palette", "lookup", "warning"]);
+// Kinds that are shown, not inserted: counted per kind, never as an insert.
+const SHOWN_KINDS = Object.freeze(["warning"]);
 const PERIODS = Object.freeze(["all", "day", "week", "month"]);
 const SOURCES = Object.freeze(["personal", "organization"]);
 
@@ -128,10 +130,11 @@ function emptyTotals() {
 }
 
 function addTo(totals, entry, options) {
+  totals.byKind[entry.kind] = (totals.byKind[entry.kind] || 0) + 1;
+  if (SHOWN_KINDS.includes(entry.kind)) return;
   totals.expansions += 1;
   totals.keystrokesSaved += entry.keystrokesSaved;
   totals.fixedSeconds += entry.fixedSeconds;
-  totals.byKind[entry.kind] = (totals.byKind[entry.kind] || 0) + 1;
   totals.secondsSaved = secondsSaved(totals.keystrokesSaved, options) + totals.fixedSeconds;
 }
 
@@ -283,6 +286,7 @@ function createLedger(options) {
 module.exports = {
   DEFAULT_CHARS_PER_MINUTE,
   KINDS,
+  SHOWN_KINDS,
   PERIODS,
   SOURCES,
   graphemes,
