@@ -45,6 +45,8 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.ok(files.includes("src/field-safety.js"));
     assert.ok(files.includes("src/suggestions.js"));
     assert.ok(files.includes("src/google-docs.js"));
+    assert.ok(files.includes("src/phrase-miner.js"));
+    assert.ok(files.includes("src/template-maker.js"));
     for (const name of ["premium-config", "license", "premium-service", "premium-client", "premium-ui"]) {
       assert.ok(files.includes(`src/${name}.js`), `${name} must ship in both browser packages`);
     }
