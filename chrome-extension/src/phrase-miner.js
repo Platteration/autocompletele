@@ -22,9 +22,11 @@
     "were", "be", "it", "i", "you", "we", "they", "he", "she", "that", "this", "with", "as", "so",
     "if", "my", "your", "our", "me", "us", "can", "will", "have", "has", "do",
   ]);
-  // A phrase that stops on one of these is a fragment of a longer thought
-  // ("as you can see the", "one of the", "thank you for"). Such a phrase does
-  // not qualify, so it cannot hide the complete phrase inside it either.
+  // A phrase that stops on one of these and runs on into more words is a
+  // fragment of a longer thought ("as you can see the", "one of the", "thank
+  // you for"). Such a phrase does not qualify, so it cannot hide the complete
+  // phrase inside it either. It still qualifies where it ends a sentence or
+  // clause at least 3 times ("that is what we are looking for.").
   const WEAK_ENDINGS = new Set([
     "the", "a", "an", "and", "or", "but", "of", "to", "for", "with", "at", "as", "if", "so",
     "my", "your", "our", "is", "are", "was", "were", "be", "i", "we", "they", "he", "she",
@@ -100,8 +102,10 @@
     return key;
   }
 
-  function qualifies(segment, first, count, key) {
-    if (count < MIN_WORDS) return false;
+  /** `taken` are the counted occurrences; the words are read from the first one. */
+  function qualifies(segments, taken, key) {
+    const { segment: s, first, count } = taken[0];
+    const segment = segments[s];
     if (count < 3 && [...key].length < MIN_CHARS) return false;
     let content = false;
     for (let i = first; i < first + count; i++) {
@@ -109,7 +113,10 @@
     }
     if (!content) return false;
     if (WEAK_STARTS.has(segment.keys[first])) return false;
-    return !WEAK_ENDINGS.has(segment.keys[first + count - 1]);
+    if (!WEAK_ENDINGS.has(segment.keys[first + count - 1])) return true;
+    // "what we are looking for." is whole where it ends a sentence or clause.
+    const complete = taken.filter((place) => place.first + count === segments[place.segment].keys.length);
+    return complete.length >= MIN_COUNT;
   }
 
   function existingTriggers(shorthands) {
@@ -163,8 +170,9 @@
    *
    * A phrase is 2 to 8 consecutive words in one segment (see segmentsOf), seen
    * at least 3 times without overlapping itself across all the texts. It needs
-   * 3+ words or 12+ characters, at least one word outside FUNCTION_WORDS, and
-   * must not start with WEAK_STARTS or end with WEAK_ENDINGS. Of a phrase and a
+   * 3+ words or 12+ characters, and at least one word outside FUNCTION_WORDS.
+   * It must not start with a word in WEAK_STARTS, nor end with one in
+   * WEAK_ENDINGS unless it ends a sentence or clause 3+ times. Of a phrase and a
    * longer qualifying phrase containing it, the shorter is dropped when the
    * longer is seen as often; of two phrases seen equally often where every
    * occurrence of one overlaps the other, only the higher ranked is offered.
@@ -231,9 +239,8 @@
           taken.push({ segment: place.segment, first: place.first, count: candidate.count });
         }
       }
-      const first = candidate.places[0];
-      if (taken.length < MIN_COUNT || !qualifies(segments[first.segment], first.first, candidate.count, candidate.key)) continue;
-      qualified.push({ key: candidate.key, words: candidate.count, seen: taken.length, taken, first });
+      if (taken.length < MIN_COUNT || !qualifies(segments, taken, candidate.key)) continue;
+      qualified.push({ key: candidate.key, words: candidate.count, seen: taken.length, taken, first: taken[0] });
     }
     const byKey = new Map(qualified.map((phrase) => [phrase.key, phrase]));
 

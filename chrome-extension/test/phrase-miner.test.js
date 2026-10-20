@@ -93,6 +93,13 @@ test("a phrase that ends on an article, preposition or conjunction is a fragment
   assert.deepEqual(findRepeatedPhrases(["One of the best.", "One of the cases.", "One of the rest."]), []);
 });
 
+test("a phrase that ends a sentence on such a word is complete, not cut short to the word before", () => {
+  const texts = ["That is what we are looking for.", "That is what we are looking for!", "that is what we are looking for"];
+  assert.deepEqual(phrases(texts), ["that is what we are looking for"]);
+  // Ending a sentence only twice out of three is not enough.
+  assert.deepEqual(phrases(["Here it is.", "Here it is!", "Here it is now."]), []);
+});
+
 test("a phrase that starts with and, or, but or so is offered without that word (beyond the spec)", () => {
   // Without this, "and as you can see it" (seen 3 times) would hide "as you can see it".
   const texts = ["And as you can see it works.", "and as you can see it fails.", "AND as you can see it rains."];
