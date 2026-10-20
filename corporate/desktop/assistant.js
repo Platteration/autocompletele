@@ -323,6 +323,42 @@ function createAssistant(options) {
     return engine.recordInsert({ kind: "palette", trigger: action.trigger, source: action.source, inserted: action.text, typed: "", spentKeystrokes: action.spentKeystrokes });
   }
 
+  // Suggestions to the organisation: proposals the person picked.
+  function suggestionText(candidate) {
+    if (candidate && candidate.template != null) {
+      const found = candidates().find((c) => c.kind === "template" && c.template === candidate.template);
+      if (!found) return { ok: false, error: "This proposal has changed. Look at the Learning tab again." };
+      const built = core.variableDetector.templateFrom(found.segments, candidate.names);
+      return built.ok ? { ok: true, text: built.template, kind: "template", sessions: found.sessions } : built;
+    }
+    const found = candidates().find((c) => c.kind !== "template" && c.text === (candidate && candidate.text));
+    if (!found) return { ok: false, error: "This proposal has changed. Look at the Learning tab again." };
+    return { ok: true, text: found.text, kind: found.kind, sessions: found.sessions };
+  }
+
+  function suggest(candidate) {
+    const resolved = suggestionText(candidate);
+    if (!resolved.ok) return resolved;
+    const queued = core.suggestions.enqueue(store.loadSuggestions(), { kind: resolved.kind, text: resolved.text, trigger: candidate.trigger, sessions: resolved.sessions });
+    store.saveSuggestions(queued);
+    return { ok: true, queued };
+  }
+
+  function unsuggest(text) {
+    const key = core.phraseMiner.normalize(text);
+    const queued = store.loadSuggestions().filter((item) => core.phraseMiner.normalize(item.text) !== key);
+    store.saveSuggestions(queued);
+    return { ok: true, queued };
+  }
+
+  function suggestionsExport() {
+    if (!userSettings.installId) {
+      store.saveSettings(Object.assign({}, userSettings, { installId: crypto.randomUUID() }));
+      userSettings = store.loadSettings();
+    }
+    return core.suggestions.buildExport(store.loadSuggestions(), { now: settings.now(), installId: userSettings.installId, team: policy.reporting.team });
+  }
+
   /** The counts-only report this desk would send to its organisation. */
   function usageReport() {
     if (!userSettings.installId) {
@@ -400,6 +436,10 @@ function createAssistant(options) {
     paletteSearch,
     paletteChoose,
     paletteInserted,
+    suggest,
+    unsuggest,
+    suggestions: () => store.loadSuggestions(),
+    suggestionsExport,
     audit: (limit) => store.loadAudit(limit),
     get managed() { return managed; },
     get paused() { return policy.paused.active; },

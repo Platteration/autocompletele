@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld("actle", {
   acceptCandidate: invoke("learning:accept"),
   dismissCandidate: invoke("learning:dismiss"),
   getLearningInfo: invoke("learning:info"),
+  suggest: invoke("suggestions:add"),
+  unsuggest: invoke("suggestions:remove"),
+  getSuggestions: invoke("suggestions:list"),
+  saveSuggestions: invoke("suggestions:save"),
   clearLearning: invoke("learning:clear"),
   getStatus: invoke("app:status"),
   // Search palette window.

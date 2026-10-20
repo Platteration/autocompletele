@@ -21,6 +21,7 @@ const FILES = Object.freeze({
   audit: "audit.jsonl",
   policyCacheDir: "policy-cache",
   corpusKey: "corpus.key",
+  suggestions: "suggestions.json",
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -342,6 +343,16 @@ function createStore(dir) {
     return Number.isFinite(count) && count > 0 ? all.slice(-count) : all;
   }
 
+  /** Proposals the person chose to suggest to their organisation, not yet exported or removed. */
+  function loadSuggestions() {
+    const data = readJson(FILES.suggestions, {});
+    return Array.isArray(data.queued) ? data.queued : [];
+  }
+
+  function saveSuggestions(queued) {
+    writeJson(FILES.suggestions, { queued: Array.isArray(queued) ? queued : [] });
+  }
+
   function exportLibraryJson() {
     return JSON.stringify({ version: 1, shorthands: loadLibrary() }, null, 2) + "\n";
   }
@@ -406,6 +417,8 @@ function createStore(dir) {
     savePolicyState,
     appendAudit,
     loadAudit,
+    loadSuggestions,
+    saveSuggestions,
   };
 }
 

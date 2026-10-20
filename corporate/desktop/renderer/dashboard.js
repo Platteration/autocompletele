@@ -189,8 +189,28 @@
     announce("Learned text deleted");
   });
 
+  async function renderSuggestions() {
+    const queued = await api.getSuggestions();
+    const body = $("suggestions");
+    body.textContent = "";
+    for (const item of queued) {
+      const remove = el("button", { class: "plain", text: "Remove" });
+      remove.addEventListener("click", () => api.unsuggest(item.text));
+      body.append(el("tr", {}, [el("td", { class: "mono", text: item.text }), el("td", { class: "mono", text: item.trigger }), el("td", {}, [remove])]));
+    }
+    if (!queued.length) body.append(el("tr", {}, [el("td", { colspan: "3", text: "Nothing suggested yet. Use Suggest to organisation on a proposal above." })]));
+    $("suggestions-save").disabled = !queued.length;
+  }
+
+  $("suggestions-save").addEventListener("click", async () => {
+    const result = await api.saveSuggestions();
+    if (result && result.ok) announce("Suggestions saved to " + result.path);
+    else if (result && result.error) announce(result.error);
+  });
+
   async function renderLearning() {
     await renderCorpusInfo();
+    await renderSuggestions();
     const list = await api.getCandidates();
     const host = $("candidates");
     host.textContent = "";
@@ -233,7 +253,15 @@
       });
       const dismiss = el("button", { class: "plain", text: "Dismiss" });
       dismiss.addEventListener("click", () => api.dismissCandidate(candidate.text));
-      card.append(el("div", { class: "row" }, [el("span", { class: "mono", text: "Trigger" }), trigger, accept, dismiss]));
+      const share = el("button", { class: "plain", text: "Suggest to organisation" });
+      share.addEventListener("click", async () => {
+        const result = await api.suggest(candidate.kind === "template"
+          ? { trigger: trigger.value, template: candidate.template, names }
+          : { trigger: trigger.value, text: candidate.text });
+        if (!result.ok) alert(result.error);
+        else announce("Added to your suggestions");
+      });
+      card.append(el("div", { class: "row" }, [el("span", { class: "mono", text: "Trigger" }), trigger, accept, share, dismiss]));
       host.append(card);
     }
   }

@@ -52,6 +52,7 @@ Everything is in Electron's `userData` folder for the app
 | `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
 | `learned.json`    | Proposals the person dismissed                                  |
+| `suggestions.json` | Proposals the person chose to suggest to the organisation, until exported or removed |
 | `deployment.json` | Managed desks only: signed policy sources and pinned public keys, written by IT |
 | `policy-cache/`   | Last good copy of each signed policy layer                     |
 | `policy-state.json` | Hash of the policy last applied and each source's status     |

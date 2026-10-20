@@ -95,6 +95,22 @@ prints desks, hours saved, estimated value, totals per team, organisation
 shortcuts by use and the ones nobody used, and writes the same as CSV. An
 unreadable report is skipped with a warning.
 
+## Phrase suggestions from desks
+
+On the Learning tab a person can mark a proposal **Suggest to organisation**
+and later export the list (after seeing exactly what it holds). A template
+suggestion carries the template with its blanks, never the values seen in
+them. The administrator ranks the files:
+
+```
+node admin/actle-admin.js suggestions incoming/*.json --policy org.json --min-desks 2 --out proposed-library.json
+```
+
+Each text counts once per desk (newest file wins); texts already in the
+policy library are left out; the trigger most desks chose is kept unless the
+library already uses it. `--out` writes a `shorthands.json`-format file to
+review and then add to the policy's `library` before signing.
+
 ## Capture modes
 
 * **off**: the assistant ignores the application entirely, including triggers.

@@ -7,6 +7,7 @@
 //   node admin/actle-admin.js validate <policy.json | signed.json>
 //   node admin/actle-admin.js layers <org.json> [<team.json> ...]
 //   node admin/actle-admin.js report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
+//   node admin/actle-admin.js suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
 "use strict";
 
 const fs = require("node:fs");
@@ -14,6 +15,7 @@ const path = require("node:path");
 const signing = require("../core/policy-signing.js");
 const orgPolicy = require("../core/org-policy.js");
 const report = require("../core/report.js");
+const suggestions = require("../core/suggestions.js");
 
 const USAGE = `actle Corporate admin tool
 
@@ -25,7 +27,9 @@ const USAGE = `actle Corporate admin tool
   validate <file>                 parse a plain or signed policy and list problems
   layers <file> [<file> ...]      show the result of layering policies, most general first
   report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
-                                  roll desks' usage reports up into a team view`;
+                                  roll desks' usage reports up into a team view
+  suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
+                                  rank phrases people suggested; write a library to review`;
 
 function parseArgs(argv) {
   const positional = [];
@@ -220,6 +224,34 @@ function run(argv, io) {
           out("\nCSV written to " + csvFile);
         }
         return merged.desks ? 0 : 1;
+      }
+      case "suggestions": {
+        if (!rest.length) throw new Error("suggestions needs at least one suggestions file");
+        const files = rest.map((file) => {
+          try {
+            return JSON.parse(fs.readFileSync(file, "utf8"));
+          } catch (error) {
+            err("warning: " + file + ": " + error.message);
+            return null;
+          }
+        });
+        const policyFile = one(args.flags, "policy");
+        const policy = policyFile ? orgPolicy.parse(policyFrom(policyFile).policy) : null;
+        const minDesks = one(args.flags, "min-desks");
+        if (minDesks !== undefined && !(Number(minDesks) >= 1)) throw new Error("--min-desks must be 1 or more");
+        const ranked = suggestions.rank(files, { library: policy ? policy.library : [], minDesks });
+        for (const warning of ranked.warnings) err("warning: " + warning);
+        out("desks: " + ranked.desks + ", suggestions: " + ranked.suggestions.length + (policy ? " (already in the policy library left out)" : ""));
+        for (const row of ranked.suggestions) {
+          out("\n  " + row.desks + " desk(s), " + row.sessions + " message(s), " + row.kind + (row.teams.length ? ", " + row.teams.join(", ") : "") + ", trigger " + row.suggestedTrigger);
+          out("    " + row.text.replace(/\n/g, "\\n").slice(0, 200));
+        }
+        const target = one(args.flags, "out");
+        if (target) {
+          fs.writeFileSync(target, JSON.stringify(suggestions.toLibrary(ranked.suggestions), null, 2) + "\n", "utf8");
+          out("\nlibrary written to " + target + "; review it, then add it to the policy's library and sign");
+        }
+        return ranked.desks ? 0 : 1;
       }
       case undefined:
       case "help":

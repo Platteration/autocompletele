@@ -313,6 +313,18 @@ function registerIpc() {
   handle("learning:accept", (c) => { const r = assistant.acceptCandidate(c || {}); broadcast({ library: true, learning: true }); return r; });
   handle("learning:dismiss", (text) => { const r = assistant.dismissCandidate(text); broadcast({ learning: true }); return r; });
   handle("learning:info", () => assistant.corpusInfo());
+  handle("suggestions:add", (candidate) => { const r = assistant.suggest(candidate || {}); broadcast({ learning: true }); return r; });
+  handle("suggestions:remove", (text) => { const r = assistant.unsuggest(String(text || "")); broadcast({ learning: true }); return r; });
+  handle("suggestions:list", () => assistant.suggestions());
+  handle("suggestions:save", async () => {
+    const data = assistant.suggestionsExport();
+    if (!data.suggestions.length) return { ok: false, error: "Nothing to export." };
+    const name = "actle-suggestions-" + new Date(data.generatedAt).toISOString().slice(0, 10) + ".json";
+    const result = await dialog.showSaveDialog({ defaultPath: name, filters: [{ name: "JSON", extensions: ["json"] }] });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    require("node:fs").writeFileSync(result.filePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+    return { ok: true, path: result.filePath };
+  });
   handle("learning:clear", () => { const r = assistant.clearLearning(); broadcast({ learning: true, policy: true }); return r; });
   handle("app:status", () => ({
     listener: listenerStatus,

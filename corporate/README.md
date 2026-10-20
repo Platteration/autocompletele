@@ -30,6 +30,9 @@ adds what a business asks for:
 - **Search palette**: Ctrl+Shift+Space (Cmd+Shift+Space on macOS) opens a
   search over every shortcut and document set in any application; Enter
   inserts the choice where the person was typing.
+- **Phrase suggestions**: a person can suggest learned proposals to the
+  organisation; the administrator ranks suggestions across desks and turns
+  the best into shared shortcuts.
 - **Usage reports**: a counts-only report a person previews and exports, and
   an administrator roll-up with hours saved per team, estimated value,
   shortcuts by use and shortcuts nobody uses.
@@ -75,11 +78,12 @@ corporate/
     policy-signing.js         Ed25519 signing and verification of policy files
     policy-source.js          fetch signed layers, verify, refuse replays, keep the last good copy
     report.js                 counts-only usage reports, team roll-up, CSV
+    suggestions.js            phrase suggestions a person shares, ranked across desks
     crypto-box.js             AES-256-GCM records for the learning corpus
     engine.js                 headless assistant: keys + focus in, actions out
     store.js                  app-data files: library, policy, settings, metrics log, learning corpus, audit log
   admin/
-    actle-admin.js            keygen, sign, verify, validate, layers, report
+    actle-admin.js            keygen, sign, verify, validate, layers, report, suggestions
   test/                       node --test suites for every module, plus the shared conformance suite
   shared/
     ORG-POLICY.md             policy file format
