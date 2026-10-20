@@ -174,3 +174,77 @@ test("long toolbar results preserve the copy affordance inside the popup", async
   assert.ok(geometry.copy.width > 0 && geometry.copy.right <= geometry.result.right, `Copy affordance must remain visible: ${JSON.stringify(geometry)}`);
   assert.ok(geometry.trigger.right <= geometry.copy.left, `Long triggers must not overlap Copy: ${JSON.stringify(geometry)}`);
 });
+
+// The Writing pad, with drafts, a deleted draft, a status message and the
+// read-only notice on screen, so every kind of text is measured.
+async function openFilledPad(app, theme, width) {
+  const seed = await app.context.newPage();
+  await seed.goto(`chrome-extension://${app.extensionId}/src/pad.html`);
+  await seed.waitForFunction(() => !document.getElementById("suggestToggle").disabled);
+  await seed.evaluate(async () => {
+    const store = self.ActlePadStore;
+    await store.createDraft({ title: "Notes", body: "Agenda for Monday" });
+    const gone = await store.createDraft({ title: "Old idea", body: "No longer needed" });
+    await store.deleteDraft(gone.id);
+    const letter = await store.createDraft({ title: "Reply to Sam", body: "Hi Sam,\n\nThanks for the plan." });
+    await store.savePrefs({ lastDraftId: letter.id });
+  });
+  await seed.close();
+  const page = await app.context.newPage();
+  await page.setViewportSize({ width, height: 900 });
+  await page.emulateMedia({ colorScheme: theme });
+  await page.goto(`chrome-extension://${app.extensionId}/src/pad.html`);
+  await page.waitForFunction(() => !document.getElementById("suggestToggle").disabled);
+  await page.click("#padTrashSummary");
+  return page;
+}
+
+for (const theme of ["light", "dark"]) {
+  test(`writing pad text and focus are readable in the ${theme} theme`, async (t) => {
+    const app = await launch();
+    t.after(() => app.close());
+    const page = await openFilledPad(app, theme, 1280);
+    await assertReadable(page, ".pad-tagline, .pad-library-link, .rail-title, .count-pill, .draft-title, .draft-meta, .new-draft, .trash summary, .trash-note, .trash-title, .trash-preview, .trash-time, .save-state, .pad-words, .side-title, .toggle-row strong, .toggle-row small, button.secondary, button.danger");
+    await page.click("#copyBtn");
+    await page.waitForSelector("#padMsg:not(:empty)");
+    await assertReadable(page, ".pad-msg");
+    // A failed save is the message that matters most.
+    await page.evaluate(() => { chrome.storage.local.set = () => Promise.reject(new Error("QUOTA_BYTES quota exceeded")); });
+    await page.click("#padBody");
+    await page.keyboard.type(" More");
+    await page.waitForSelector("#padSave.error");
+    await assertReadable(page, "#padSave.error");
+    await assertKeyboardFocus(page, "#newDraftBtn", "Tab", ".draft-item[aria-current]");
+    await assertKeyboardFocus(page, "#padBody", "Tab", "#copyBtn");
+    const other = await app.context.newPage();
+    await other.emulateMedia({ colorScheme: theme });
+    await other.goto(`chrome-extension://${app.extensionId}/src/pad.html`);
+    await other.waitForSelector("#padLockNotice:not([hidden])");
+    await assertReadable(other, "#padLockText, #padTakeOver");
+    await assertKeyboardFocus(other, "#padTitle", "Shift+Tab", "#padTakeOver");
+  });
+}
+
+test("the 320px writing pad keeps long drafts and every action on screen", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openFilledPad(app, "light", 320);
+  await page.fill("#padTitle", "LongTitleWithoutSpaces".repeat(12));
+  await page.fill("#padBody", "LongWordWithoutSpaces".repeat(40));
+  const geometry = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    width: document.documentElement.scrollWidth,
+    boxes: [...document.querySelectorAll("button, select, input, textarea, .pad-library-link, .trash summary")]
+      .filter((element) => element.getClientRects().length)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { name: element.id || element.className || element.tagName, left: rect.left, right: rect.right };
+      }),
+  }));
+  assert.ok(geometry.width <= geometry.viewport, `Writing pad overflows: ${JSON.stringify(geometry)}`);
+  for (const box of geometry.boxes) {
+    assert.ok(box.left >= 0 && box.right <= geometry.viewport, `Pad controls must be reachable without horizontal scrolling: ${JSON.stringify(box)}`);
+  }
+  assert.equal(await page.isVisible("#draftSelect"), true, "narrow screens choose drafts from a list box");
+  assert.equal(await page.isVisible("#draftList"), false);
+});

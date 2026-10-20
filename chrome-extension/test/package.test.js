@@ -78,6 +78,22 @@ test("browser packages contain only runtime files and installable manifests", as
     const expanderIndex = optionScripts.indexOf("expander.js");
     assert.ok(expanderIndex >= 0 && expanderIndex < optionScripts.indexOf("suggestions.js"));
     assert.ok(optionScripts.indexOf("premium-client.js") < optionScripts.indexOf("content.js"));
+
+    // The Writing pad runs the playground's engine, in the playground's order.
+    for (const name of ["pad.html", "pad.js", "pad.css", "pad-store.js"]) {
+      assert.ok(files.includes(`src/${name}`), `${name} must ship in both browser packages`);
+    }
+    const pad = fs.readFileSync(path.join(directory, "src/pad.html"), "utf8");
+    const padScripts = [...pad.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
+    const engine = ["expander.js", "template.js", "storage.js", "field-safety.js", "picker.js", "suggestions.js",
+      "template-form.js", "animation-frames.js", "expansion-feedback.js", "premium-config.js", "premium-client.js", "content.js"];
+    assert.deepEqual(optionScripts.filter((name) => engine.includes(name)), engine, "The playground's engine order changed; update the pad with it");
+    assert.deepEqual(padScripts.filter((name) => engine.includes(name)), engine, "The pad must load the playground's engine in the same order");
+    for (const file of padScripts) assert.ok(files.includes(`src/${file}`), `The pad loads ${file}, which must ship`);
+    const storeIndex = padScripts.indexOf("pad-store.js");
+    assert.ok(storeIndex > padScripts.indexOf("content.js") && storeIndex < padScripts.indexOf("pad.js"), "The pad's storage must load before the pad");
+    assert.doesNotMatch(pad, /<script(?![^>]*\bsrc=)[^>]*>/, "Extension pages allow no inline scripts");
+    assert.doesNotMatch(pad, /\son[a-z]+\s*=/i, "Extension pages allow no inline event handlers");
     const popup = fs.readFileSync(path.join(directory, manifest.action.default_popup), "utf8");
     const popupScripts = [...popup.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
     for (const scripts of [optionScripts, popupScripts]) {

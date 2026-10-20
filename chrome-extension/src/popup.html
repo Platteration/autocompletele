@@ -49,6 +49,7 @@
     .toggles label:has(input:disabled), .toggles input:disabled { cursor:default; color:var(--muted); }
     .sub { display:block; color:var(--muted); font-size:12px; line-height:18px; font-weight:400; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
     .footer { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:16px; }
+    .footer-actions { display:flex; flex:none; gap:8px; }
     .muted { color:var(--muted); font-size:12px; line-height:18px; }
     button.link { min-height:36px; border:1px solid var(--control); border-radius:2px; padding:7px 11px; background:transparent; color:var(--ink); font-family:inherit; font-size:12px; line-height:20px; font-weight:650; cursor:pointer; }
     button.link:hover { background:var(--sunken); border-color:var(--ink); }
@@ -111,7 +112,7 @@
 
   <div class="footer">
     <span class="muted" id="count"></span>
-    <button class="link" id="options">Library & plans →</button>
+    <span class="footer-actions"><button class="link" id="pad">Writing pad</button><button class="link" id="options">Library & plans →</button></span>
   </div>
 
   </div>
