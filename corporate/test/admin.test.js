@@ -127,7 +127,7 @@ test("deployment writes a validated deployment file and refuses a bad one", () =
   const ok = cli(["deployment", "--pub", path.join(dir, "keys", "policy-signing.pub"), "--source", "layer=organisation,label=Organisation,url=https://intranet.example/org.signed.json",
     "--source", "layer=shipping,path=S:/IT/shipping.signed.json", "--refresh", "120", "--out", target]);
   assert.equal(ok.code, 0, ok.err);
-  assert.match(ok.out, /2 source\(s\), 1 key\(s\), refresh every 120 minutes/);
+  assert.match(ok.out, /2 source\(s\), 1 key\(s\), no groups, refresh every 120 minutes/);
   const written = JSON.parse(fs.readFileSync(target, "utf8"));
   assert.deepEqual(written.policySources.map((s) => s.layer), ["organisation", "shipping"]);
   assert.equal(written.refreshMinutes, 120);
@@ -168,4 +168,79 @@ test("rotate creates new keys, pins both, re-signs the layers, and sign warns ab
   fs.writeFileSync(path.join(dir, "team.json"), JSON.stringify({ layer: "team", serial: 1 }));
   const noLayer = cli(["sign", path.join(dir, "team.json"), "--key", path.join(dir, "new", "policy-signing.key"), "--deployment", deployment, "--out", path.join(dir, "t.signed.json")]);
   assert.match(noLayer.err, /no source in .* expects layer "team"/);
+});
+
+test("audiences: the admin tool shows what each kind of desk receives, checks caps per desk, and writes groups into deployment files", () => {
+  const dir = temp();
+  const keys = path.join(dir, "keys");
+  cli(["keygen", keys]);
+  const shared = [];
+  for (let i = 0; i < 20; i++) shared.push({ trigger: "s" + i + "/", expansion: "shared " + i });
+  const catalogue = [];
+  for (let i = 0; i < 10; i++) catalogue.push({ trigger: "c" + i + "/", expansion: "catalogue " + i });
+  const policy = path.join(dir, "org.json");
+  fs.writeFileSync(policy, JSON.stringify({
+    organization: "Example Ltd", library: shared,
+    collections: [
+      { id: "shipping-catalogue", label: "Shipping catalogue", audience: ["shipping"], library: catalogue, lookups: [{ trigger: "/cust", label: "Customer", source: { kind: "csv", path: "S:/c.csv", key: "id" }, template: "[[id]]" }] },
+      { id: "shipping-contacts", label: "Shipping contacts", audience: ["engineering", "shipping"], library: [{ trigger: "shipdesk/", expansion: "shipping@example.com" }] },
+    ],
+  }));
+  const views = cli(["audience", policy]);
+  assert.equal(views.code, 0, views.err);
+  assert.match(views.out, /desk groups:\s+\(none\)\n\s+receives:\s+20 shortcuts, 0 keyword rules, 0 document sets, 0 lookups\n\s+collections:\s+\(none\); not shared: Shipping catalogue, Shipping contacts/);
+  assert.match(views.out, /desk groups:\s+shipping\n\s+receives:\s+31 shortcuts, 0 keyword rules, 0 document sets, 1 lookups\n\s+collections:\s+Shipping catalogue \(c0\/, c1\/.*\/cust\); Shipping contacts \(shipdesk\/\)/);
+  assert.match(views.out, /desk groups:\s+engineering\n\s+receives:\s+21 shortcuts/);
+  assert.match(views.out, /tier:\s+not known/);
+  const one = cli(["audience", policy, "--groups", "Engineering"]);
+  assert.equal(one.code, 0, one.err);
+  assert.equal((one.out.match(/desk groups:/g) || []).length, 1, "--groups shows one view");
+  assert.equal(cli(["audience", policy, "--groups", "Ops Team"]).code, 1, "a bad group name is refused");
+
+  // Caps are checked per kind of desk: only shipping desks exceed the Free cap of 25.
+  const capped = cli(["audience", policy, "--tier", "free"]);
+  assert.equal(capped.code, 1);
+  assert.match(capped.err, /warning: desks in group shipping: 6 organisation shortcuts ignored: the Free tier allows 25/);
+  assert.equal(/desks with no groups: \d+ organisation shortcuts ignored/.test(capped.err), false);
+  const validated = cli(["validate", policy, "--tier", "free"]);
+  assert.equal(validated.code, 1);
+  assert.match(validated.err, /warning: desks in group shipping: 6 organisation shortcuts ignored/);
+  assert.match(validated.out, /collections:\s+2: shipping-catalogue \(shipping\), shipping-contacts \(engineering, shipping\)/);
+  assert.match(validated.out, /groups:\s+every collection/);
+  const engOnly = cli(["validate", policy, "--tier", "free", "--groups", "engineering"]);
+  assert.equal(engOnly.code, 0, "a desk in engineering gets 21 shortcuts: within the cap\n" + engOnly.err);
+  assert.match(engOnly.out, /groups:\s+engineering/);
+  assert.equal(cli(["validate", policy, "--tier", "team"]).code, 0, "no desk exceeds the Team cap");
+  const refused = cli(["sign", policy, "--key", path.join(keys, "policy-signing.key"), "--serial", "1", "--layer", "org", "--tier", "free", "--out", path.join(dir, "org.signed.json")]);
+  assert.equal(refused.code, 1, "sign checks every kind of desk");
+  assert.match(refused.err, /desks in group shipping/);
+  const signedOk = cli(["sign", policy, "--key", path.join(keys, "policy-signing.key"), "--serial", "1", "--layer", "org", "--tier", "team", "--out", path.join(dir, "org.signed.json")]);
+  assert.equal(signedOk.code, 0, signedOk.err);
+
+  // Bad content inside a collection is caught before signing even though no desk is named.
+  fs.writeFileSync(path.join(dir, "bad.json"), JSON.stringify({ collections: [{ id: "x", audience: ["ops"], keywordRules: [{ id: "r", keywords: ["a"], insert: { kind: "shorthand", trigger: "missing/" } }] }] }));
+  const bad = cli(["sign", path.join(dir, "bad.json"), "--key", path.join(keys, "policy-signing.key"), "--serial", "1", "--layer", "org"]);
+  assert.equal(bad.code, 1);
+  assert.match(bad.err, /keyword rule r ignored: shortcut missing\/ is not in the policy library/);
+
+  // deployment --group writes the desk's groups; rotate keeps them and says how to carry them on.
+  const dep = path.join(dir, "deployment.json");
+  const written = cli(["deployment", "--pub", path.join(keys, "policy-signing.pub"), "--source", "layer=org,label=Organisation,url=https://intranet.example/org.signed.json", "--group", "Shipping", "--group", "shipping", "--out", dep]);
+  assert.equal(written.code, 0, written.err);
+  assert.match(written.out, /groups shipping, refresh every 60 minutes/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(dep, "utf8")).groups, ["shipping"]);
+  assert.equal(cli(["deployment", "--pub", path.join(keys, "policy-signing.pub"), "--source", "layer=org,url=https://intranet.example/org.signed.json", "--group", "*", "--out", path.join(dir, "nope.json")]).code, 1);
+  assert.equal(fs.existsSync(path.join(dir, "nope.json")), false);
+  fs.writeFileSync(path.join(dir, "org-layer.json"), JSON.stringify(Object.assign({ layer: "org", serial: 1 }, JSON.parse(fs.readFileSync(policy, "utf8")))));
+  const rotated = cli(["rotate", "--old", keys, "--new", path.join(dir, "keys2"), "--deployment", dep, "--layer", path.join(dir, "org-layer.json"), "--out-dir", path.join(dir, "signed")]);
+  assert.equal(rotated.code, 0, rotated.err);
+  assert.deepEqual(JSON.parse(fs.readFileSync(dep, "utf8")).groups, ["shipping"], "rotation keeps the desk's groups");
+  assert.match(rotated.out, /--group shipping/);
+
+  // The roll-up counts collection shortcuts as organisation shortcuts.
+  const reportModule = require("../core/report.js");
+  fs.writeFileSync(path.join(dir, "r.json"), JSON.stringify(reportModule.buildReport([], { now: Date.now(), installId: "a" })));
+  const rolled = cli(["report", path.join(dir, "r.json"), "--policy", policy]);
+  assert.equal(rolled.code, 0, rolled.err);
+  assert.match(rolled.out, /never used: .*c0\//);
 });

@@ -8,11 +8,13 @@
 //   { "policySources": [ { "layer": "organisation", "label": "Organisation", "url": "https://…/org.signed.json" },
 //                        { "layer": "shipping", "label": "Shipping", "path": "S:/IT/actle/shipping.signed.json" } ],
 //     "publicKeys": [ "-----BEGIN PUBLIC KEY-----…" ],
+//     "groups": [ "shipping" ],
 //     "refreshMinutes": 60 }
 "use strict";
 
 const fs = require("node:fs");
 const signing = require("./policy-signing.js");
+const { groupNames } = require("./groups.js");
 
 const DEFAULTS = Object.freeze({ refreshMinutes: 60, timeoutMs: 15000, maxBytes: 2 * 1024 * 1024 });
 // A timer delay above 2^31-1 ms (about 24.8 days) overflows to 1 ms in Node
@@ -73,10 +75,14 @@ function normalizeDeployment(raw) {
   if (sources.length && !publicKeys.length) {
     warnings.push("deployment: no usable public key; signed policy sources cannot be verified and are not applied");
   }
+  // The desk's groups decide which policy collections it receives (see org-policy.js).
+  const groups = groupNames(source.groups);
+  for (const bad of groups.rejected) warnings.push("deployment: group " + JSON.stringify(bad) + " ignored: use lower-case letters, digits and dashes");
   const minutes = Number(source.refreshMinutes);
   return {
     sources,
     publicKeys,
+    groups: groups.names,
     refreshMinutes: Number.isFinite(minutes) && minutes >= MIN_REFRESH_MINUTES
       ? Math.min(minutes, MAX_REFRESH_MINUTES) : DEFAULTS.refreshMinutes,
     warnings,

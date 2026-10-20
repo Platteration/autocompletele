@@ -55,6 +55,8 @@ function createAssistant(options) {
     now: settings.now,
   }) : null;
   const managed = !!(policySource && policySource.deployment.sources.length);
+  // The desk's groups (IT sets them in deployment.json) decide which policy collections it receives.
+  const groups = policySource ? policySource.deployment.groups : [];
   if (policySource && !managed) warnings.push(...policySource.deployment.warnings);
   let sourceReport = { sources: [], warnings: [] };
 
@@ -85,7 +87,7 @@ function createAssistant(options) {
   let untrimmed = { shortcuts: 0, layers: 0 };
 
   function buildPolicy() {
-    let policy = core.orgPolicy.parse(rawPolicy == null ? {} : rawPolicy);
+    let policy = core.orgPolicy.parse(rawPolicy == null ? {} : rawPolicy, { groups });
     licence = core.license.licenceState(policy.licence, {
       now: settings.now(),
       publicKeys: settings.vendorPublicKeys,
@@ -526,6 +528,15 @@ function createAssistant(options) {
       updates: Object.assign({}, policy.updates),
       licence: licenceInfo(),
       lookups: lookupStore.status().lookups,
+      groups: groups.slice(),
+      collections: policy.collections.filter((c) => c.applied).map((c) => ({
+        id: c.id,
+        label: c.label,
+        audience: c.audience.slice(),
+        counts: { shortcuts: c.members.library.length, keywordRules: c.members.keywordRules.length, documents: c.members.documents.length, lookups: c.members.lookups.length },
+      })),
+      hiddenCollections: policy.collections.filter((c) => !c.applied).map((c) => ({ id: c.id, label: c.label, audience: c.audience.slice() })),
+      collectionOf: core.orgPolicy.collectionIndex(policy),
       managed,
       refreshMinutes: managed ? policySource.deployment.refreshMinutes : null,
       sources: sourceReport.sources.map((source) => Object.assign({}, source)),

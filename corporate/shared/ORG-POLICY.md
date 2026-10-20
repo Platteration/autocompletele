@@ -30,6 +30,8 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `keywordRules[].unless` | Phrases that stop the rule when any of them appears in the field (case and spacing ignored), for example the disclaimer itself. What is seen is the text typed in the field, or inserted by actle, since the field last got the focus, up to the last 4,000 characters. Opening actle's search palette or dashboard counts as leaving the field. A mail client's automatic signature, pasted text and text further back are not seen, so the warning can appear although the phrase is there. |
 | `documents.shortcuts[]` | `trigger` (for example `/sld`), `label`, and `documents[]` with `title`, `path` (file path or URL), optional `tags` and `description`. Triggers follow the same boundary rule as text shortcuts and lose to a text shortcut with the same trigger. Attach puts the files into the message being written (Outlook through COM, Thunderbird's compose window, otherwise pasted as files); an attachment is counted only when that worked. |
 | `lookups[]` | Data-backed shortcuts: `trigger` (one word, for example `/cust`), `label`, `source` (`kind` `csv` or `json`; `path` on a share or an `https://` `url`; `key`, the column to match; `refreshMinutes`, 5 to 1440, default 60) and `template` with `[[field]]` blanks named after columns. See "Lookups" below. |
+| `collections[]` | Named bundles shared with groups of desks: `id` (lower-case letters, digits and dashes), `label`, `audience` and the same `library`, `keywordRules`, `documents` and `lookups` fields as the top level. See "Sharing with groups" below. |
+| `collections[].audience` | Group names (lower-case letters, digits and dashes) the collection is shared with; absent or empty means every desk. A desk's groups are set by IT in its `deployment.json`. |
 | `learning.minCount` | Distinct messages a text must recur in before it is proposed (default 3, minimum 2). |
 | `learning.minLength`, `learning.minWords` | Smallest text worth proposing (defaults 20 characters, 4 words). |
 | `reporting.team` | Team name written into each desk's usage report. |
@@ -55,14 +57,19 @@ On a managed desk, IT installs `deployment.json` in the app's data folder:
     { "layer": "shipping", "label": "Shipping team", "path": "S:/IT/actle/shipping.signed.json" }
   ],
   "publicKeys": ["-----BEGIN PUBLIC KEY-----\n…\n-----END PUBLIC KEY-----\n"],
+  "groups": ["shipping"],
   "refreshMinutes": 60
 }
 ```
 
 * Sources are layers, most general first. Later layers win field by field;
-  shortcuts merge by trigger, keyword rules by `id`, document sets by
-  trigger, and a later layer's capture rules are tried before an earlier
+  shortcuts merge by trigger, keyword rules by `id`, document sets and
+  lookups by trigger, collections by `id` (a later layer replaces the whole
+  collection), and a later layer's capture rules are tried before an earlier
   one's. A pause in any layer pauses the desk.
+* `groups` names the groups this desk belongs to; they decide which
+  collections it receives (see "Sharing with groups"). They are read whenever
+  the file exists, with or without policy sources.
 * Every source names its `layer` and must be signed with a key listed in
   `publicKeys`, for that layer. Only `https://` URLs and file paths are
   accepted; plain `http://` sources are refused, and so is an https source
@@ -121,6 +128,52 @@ only the new one.
 A desk that missed step 3 before step 5 keeps its old-key copy, which no
 longer verifies: it shows the source as failed, applies the other layers,
 and recovers at its next successful fetch.
+
+## Sharing with groups (collections)
+
+Not everything belongs on every desk: engineering may need the shipping
+desk's contact details but not the whole shipping catalogue. A policy can
+bundle content into **collections**, each shared with an audience of
+groups, and IT names each desk's groups in its `deployment.json`:
+
+```json
+"collections": [
+  { "id": "shipping-catalogue", "label": "Shipping catalogue", "audience": ["shipping"],
+    "library": [{ "trigger": "eta/", "expansion": "Estimated arrival is [[date]]." }],
+    "documents": { "shortcuts": [{ "trigger": "/ship", "label": "Shipping forms", "documents": [{ "path": "S:/Shared/Logistics/forms/customs.pdf" }] }] } },
+  { "id": "shipping-contacts", "label": "Shipping contacts", "audience": ["engineering", "shipping"],
+    "library": [{ "trigger": "shipdesk/", "expansion": "shipping-desk@example.com" }] }
+]
+```
+
+A desk receives the collections whose audience names one of its groups,
+and every collection without an audience; a desk with no groups receives
+only what is shared with everyone. What everyone gets comes first, then the
+collections in policy order; a shortcut, rule, document set or lookup that
+is already present wins over a newcomer, which is dropped with a warning
+naming the collection. Unnamed keyword rules in a collection get the id
+`<collection>/keyword-<n>`. The tier's shortcut cap counts what the desk
+receives, and trims collection entries before shared ones. The Policy tab
+lists the desk's groups, the collections it received and the names of
+those it did not; the Library, Keywords and Documents tabs tag items from
+a collection with its label.
+
+Collections decide what a desk **shows and expands**, not what it can read:
+every desk downloads the whole signed policy and keeps it in its cache.
+Content that must not reach other desks at all belongs in its own policy
+source, listed only in those desks' deployment files.
+
+The admin tool checks every collection before signing (`validate`, `layers`
+and `sign` parse as a desk in every group unless `--groups a,b` names one
+kind of desk), checks the tier's caps per kind of desk and reports the
+worst case (`desks in group shipping: …`), and shows what each kind of
+desk receives:
+
+```
+node admin/actle-admin.js audience org.json dept.json
+node admin/actle-admin.js audience org.json --groups engineering --tier team
+node admin/actle-admin.js deployment --pub keys/policy-signing.pub --source layer=organisation,url=https://… --group shipping --out deployment.json
+```
 
 ## Licensing
 

@@ -33,6 +33,11 @@ adds what a business asks for:
 - **Central management**: signed policy files fetched from an intranet URL or
   a file share, layered organisation, department and team; rollback
   protection; an administrator kill switch; and a change log on every desk.
+- **Sharing with groups**: collections of shortcuts, rules, document sets
+  and lookups shared with named groups (engineering gets the shipping
+  contacts, not the whole shipping catalogue); IT names each desk's groups
+  in its deployment file, and the admin tool shows what every kind of desk
+  receives.
 - **Keyboard layouts**: English (US and UK), German, French, Spanish,
   Swedish, Norwegian, Danish, Dutch and Portuguese, with AltGr and dead
   keys, detected from the system or chosen on the dashboard.

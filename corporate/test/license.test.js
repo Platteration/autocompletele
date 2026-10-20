@@ -308,7 +308,7 @@ test("the admin tool checks a policy against its tier's caps before signing, and
   assert.match(ok.text, /tier:\s+Team \(from the licence in the policy, not verified\)/);
   const over = cli(["validate", policyFile, "--tier", "free"]);
   assert.equal(over.code, 1);
-  assert.match(over.errors, /warning: 5 organisation shortcuts ignored: the Free tier allows 25/);
+  assert.match(over.errors, /warning: desks with no groups: 5 organisation shortcuts ignored: the Free tier allows 25/);
   assert.equal(cli(["validate", policyFile, "--tier", "platinum"]).code, 1);
   fs.writeFileSync(path.join(dir, "nolicence.json"), JSON.stringify({ organization: "Example Ltd", library }));
   const unknown = cli(["validate", path.join(dir, "nolicence.json")]);
@@ -327,7 +327,7 @@ test("the admin tool checks a policy against its tier's caps before signing, and
   for (const name of ["dept", "team"]) fs.writeFileSync(path.join(dir, name + ".json"), JSON.stringify({ library: [{ trigger: name + "/", expansion: name }] }));
   const layered = cli(["layers", policyFile, path.join(dir, "dept.json"), path.join(dir, "team.json")]);
   assert.equal(layered.code, 1, "three layers on a Team licence");
-  assert.match(layered.errors, /warning: policy layers: 3 applied, the Team tier allows 2; nothing was dropped/);
+  assert.match(layered.errors, /warning: desks with no groups: policy layers: 3 applied, the Team tier allows 2; nothing was dropped/);
   assert.equal(cli(["layers", policyFile, path.join(dir, "dept.json")]).code, 0, "two layers are within the Team cap");
   assert.equal(cli(["layers", policyFile, path.join(dir, "dept.json"), path.join(dir, "team.json"), "--tier", "enterprise"]).code, 0);
 

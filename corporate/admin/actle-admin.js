@@ -24,13 +24,16 @@ const { normalizeDeployment } = require("../core/policy-source.js");
 const USAGE = `actle Corporate admin tool
 
   keygen <dir>                    create policy-signing.key (keep secret) and policy-signing.pub
-  sign <policy.json> --key <file> [--serial N] [--layer NAME] [--tier NAME] [--out <file>] [--allow-warnings]
+  sign <policy.json> --key <file> [--serial N] [--layer NAME] [--tier NAME] [--groups a,b] [--out <file>] [--allow-warnings]
                                   sign a policy for distribution; refuses over the tier's caps unless --allow-warnings
   verify <signed.json> --pub <file> [--pub <file>]
                                   check a signed policy against public keys
-  validate <file> [--tier NAME]   parse a plain or signed policy and list problems, including the tier's caps
-  layers <file> [<file> ...] [--tier NAME]
+  validate <file> [--tier NAME] [--groups a,b]
+                                  parse a plain or signed policy and list problems, including the tier's caps
+  layers <file> [<file> ...] [--tier NAME] [--groups a,b]
                                   show the result of layering policies, most general first
+  audience <file> [<file> ...] [--groups a,b] [--tier NAME]
+                                  show what desks in each group receive (collections, counts, caps)
   report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
                                   roll desks' usage reports up into a team view
   suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
@@ -39,8 +42,8 @@ const USAGE = `actle Corporate admin tool
                                   issue a business licence token (vendor only); the tier defaults to business
   license show <token | file with the token | policy.json> [--pub <vendor.pub>]
                                   print what a licence token says and, with --pub, whether it verifies
-  deployment --pub <file> [--pub <file>] --source layer=NAME,label=TEXT,url=https://… [--source …] [--refresh MINUTES] --out <deployment.json>
-                                  write a desk's deployment.json (sources, pinned keys, refresh)
+  deployment --pub <file> [--pub <file>] --source layer=NAME,label=TEXT,url=https://… [--source …] [--group NAME …] [--refresh MINUTES] --out <deployment.json>
+                                  write a desk's deployment.json (sources, pinned keys, the desk's groups, refresh)
   rotate --old <keys dir> --new <keys dir> --deployment <deployment.json> --layer <policy.json> [--layer …] --out-dir <dir>
                                   start a signing-key rotation: new keys, two-key deployment, layers re-signed`;
 
@@ -141,13 +144,43 @@ function tierFor(flags, rawPolicies) {
   return null;
 }
 
-/** The tier line for a command's output and the cap warnings to add to the policy's own. */
-function tierCheck(parsed, found, layers) {
+/** --groups a,b → ["a","b"]; absent → "*" (every collection, so checks cover everything). */
+function groupsFor(flags) {
+  const flag = one(flags, "groups");
+  if (flag === undefined) return "*";
+  const names = orgPolicy.groupNames(flag.split(","));
+  if (names.rejected.length) throw new Error("--groups: " + names.rejected.map((g) => JSON.stringify(g)).join(", ") + " is not a group name (lower-case letters, digits and dashes)");
+  return names.names;
+}
+
+/** Every kind of desk a policy can reach: no groups, then each group a collection's audience names. */
+function deskViews(parsed) {
+  const groups = [];
+  for (const collection of parsed.collections || []) {
+    for (const name of collection.audience) if (!groups.includes(name)) groups.push(name);
+  }
+  return [[]].concat(groups.map((name) => [name]));
+}
+
+function viewLabel(groups) {
+  return groups === "*" ? "desks in every group" : groups.length ? "desks in group " + groups.join(", ") : "desks with no groups";
+}
+
+/**
+ * The tier line for a command's output and the cap warnings to add to the
+ * policy's own. Caps are checked per kind of desk, so a policy no real desk
+ * exceeds is not refused: the view with the largest overage is reported.
+ */
+function tierCheck(parsed, found, layers, raw, groups) {
   if (!found) return { line: "tier:             not known (no licence in these files; pass --tier); caps not checked", warnings: [] };
-  return {
-    line: "tier:             " + license.TIERS[found.tier].name + " (" + found.how + ")",
-    warnings: license.tierWarnings(parsed, found.tier, { layers }),
-  };
+  const line = "tier:             " + license.TIERS[found.tier].name + " (" + found.how + ")";
+  if (groups !== "*" || raw === undefined) return { line, warnings: license.tierWarnings(parsed, found.tier, { layers }) };
+  let worst = { warnings: [], groups: [] };
+  for (const view of deskViews(parsed)) {
+    const warnings = license.tierWarnings(orgPolicy.parse(raw, { groups: view }), found.tier, { layers });
+    if (warnings.length > worst.warnings.length || (warnings.length && warnings.join().length > worst.warnings.join().length)) worst = { warnings, groups: view };
+  }
+  return { line, warnings: worst.warnings.map((w) => viewLabel(worst.groups) + ": " + w) };
 }
 
 function summary(policy) {
@@ -160,6 +193,10 @@ function summary(policy) {
   lines.push("shared shortcuts: " + policy.library.length);
   lines.push("keyword rules:    " + policy.keywordRules.length);
   lines.push("document sets:    " + policy.documents.shortcuts.map((s) => s.trigger).join(", "));
+  lines.push("lookups:          " + policy.lookups.map((l) => l.trigger).join(", "));
+  const collections = policy.collections || [];
+  lines.push("collections:      " + collections.length + (collections.length ? ": " + collections.map((c) => c.id + " (" + (c.audience.length ? c.audience.join(", ") : "everyone") + ")").join(", ") : ""));
+  lines.push("groups:           " + (policy.groups === "*" ? "every collection (a desk in every group)" : policy.groups.length ? policy.groups.join(", ") : "none (only what everyone gets)"));
   lines.push("typing speed:     " + policy.typing.charsPerMinute + " characters per minute");
   return lines.join("\n");
 }
@@ -200,8 +237,9 @@ function run(argv, io) {
         }
         const layerFlag = one(args.flags, "layer");
         if (layerFlag !== undefined) value.layer = layerFlag;
-        const parsed = orgPolicy.parse(value);
-        const tier = tierCheck(parsed, tierFor(args.flags, [value]), 1);
+        const groups = groupsFor(args.flags);
+        const parsed = orgPolicy.parse(value, { groups });
+        const tier = tierCheck(parsed, tierFor(args.flags, [value]), 1, value, groups);
         const warnings = parsed.warnings.concat(tier.warnings);
         for (const warning of warnings) err("warning: " + warning);
         if (warnings.length && !args.flags["allow-warnings"]) {
@@ -241,8 +279,9 @@ function run(argv, io) {
         const file = rest[0];
         if (!file) throw new Error("validate needs a file");
         const source = policyFrom(file);
-        const parsed = orgPolicy.parse(source.policy);
-        const tier = tierCheck(parsed, tierFor(args.flags, [source.policy]), 1);
+        const groups = groupsFor(args.flags);
+        const parsed = orgPolicy.parse(source.policy, { groups });
+        const tier = tierCheck(parsed, tierFor(args.flags, [source.policy]), 1, source.policy, groups);
         out((source.signed ? "signed policy (key " + source.keyId + ", signature not checked; use verify)" : "plain policy") + "\n" + summary(parsed) + "\n" + tier.line);
         const warnings = parsed.warnings.concat(tier.warnings);
         for (const warning of warnings) err("warning: " + warning);
@@ -256,12 +295,36 @@ function run(argv, io) {
           out(JSON.stringify(merged, null, 2));
           return 0;
         }
-        const parsed = orgPolicy.parse(merged);
-        const tier = tierCheck(parsed, tierFor(args.flags, [merged]), rest.length);
+        const groups = groupsFor(args.flags);
+        const parsed = orgPolicy.parse(merged, { groups });
+        const tier = tierCheck(parsed, tierFor(args.flags, [merged]), rest.length, merged, groups);
         out("layered " + rest.length + " file(s), most general first\n" + summary(parsed) + "\n" + tier.line);
         const warnings = parsed.warnings.concat(tier.warnings);
         for (const warning of warnings) err("warning: " + warning);
         return warnings.length ? 1 : 0;
+      }
+      case "audience": {
+        if (!rest.length) throw new Error("audience needs at least one policy file");
+        const raw = rest.length === 1 ? policyFrom(rest[0]).policy : orgPolicy.merge(rest.map((file) => policyFrom(file).policy));
+        const everything = orgPolicy.parse(raw, { groups: "*" });
+        const found = tierFor(args.flags, [raw]);
+        const asked = one(args.flags, "groups");
+        const views = asked === undefined ? deskViews(everything) : [groupsFor(args.flags)];
+        let problems = 0;
+        for (const view of views) {
+          const parsed = orgPolicy.parse(raw, { groups: view });
+          const received = parsed.collections.filter((c) => c.applied);
+          const hidden = parsed.collections.filter((c) => !c.applied);
+          out("desk groups:      " + (view.length ? view.join(", ") : "(none)"));
+          out("  receives:       " + parsed.library.length + " shortcuts, " + parsed.keywordRules.length + " keyword rules, " + parsed.documents.shortcuts.length + " document sets, " + parsed.lookups.length + " lookups");
+          out("  collections:    " + (received.length ? received.map((c) => c.label + " (" + [].concat(c.members.library, c.members.documents, c.members.lookups).join(", ") + ")").join("; ") : "(none)")
+            + (hidden.length ? "; not shared: " + hidden.map((c) => c.label).join(", ") : ""));
+          const warnings = parsed.warnings.concat(found ? license.tierWarnings(parsed, found.tier, { layers: rest.length }) : []);
+          for (const warning of warnings) err("warning: " + viewLabel(view) + ": " + warning);
+          problems += warnings.length;
+        }
+        out(tierCheck(everything, found, rest.length).line);
+        return problems ? 1 : 0;
       }
       case "report": {
         if (!rest.length) throw new Error("report needs at least one usage report file");
@@ -277,7 +340,7 @@ function run(argv, io) {
           }
         }
         const policyFile = one(args.flags, "policy");
-        const policy = policyFile ? orgPolicy.parse(policyFrom(policyFile).policy) : null;
+        const policy = policyFile ? orgPolicy.parse(policyFrom(policyFile).policy, { groups: "*" }) : null;
         const rate = one(args.flags, "rate");
         if (rate !== undefined && !(Number(rate) > 0)) throw new Error("--rate must be a positive number");
         const merged = report.mergeReports(reports, {
@@ -336,7 +399,7 @@ function run(argv, io) {
           }
         });
         const policyFile = one(args.flags, "policy");
-        const policy = policyFile ? orgPolicy.parse(policyFrom(policyFile).policy) : null;
+        const policy = policyFile ? orgPolicy.parse(policyFrom(policyFile).policy, { groups: "*" }) : null;
         const minDesks = one(args.flags, "min-desks");
         if (minDesks !== undefined && !(Number(minDesks) >= 1)) throw new Error("--min-desks must be 1 or more");
         const ranked = suggestions.rank(files, { library: policy ? policy.library : [], minDesks });
@@ -421,13 +484,14 @@ function run(argv, io) {
         const target = one(args.flags, "out");
         if (!pubs.length || !sources.length || !target) throw new Error("deployment needs --pub, --source and --out");
         const deployment = { policySources: sources, publicKeys: pubs };
+        if (args.flags.group) deployment.groups = orgPolicy.groupNames(args.flags.group).names;
         const refresh = one(args.flags, "refresh");
         if (refresh !== undefined) deployment.refreshMinutes = Number(refresh);
-        const checked = normalizeDeployment(deployment);
+        const checked = normalizeDeployment(Object.assign({}, deployment, { groups: args.flags.group || [] }));
         for (const warning of checked.warnings) err("warning: " + warning);
         if (checked.warnings.length) throw new Error("not written: fix the warnings above");
         fs.writeFileSync(target, JSON.stringify(deployment, null, 2) + "\n", "utf8");
-        out("deployment written to " + target + ": " + checked.sources.length + " source(s), " + checked.publicKeys.length + " key(s), refresh every " + checked.refreshMinutes + " minutes");
+        out("deployment written to " + target + ": " + checked.sources.length + " source(s), " + checked.publicKeys.length + " key(s), " + (checked.groups.length ? "groups " + checked.groups.join(", ") : "no groups") + ", refresh every " + checked.refreshMinutes + " minutes");
         out("install it as deployment.json in each desk's data folder");
         return 0;
       }
@@ -458,7 +522,7 @@ function run(argv, io) {
         }
         out("new key id " + pair.keyId + " in " + newDir + "; " + deploymentFile + " now pins both keys");
         out("next: 1) roll out " + deploymentFile + " to every desk; 2) publish the re-signed layers from " + outDir
-          + "; 3) after refreshMinutes plus the longest time a desk may be offline, run `deployment` with only " + path.join(newDir, "policy-signing.pub") + " and roll it out; 4) delete " + path.join(oldDir, "policy-signing.key"));
+          + "; 3) after refreshMinutes plus the longest time a desk may be offline, run `deployment` with only " + path.join(newDir, "policy-signing.pub") + (Array.isArray(deployment.groups) && deployment.groups.length ? " and --group " + deployment.groups.join(" --group ") : "") + " and roll it out; 4) delete " + path.join(oldDir, "policy-signing.key"));
         return 0;
       }
       case undefined:

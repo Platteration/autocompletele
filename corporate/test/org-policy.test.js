@@ -145,3 +145,99 @@ test("a warning rule without a fix is valid; a fix must point at something that 
   assert.deepEqual(policy.keywordRules.map((r) => r.id), ["card"]);
   assert.ok(policy.warnings.some((w) => /fix ignored: shortcut nope\//.test(w)));
 });
+
+// Collections: named bundles shared with the groups in their audience.
+const SHARED = {
+  library: [{ trigger: "sig/", expansion: "Kind regards" }],
+  keywordRules: [{ id: "refund", keywords: ["refund"], insert: "Refund policy" }, { keywords: ["nameless"], insert: "x" }],
+  documents: { shortcuts: [{ trigger: "/hr", documents: [{ path: "h.pdf" }] }] },
+  collections: [
+    { id: "shipping-catalogue", label: "Shipping catalogue", audience: ["Shipping"], library: [{ trigger: "eta/", expansion: "ETA [[date]]" }, { trigger: "sig/", expansion: "Shipping sig" }],
+      keywordRules: [{ keywords: ["customs"], insert: { kind: "shorthand", trigger: "eta/" } }],
+      documents: { shortcuts: [{ trigger: "/ship", documents: [{ path: "s.pdf" }] }] },
+      lookups: [{ trigger: "/cust", label: "Customer", source: { kind: "csv", path: "S:/c.csv", key: "id" }, template: "[[id]]" }] },
+    { id: "shipping-contacts", label: "Shipping contacts", audience: ["engineering", "shipping"], library: [{ trigger: "shipdesk/", expansion: "shipping@example.com" }, { trigger: "eta/", expansion: "second eta" }] },
+    { id: "house-style", library: [{ trigger: "brand/", expansion: "actle" }] },
+  ],
+};
+
+test("collections reach only the desks whose groups are in the audience; an absent audience means everyone", () => {
+  const none = orgPolicy.parse(SHARED);
+  assert.deepEqual(none.groups, []);
+  assert.deepEqual(none.library.map((s) => s.trigger), ["sig/", "brand/"], "no groups: shared items plus the everyone-collection");
+  assert.deepEqual(none.collections.map((c) => [c.id, c.applied]), [["shipping-catalogue", false], ["shipping-contacts", false], ["house-style", true]]);
+  assert.deepEqual(none.collections[0].members, { library: [], keywordRules: [], documents: [], lookups: [] }, "hidden collections carry no content");
+  assert.deepEqual(none.collections[0].audience, ["shipping"], "audience names are lower-cased");
+  assert.equal(none.collections[2].label, "house-style", "label defaults to the id");
+  assert.deepEqual(none.warnings, [], "a desk is not warned about collections it does not receive");
+
+  const eng = orgPolicy.parse(SHARED, { groups: ["Engineering", "ENGINEERING"] });
+  assert.deepEqual(eng.groups, ["engineering"]);
+  assert.deepEqual(eng.library.map((s) => s.trigger), ["sig/", "shipdesk/", "eta/", "brand/"], "shared first, then the collections it receives in policy order");
+  assert.deepEqual(eng.collections.map((c) => c.applied), [false, true, true]);
+  assert.equal(eng.lookups.length, 0, "the catalogue's lookup is not shared with engineering");
+
+  const ship = orgPolicy.parse(SHARED, { groups: ["shipping"] });
+  assert.deepEqual(ship.library.map((s) => s.trigger), ["sig/", "eta/", "shipdesk/", "brand/"], "shared first, then collections in policy order");
+  assert.equal(ship.library.find((s) => s.trigger === "sig/").expansion, "Kind regards", "what everyone has wins over a collection");
+  assert.ok(ship.warnings.includes("shortcut sig/ in collection shipping-catalogue ignored: already shared with everyone"));
+  assert.ok(ship.warnings.includes("shortcut eta/ in collection shipping-contacts ignored: collection shipping-catalogue defines it first"));
+  assert.deepEqual(ship.keywordRules.map((r) => r.id), ["refund", "keyword-1", "shipping-catalogue/keyword-0"], "a nameless collection rule gets its own id");
+  assert.deepEqual(ship.documents.shortcuts.map((d) => d.trigger), ["/hr", "/ship"]);
+  assert.deepEqual(ship.lookups.map((l) => l.trigger), ["/cust"]);
+  assert.deepEqual(ship.collections[0].members, { library: ["eta/"], keywordRules: ["shipping-catalogue/keyword-0"], documents: ["/ship"], lookups: ["/cust"] });
+  assert.deepEqual(orgPolicy.collectionIndex(ship), {
+    library: { "brand/": "house-style", "eta/": "shipping-catalogue", "shipdesk/": "shipping-contacts" },
+    keywordRules: { "shipping-catalogue/keyword-0": "shipping-catalogue" },
+    documents: { "/ship": "shipping-catalogue" },
+    lookups: { "/cust": "shipping-catalogue" },
+  });
+
+  const all = orgPolicy.parse(SHARED, { groups: "*" });
+  assert.equal(all.groups, "*");
+  assert.deepEqual(all.collections.map((c) => c.applied), [true, true, true]);
+  assert.equal(all.library.length, 4);
+  assert.deepEqual(orgPolicy.parse(SHARED, { groups: "everything" }).library.length, 2, "only the exact * means every collection");
+  assert.deepEqual(orgPolicy.parse(SHARED, { groups: ["*"] }).library.length, 2, "a group literally named * is not valid");
+});
+
+test("collections are validated one by one, merged by id across layers, and checked for dangling references", () => {
+  const bad = orgPolicy.parse({
+    collections: [
+      { id: "Bad Id", library: [{ trigger: "a/", expansion: "a" }] },
+      { id: "ok", audience: ["Ops Team!", 5], library: [{ trigger: "b/", expansion: "b" }] },
+      { id: "dup", library: [{ trigger: "c/", expansion: "c" }] },
+      { id: "dup", library: [{ trigger: "d/", expansion: "d" }] },
+      { id: "scoped", audience: "ops", keywordRules: [{ id: "r", keywords: ["x"], insert: { kind: "shorthand", trigger: "nowhere/" } }], library: [{ trigger: "", expansion: "" }] },
+      "not an object",
+    ],
+  }, { groups: ["ops"] });
+  assert.ok(bad.warnings.includes("collection 0 ignored: id must be lower-case letters, digits and dashes"));
+  assert.ok(bad.warnings.includes("collection ok: audience group \"Ops Team!\" ignored: use lower-case letters, digits and dashes"));
+  assert.ok(bad.warnings.includes("collection ok ignored: no usable audience group"), "an audience with no usable group shares with nobody, not with everyone");
+  assert.ok(bad.warnings.includes("collection dup ignored: duplicate id"));
+  assert.ok(bad.warnings.includes("collection 5 ignored: id must be lower-case letters, digits and dashes"));
+  assert.ok(bad.warnings.includes("collection scoped: 1 library entries ignored (empty or duplicate trigger)"));
+  assert.ok(bad.warnings.includes("keyword rule r ignored: shortcut nowhere/ is not in the policy library"));
+  assert.deepEqual(bad.library.map((s) => s.trigger), ["c/"]);
+  assert.deepEqual(bad.collections.map((c) => c.id), ["dup", "scoped"]);
+  assert.deepEqual(bad.collections[1].members.keywordRules, [], "a dropped rule leaves the members list too");
+  assert.ok(orgPolicy.parse({ collections: "x" }).warnings.includes("collections ignored: not a list"));
+
+  const merged = orgPolicy.merge([
+    { collections: [{ id: "a", audience: ["g"], library: [{ trigger: "a1/", expansion: "org" }] }, { id: "b", library: [{ trigger: "b1/", expansion: "org" }] }] },
+    { collections: [{ id: "a", audience: ["g"], library: [{ trigger: "a2/", expansion: "team" }] }, { trigger: "loose" }] },
+  ]);
+  assert.deepEqual(merged.collections.map((c) => c.id), ["a", "b", undefined], "a later layer replaces the collection in its first-seen slot; keyless ones go last");
+  assert.deepEqual(orgPolicy.parse(merged, { groups: ["g"] }).library.map((s) => s.trigger), ["a2/", "b1/"], "the whole collection is replaced in its slot, a1/ is gone");
+  assert.equal("collections" in orgPolicy.merge([{ library: [] }]), false, "no layer with collections: the key is not emitted");
+
+  // A rule in a hidden collection is never checked; the same policy under "*" reports it.
+  const hiddenBad = { collections: [{ id: "h", audience: ["other"], keywordRules: [{ id: "r", keywords: ["x"], insert: { kind: "shorthand", trigger: "gone/" } }] }] };
+  assert.deepEqual(orgPolicy.parse(hiddenBad).warnings, []);
+  assert.ok(orgPolicy.parse(hiddenBad, { groups: "*" }).warnings.some((w) => /keyword rule r ignored/.test(w)));
+  // The example policy is clean for every desk.
+  const example = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "shared", "org-policy.example.json"), "utf8"));
+  assert.deepEqual(orgPolicy.parse(example).warnings, []);
+  assert.deepEqual(orgPolicy.parse(example, { groups: "*" }).warnings, []);
+});
