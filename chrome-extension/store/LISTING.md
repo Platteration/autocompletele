@@ -74,9 +74,10 @@ follow your Chrome profile when sync is enabled. In Firefox, they stay in your
 local Firefox profile and do not automatically sync. Move your library between
 browsers or devices using JSON export and import.
 
-Text matching happens in your browser. Suggestions match your saved library;
-they do not learn from typing history or send field text to a prediction
-service. The extension has no publisher-operated data server, analytics, or
+Text matching happens in your browser. The suggestion list matches your saved
+library; it does not learn from typing history or send field text to a
+prediction service. The Writing pad's optional writing suggestions look only
+at your pad drafts, in your browser. The extension has no publisher-operated data server, analytics, or
 advertising. Chrome's browser sync may transfer your snippets and settings
 through Google's sync service.
 
@@ -116,8 +117,9 @@ Writing pad drafts (title, text, and creation and edit times), copies of up
 to 20 deleted drafts kept for **Recently deleted drafts**, the pad's
 preferences (writing suggestions on or off, the last open draft) and up to 200
 phrases the user chose not to have suggested again use local storage only, in
-both browsers. They do not sync, are excluded from snippet exports, and are
-not transmitted. Pad suggestions are computed locally from pad drafts only;
+both browsers, as does the unsaved text of a pad tab that closes before its
+last save finishes, until the pad next opens and stores it as a draft. They
+do not sync, are excluded from snippet exports, and are not transmitted. Pad suggestions are computed locally from pad drafts only;
 a suggestion becomes a library snippet only when the user saves it.
 
 **Context menus:** Adds one right-click item, shown only when text is

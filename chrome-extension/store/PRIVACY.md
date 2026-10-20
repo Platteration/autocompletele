@@ -28,8 +28,10 @@ and can be turned off; paragraph completion can also be turned off on its own.
 
 The extension's **Writing pad** page saves what you write there as drafts. Its
 optional writing suggestions are computed in your browser from your pad
-drafts only, never from text you type on websites, and nothing is analyzed
-while they are turned off. Drafts are stored as described below.
+drafts only, never from text you type on websites. While they are turned off,
+the pad does not analyze your drafts for ideas; your shortcuts, the
+suggestion list and paragraph completion still work in the pad, as on any
+page, and follow their own settings. Drafts are stored as described below.
 
 The extension saves the triggers and expansion text you create, their ordering,
 and your settings. Settings include whether expansion is enabled, the search
@@ -78,11 +80,16 @@ In both browsers, Writing pad drafts (their title, text, and when they were
 created and last edited), copies of up to 20 recently deleted drafts with the
 time each was deleted, the pad's preferences (whether writing suggestions are
 on, and which draft was open last), and up to 200 phrases you chose not to have
-suggested again use extension `storage.local` on this device. They do not sync,
-are not included in snippet exports, and are never sent anywhere. If you choose
-**Make shortcut** or **Save as template** on a writing suggestion, that phrase,
-or the draft's text with the blanks you chose, becomes a saved snippet in your
-library, with the storage and sync behavior above.
+suggested again use extension `storage.local` on this device. So does the text
+of a pad tab that closes before its last save finishes, until the pad next
+opens and stores it as a draft. They do not sync, are not included in snippet
+exports, and are never sent anywhere. The extension's own scripts that run in
+the pages you open can read extension `storage.local` and are notified when it
+changes, so a draft's text can reach them inside your browser as it saves;
+websites cannot read it. If you choose **Make shortcut** or **Save as
+template** on a writing suggestion, that phrase, or the draft's text with the
+blanks you chose, becomes a saved snippet in your library, with the storage
+and sync behavior above; the suggestion says so beside its button.
 
 When you delete a snippet, the extension keeps a copy of it on this device
 under **Recently deleted** so that you can restore it: its trigger, expansion
@@ -149,8 +156,12 @@ by the browser provider. Deletion does not remove JSON files you exported or
 copies you placed in webpages or on the clipboard.
 
 Deleting a Writing pad draft works the same way with **Recently deleted
-drafts**, which keeps the 20 most recent. Removing the extension deletes its
-local storage, drafts included; it does not remove text files you downloaded.
+drafts**, which keeps the 20 most recent. When that copy cannot be kept, for
+example because storage is full, the pad asks before deleting the draft
+without a copy and downloads it as a text file first. **Clear**, under the
+pad's Suggestions panel, removes the phrases you chose not to have suggested
+again. Removing the extension deletes its local storage, drafts included; it
+does not remove text files you downloaded.
 
 ## Contact and changes
 

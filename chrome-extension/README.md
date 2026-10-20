@@ -90,14 +90,21 @@ sidebar, opens a page of its own in a new tab: a quiet place to write an email
 or notes without any risk of sending them, because the pad has nothing to send
 with. **Your library** in its header leads back.
 
-- Drafts save as you type: 0.4 seconds after you stop, and at once when you
-  leave the editor, switch or start a draft, or hide or close the tab. The
-  line under the editor says **Saving…** or **Saved** with the time. If the
-  browser refuses a save, it says **Not saved** and why; the text stays in the
-  editor for you to copy or download, the next change tries again, and the pad
-  does not switch away from that draft until its text is saved. Closing the tab
-  while a save is pending or has failed asks first. Ctrl+S (⌘S on a Mac) saves
-  at once.
+- Drafts save as you type: 0.4 seconds after you stop, at least every 2
+  seconds while you keep typing, and at once when you leave the editor, switch
+  or start a draft, or hide the tab. The line under the editor says
+  **Saving…** or **Saved** with the time. If the browser refuses a save, it
+  says **Not saved** and why; the text stays in the editor for you to copy or
+  download, the next change tries again, and the pad does not switch away from
+  that draft until its text is saved. Closing or reloading the tab while a
+  save is pending or has failed asks first. Ctrl+S (⌘S on a Mac) saves at once.
+- A save cannot finish once a tab is closing, so if you close or reload the
+  tab before it has, the unsaved text is kept on this device in one quick
+  write. The next time the pad opens (or at once, if another pad tab is open)
+  it goes into its draft, or, if that draft was changed or deleted elsewhere in
+  the meantime, into a new draft titled "… (recovered)". A save that cannot be
+  made at all, such as one refused because storage is full, is not kept this
+  way: the pad asks before closing so that you can copy or download the text.
 - A draft is created when you first type, so opening the pad never makes an
   empty one. **New draft** starts another. The list of drafts (a drop-down on
   narrow windows) shows each one's title, or its first line, when it was last
@@ -111,55 +118,82 @@ with. **Your library** in its header leads back.
   [Plans and support](#plans-and-support)).
 - One tab edits a draft at a time. A draft that is open in another tab shows
   here read-only, with **Edit here instead**; that tab then saves what it has
-  and becomes read-only itself. If two tabs still save the same draft (for
-  example where the browser offers no Web Locks), the later save does not
-  overwrite the earlier one: its text is kept as a new draft titled
-  "… (copy from another tab)".
+  and becomes read-only itself. Saves are made one at a time across tabs (with
+  the browser's Web Locks, which current Chrome and Firefox have), so when a
+  tab saves over a version another tab saved or deleted in the meantime, such
+  as just after **Edit here instead**, its text does not overwrite that
+  version: it is kept as a new draft titled "… (copy from another tab)". In a
+  browser without Web Locks, two tabs saving the same draft at the same
+  moment could still overwrite each other.
 - **Delete draft** asks first, then offers **Undo**. Deleted drafts go to
   **Recently deleted drafts** at the bottom of the list, which keeps the 20 most
   recent; deleting another drops the oldest. **Restore** brings one back (as a
   separate draft if a draft now uses its place), **Delete for good** removes
-  one, and **Empty** removes them all after a confirmation. A draft whose copy
-  cannot be kept is not deleted.
+  one, and **Empty** removes them all after a confirmation. When the copy
+  cannot be kept, for example because storage is full, the pad says why and
+  asks whether to download the draft as a text file and delete it without a
+  copy; that is how a full pad makes room, and it cannot be undone.
 - The **Suggestions** panel has a **Writing suggestions** switch, on by default
   and remembered. Suggestions come only from your drafts in the pad, never from
-  text you type on websites; while the switch is off, nothing you write is
-  analyzed. They are worked out again 1.5 seconds after you stop typing, and
-  when you open a draft.
+  text you type on websites. While the switch is off, the pad does not look
+  through your drafts for ideas; your shortcuts, the suggestion list and
+  paragraph completion still work in the pad, as on any page, under their own
+  settings. Suggestions are worked out again 1.5 seconds after you stop
+  typing, and when you open a draft.
   - **Shortcut ideas.** A phrase of 2 to 8 words that you have written at least
     three times across your drafts ("You've written “as you can see” 4 times.")
     is offered with a trigger made of its initials, such as `aycs/` (`aycs2/`
     when that one is taken). You can change the trigger; **Make shortcut**
-    checks it as the library does (not empty, no spaces, not already used) and
-    adds the phrase to your library. **Not now** hides the idea until the pad is
-    opened again; **Don't suggest this** hides it for good on this device.
-    Three ideas show at a time, and phrases that already are a shortcut's text
-    are not offered. In a very large pad, only the open draft and then the
-    newest drafts, about 100,000 characters in all, are searched.
+    checks it as the library does (not empty, no spaces, not already used),
+    refuses one that could never fire because a shorter trigger expands first,
+    and adds the phrase to your library. If the library would warn about the
+    new trigger (it is only letters, so it fires inside words, or it makes an
+    older trigger impossible to type), the pad shows that warning after saving.
+    **Not now** hides the idea until the pad is opened again; **Don't suggest
+    this** hides it for good on this device. Three ideas show at a time, each a
+    different phrase: pieces of the same sentence are not offered side by side,
+    and phrases that already are a shortcut's text are not offered. A phrase is
+    at most 8 words, so a longer sentence is offered as its best 8 words. In a
+    very large pad, only the open draft and then the newest drafts, about
+    100,000 characters in all, are searched.
   - **Fill-in template.** A draft of 20 words or more that contains a greeting
     name ("Hi Sam,"), email address, link, phone number, date, weekday, time,
     amount or order number can be turned into a fill-in template. The draft is
     shown with each such value as a chip: click it, or press Space on it, to
     keep that value as written, and rename the blanks in the list under it.
-    Nothing from a sign-off such as "Best regards," on becomes a blank.
+    Nothing from your sign-off on becomes a blank: a closing such as "Best
+    regards," or "Thanks in advance,", or one without a comma such as "Kind
+    regards" with your name on the next line, and the contact details under
+    it.
     **Save as template** adds it to your library under the trigger shown (the
     initials of the title's first two or three words, else `draft/`); typing
     that trigger opens the fill-in form for the blanks. **Not now** hides it
     for that draft until the pad is opened again.
 
   Shortcuts and templates made here are ordinary library shortcuts, stored
-  and, in Chrome, synced like any other. Chrome sync allows about 8 KB per
-  shortcut, so a long draft may not save as a template; the panel then shows
-  the browser's reason, as the library does.
+  and, in Chrome, synced like any other; each card says so beside its button.
+  Chrome sync allows about 8 KB per shortcut, so a long draft may not save as
+  a template; the panel then shows the browser's reason, as the library does.
+  A template keeps text that actle would otherwise read as a placeholder or a
+  blank (such as `{date}` or `[[name]]` written in the draft) as `{{date}}` or
+  `\[[name]]`, so that typing the trigger inserts it as written; copying the
+  template from the toolbar popup copies its saved text, escapes included.
+- Phrases you chose not to see again are counted under the Suggestions panel,
+  with **Clear** to forget them, whether suggestions are on or off.
 
 Drafts, Recently deleted drafts, the pad's preferences (the suggestions switch
-and which draft was open last) and phrases you asked not to be suggested again
-stay in this browser's extension local storage on this device, in Chrome and
-Firefox alike. They are never synced, never part of the library's JSON export,
-and never sent anywhere. Chrome limits an extension's local storage to about
-10 MB in all; if it fills, saving fails visibly as described above. Removing
-the extension deletes its storage, drafts included, so download anything you
-want to keep first.
+and which draft was open last), phrases you asked not to be suggested again,
+and text a closing tab could not save until the pad stores it, stay in this
+browser's extension local storage on this device, in Chrome and Firefox
+alike. They are never synced, never part of the library's JSON export, and
+never sent anywhere. actle's own scripts in the pages you have open can read
+that storage and are told when it changes (in Chrome, each save of a draft
+reaches them, though they only act on library changes); the web pages
+themselves cannot read it. On Firefox 143 and later, when those scripts read
+your library, they read only its entries. Chrome limits an extension's local
+storage to about 10 MB in all; if it fills, saving fails visibly as described
+above. Removing the extension deletes its storage, drafts included, so
+download anything you want to keep first.
 
 ## Search overlay
 
