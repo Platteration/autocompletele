@@ -25,7 +25,10 @@
     { "id": "shipping-docs", "label": "Shipping documents", "keywords": ["customs", "shipment"], "match": "all", "insert": { "kind": "document", "shortcut": "/sld" } },
     { "id": "office-hours", "label": "Office hours", "keywords": ["opening hours", "office hours"], "insert": { "kind": "text", "text": "Our office hours are Monday to Friday, 08:00 to 17:00." } },
     { "id": "contract-disclaimer", "label": "Contract disclaimer", "action": "warn", "keywords": ["contract", "agreement"], "unless": ["This message and any attachments are confidential"], "message": "Messages about contracts need the legal disclaimer.", "insert": { "kind": "text", "text": "This message and any attachments are confidential and intended only for the addressee." } },
-    { "id": "card-numbers", "label": "Card numbers", "action": "warn", "detect": ["card-number"], "message": "Card numbers must not be sent by email. Use the secure payment link instead." }
+    { "id": "card-numbers", "label": "Card numbers", "action": "warn", "detect": ["card-number"], "message": "Card numbers must not be sent by email. Use the secure payment link instead." },
+    { "id": "bank-details", "label": "Bank details", "action": "warn", "detect": ["iban"], "message": "Bank account numbers must not be sent by email." },
+    { "id": "attachment-reminder", "label": "Attachment reminder", "action": "warn", "keywords": ["attached", "attachment", "enclosed"], "detect": ["missing-attachment"], "apps": ["outlook.exe", "Microsoft Outlook", "thunderbird"], "message": "You mention an attachment, but nothing has been attached through a document shortcut yet." },
+    { "id": "external-recipients", "label": "External recipients", "action": "warn", "detect": ["external-email-domain"], "params": { "allowedDomains": ["example.com"] }, "message": "This message names an address outside example.com. Check it is meant to go out." }
   ],
   "documents": {
     "shortcuts": [

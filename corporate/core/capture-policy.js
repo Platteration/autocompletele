@@ -188,5 +188,6 @@ module.exports = {
   decide,
   isSensitiveContext,
   containsCardNumber,
+  luhn,
   scrub,
 };

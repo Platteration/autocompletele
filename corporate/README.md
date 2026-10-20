@@ -22,8 +22,10 @@ adds what a business asks for:
   as the standard hand-outs for "shipping logistics department", so they can be
   attached in one step.
 - **Compliance warnings**: a rule can warn instead of offer, for example when
-  "contract" is written without the legal disclaimer or a card number is typed
-  into a message, with an optional one-click fix.
+  "contract" is written without the legal disclaimer, a card number, IBAN or
+  national identity number is typed into a message, an outside address is
+  named, or "attached" is written with nothing attached, with an optional
+  one-click fix. Warnings are counted per rule in usage reports.
 - **Central management**: signed policy files fetched from an intranet URL or
   a file share, layered organisation, department and team; rollback
   protection; an administrator kill switch; and a change log on every desk.

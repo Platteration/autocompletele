@@ -11,8 +11,8 @@ test("the shipped example policy parses without warnings", () => {
   assert.equal(policy.organization, "Example Logistics Ltd");
   assert.equal(policy.capture.apps.length, 4);
   assert.equal(policy.library.length, 4);
-  assert.equal(policy.keywordRules.length, 5);
-  assert.deepEqual(policy.keywordRules.filter((r) => r.action === "warn").map((r) => r.id), ["contract-disclaimer", "card-numbers"]);
+  assert.equal(policy.keywordRules.length, 8);
+  assert.deepEqual(policy.keywordRules.filter((r) => r.action === "warn").map((r) => r.id), ["contract-disclaimer", "card-numbers", "bank-details", "attachment-reminder", "external-recipients"]);
   assert.equal(policy.documents.shortcuts.length, 2);
   assert.equal(policy.typing.charsPerMinute, 200);
   assert.equal(policy.retention.corpusDays, 90);
