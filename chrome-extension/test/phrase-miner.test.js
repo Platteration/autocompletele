@@ -68,12 +68,58 @@ test("only maximal phrases are kept: a shorter phrase seen no more often is drop
     "As you can see, it works.",
     "Again, as you can see.",
   ];
-  // The longer phrase is seen 3 times and the shorter 5, so both are kept;
-  // "you can see the growth" (3) sits inside "as you can see the growth" (3) and is dropped.
-  assert.deepEqual(findRepeatedPhrases(texts).map(({ phrase, count }) => [phrase, count]), [
+  // "you can see the growth" (3) sits inside "as you can see the growth" (3)
+  // and is dropped. The longer phrase itself is seen 3 times and the shorter
+  // 5: every one of its occurrences is also one of the shorter phrase's, so
+  // it is a piece of the same sentences and is not offered beside it.
+  assert.deepEqual(findRepeatedPhrases(texts, { limit: 10 }).map(({ phrase, count }) => [phrase, count]), [
     ["as you can see", 5],
-    ["as you can see the growth", 3],
   ]);
+  // Dismissing the shorter phrase does not bring the longer one back.
+  assert.deepEqual(findRepeatedPhrases(texts, { dismissed: ["as you can see"] }), []);
+});
+
+test("pieces of one common sentence do not fill every card", () => {
+  // Realistic drafts: closings that share "let me know if you have" crowded out
+  // every other idea, including the owner's own example, "as you can see".
+  const support = (name, line) => `Hi ${name},\n\nThank you for reaching out. ${line}\n\nPlease let me know if you have any other questions.\n\nBest regards,\nPriya`;
+  const update = (week, line) => `Weekly update, week ${week}\n\nHi team,\n\nAs you can see, ${line} As you can see from the chart, we are on time.`
+    + "\n\nNext steps:\n- Finish the pricing page by Friday\n\nLet me know if you have questions.\n\nThanks,\nAlex";
+  const note = (name, topic) => `Hi ${name},\n\nPlease let me know if you have any questions about the ${topic}. `
+    + "Feel free to reach out if you have any concerns.\n\nBest,\nChris";
+  const texts = [
+    support("Daniel", "A replacement ships this week."), support("Ana", "The refund was processed."), support("Tom", "The filter is back in stock."),
+    update(42, "sign-ups grew."), update(43, "churn dropped."), update(44, "we closed 14 deals."),
+    note("Lena", "proposal"), note("Omar", "contract"), note("Ruth", "timeline"),
+  ];
+  const found = findRepeatedPhrases(texts, { limit: 3 });
+  assert.deepEqual(found.map(({ phrase, count }) => [phrase, count]), [
+    ["let me know if you", 9],
+    ["to reach out if you have any concerns", 3], // 3 x 8 words, tied with 6 x 4: longer first
+    ["as you can see", 6],
+  ]);
+  // No two ideas share a word of any draft.
+  for (const text of texts) {
+    const lower = text.toLowerCase();
+    const spans = found.flatMap(({ phrase }) => {
+      const out = [];
+      for (let at = lower.indexOf(phrase); at >= 0; at = lower.indexOf(phrase, at + 1)) out.push([at, at + phrase.length]);
+      return out.map((span) => [...span, phrase]);
+    });
+    for (const a of spans) for (const b of spans) {
+      if (a[2] !== b[2]) assert.ok(a[1] <= b[0] || b[1] <= a[0], `${a[2]} / ${b[2]} in ${JSON.stringify(text)}`);
+    }
+  }
+});
+
+test("a phrase that ends on a determiner, quantifier or auxiliary is a fragment", () => {
+  for (const ending of ["any", "some", "other", "this", "that", "these", "those", "all", "every", "each", "no", "not", "more",
+    "have", "has", "had", "can", "will", "would", "could", "should", "do", "does", "their", "his", "her", "its"]) {
+    const texts = ["alpha", "bravo", "charlie"].map((word) => `We kept the plan ${ending} ${word}.`);
+    assert.deepEqual(phrases(texts), ["we kept the plan"], ending);
+  }
+  // Ending a sentence or clause three times, such a phrase is whole.
+  assert.deepEqual(phrases(["Reply as soon as you can.", "Call as soon as you can!", "Come as soon as you can, please."]), ["as soon as you can"]);
 });
 
 test("a phrase made only of the spec's function words is never offered", () => {
@@ -151,7 +197,7 @@ test("uniqueTrigger accepts shortcuts or plain triggers and cannot loop on a blo
   assert.equal(uniqueTrigger("ht", ["ht/", "ht2/"]), "ht3/");
   assert.equal(uniqueTrigger("ht", [{ trigger: "ht/" }, null, 7, { trigger: "" }]), "ht2/");
   // An existing "h" fires before any "ht.../" can be typed; numbering cannot help,
-  // so the proposal stands and the library's conflict warning reports it.
+  // so the proposal stands and the pad's save checks it with conflicts.js.
   assert.equal(uniqueTrigger("ht", ["h"]), "ht/");
 });
 
@@ -211,8 +257,9 @@ test("a phrase longer than eight words is offered once, not once per eight-word 
     "please let me know if you have any further questions",
   ];
   const found = findRepeatedPhrases(texts);
+  // "please let me know if you have any" ends on "any", so it is not a candidate.
   assert.deepEqual(found.map(({ phrase, words, count }) => [phrase, words, count]),
-    [["please let me know if you have any", 8, 3]]);
+    [["let me know if you have any further", 8, 3]]);
   // Dismissing that window does not bring the other window back.
   assert.deepEqual(findRepeatedPhrases(texts, { dismissed: [found[0].phrase] }), []);
 });

@@ -45,6 +45,21 @@ test("the person after a greeting at the start of a line is a name blank", () =>
   assert.deepEqual(found("Hi Zo\u00eb,"), [["name", "Zo\u00eb"]]);
   assert.deepEqual(found("Hi Mary-Jane O\u2019Brien,"), [["name", "Mary-Jane O\u2019Brien"]]);
   assert.deepEqual(found("Notes\n  Hi Sam,"), [["name", "Sam"]]);
+  // A couple addressed with two titles is one name, not the first title.
+  assert.deepEqual(found("Dear Mr. and Mrs. Lee,"), [["name", "Mr. and Mrs. Lee"]]);
+  assert.deepEqual(found("Dear Mr & Mrs Lee,"), [["name", "Mr & Mrs Lee"]]);
+  assert.deepEqual(found("Dear Dr. Patel and Mr. Lee,"), [["name", "Dr. Patel and Mr. Lee"]]);
+});
+
+test("a title alone is never a name blank, nor repeated as one", () => {
+  for (const text of ["Hi Dr.,", "Dear Prof,", "Hello Mrs.!", "Dear Mr. and Mrs.,"]) {
+    assert.deepEqual(found(text), [], text);
+  }
+  const letter = "Dear Mr. and Mrs. Lee,\n\nThank you for meeting with me on October 20. Mr. Lee asked about the reading plan.";
+  assert.deepEqual(found(letter), [["name", "Mr. and Mrs. Lee"], ["date", "October 20"]]);
+  const blanks = findBlanks(letter).map(({ start, end, name }) => ({ start, end, name }));
+  assert.equal(insert(buildTemplate(letter, blanks), { name: "Mr. and Mrs. Park", date: "May 1" }).text,
+    "Dear Mr. and Mrs. Park,\n\nThank you for meeting with me on May 1. Mr. Lee asked about the reading plan.");
 });
 
 test("greetings that name nobody in particular, or no greeting at all, are not blanks", () => {
@@ -91,9 +106,23 @@ test("times, amounts and order or ticket numbers are blanks", () => {
 test("years, counts, ratios and other everyday numbers are not blanks", () => {
   for (const text of ["We started in 2026.", "The 2025-2026 plan.", "FY2026 and Q4-2026 goals.", "A 1:1 meeting.", "Scores 3:2.",
     "Pop 1.234.567 or 1 234 567.", "We're #1!", "About 10 people and 1200 chairs.", "May I ask?", "On Mondays we meet.",
-    "Visit example.com or www.", "Version 1.2.3 is out.", "Read pages 10-12.", "x86_64 builds", "Room 101 102 103"]) {
+    "Visit example.com or www.", "Version 1.2.3 is out.", "Read pages 10-12.", "x86_64 builds", "Room 101 102 103",
+    // An address without a real top-level domain, a day/month/year that is no
+    // date, and digits inside a decimal or a version.
+    "Contact admin@10.0.0.1 or sam@x.c", "Due 13/13/2026 or 45/67/2026", "Pi is 3.14159 and v1.20481 shipped",
+    // Fiscal periods, standards, named days and ZIP+4 codes read as other kinds.
+    "Plan for FY2026, CY-2025, H1 2026, 2026Q4 and Q3/2026.", "We follow ISO 27001, ISO/IEC 27002, EN 71 and RFC9110.",
+    "Our Black Friday sale runs to Cyber Monday; Good Friday and Easter Monday are off."]) {
     assert.deepEqual(found(text), [], text);
   }
+  assert.deepEqual(found("Ship to 94107-1234 today."), [["number", "94107-1234"]], "a ZIP+4 code is not a phone number");
+});
+
+test("ticket and invoice numbers with four digits are blanks, even when the digits look like a year", () => {
+  for (const id of ["INV-2041", "SUP-2033", "PO-2050", "ENG-2034", "A1999"]) {
+    assert.deepEqual(found(`Ref ${id} please`), [["number", id]], id);
+  }
+  assert.deepEqual(found("See you Friday, after Black Friday."), [["day", "Friday"]]);
 });
 
 test("the same value shares one blank and each new value gets the next number", () => {
@@ -125,6 +154,19 @@ test("the writer's sign-off and the lines under it are never blanks", () => {
   for (const signoff of ["Thanks,", "Cheers,", "Sincerely,", "Best,", "Kind regards,", "Thank you so much!", "Regards"]) {
     assert.deepEqual(found(`Hi Sam,\nSee you Monday.\n${signoff}\nSam\n555-123-4567`), [["name", "Sam"], ["day", "Monday"]], signoff);
   }
+});
+
+test("a closing without a comma signs off when a name follows it, however long the signature", () => {
+  const signature = "Priya Shah\npriya@shahdesign.studio\n(312) 555-0187\nhttps://shahdesign.studio";
+  for (const closing of ["Kind regards", "Cheers!", "Thanks!", "Best regards!", "Best", "Regards", "Thanks in advance,",
+    "Thank you for your time,", "Thank you for your help,", "Have a great week,", "Have a nice day!", "All best,",
+    "Talk to you soon,", "Speak soon,", "Looking forward to hearing from you,", "With gratitude,", "Thx,"]) {
+    const email = `Hi Jordan,\n\nThe invoice for $1,250.00 is due on November 15.\n\n${closing}\n${signature}`;
+    assert.deepEqual(found(email), [["name", "Jordan"], ["amount", "$1,250.00"], ["date", "November 15"]], closing);
+  }
+  // Without a name under it, a bare "Thanks" mid-email still hides nothing.
+  assert.deepEqual(found("Hi Sam,\nThanks\nthe call moved to Oct 20.\nIt starts at 3pm.\nMore soon.\nJane"),
+    [["name", "Sam"], ["date", "Oct 20"], ["time", "3pm"]]);
 });
 
 test("a thank-you that is not a sign-off does not hide the rest of the email", () => {

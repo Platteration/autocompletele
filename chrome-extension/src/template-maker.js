@@ -29,14 +29,16 @@
 
   const CAP = String.raw`[\p{Lu}\p{Lt}][\p{L}\p{M}]*(?:['\u2019\-][\p{L}\p{M}]+)*`;
   const TITLE = String.raw`(?:Mr|Mrs|Ms|Mx|Dr|Prof)\.?`;
-  const PERSON = String.raw`(?:${TITLE}[ \t]+)?${CAP}(?:[ \t]+(?:(?:and|&)[ \t]+)?${CAP}){0,2}`;
+  // "Sam", "Dr. Patel", "Sam and Ana", "Mr. and Mrs. Lee", "Dr. Patel and Mr. Lee".
+  const PERSON = String.raw`(?:${TITLE}[ \t]+(?:(?:and|&)[ \t]+${TITLE}[ \t]+)?)?${CAP}(?:[ \t]+(?:(?:and|&)[ \t]+)?(?:${TITLE}[ \t]+)?${CAP}){0,2}`;
+  const TITLE_WORD = /^(?:Mr|Mrs|Ms|Mx|Dr|Prof)\.?$/u;
   const GREETING = new RegExp(String.raw`^[ \t]*(?:[Hh]i|[Hh]ello|[Hh]ey|[Dd]ear|[Gg]ood[ \t]+(?:[Mm]orning|[Aa]fternoon|[Ee]vening))(?:[ \t]*,)?[ \t]+(${PERSON})(?=[ \t]*(?:[,!.:;]|$))`, "gmu");
   // "Hi Team," and "Dear Sir," address nobody in particular.
   const GENERIC = new Set(["all", "everyone", "everybody", "team", "there", "folks", "guys", "friends",
     "both", "sir", "madam", "colleague", "colleagues", "again", "you", "y'all", "ladies", "gentlemen",
     "people", "world", "members", "customer", "customers"]);
 
-  const SIGNOFF = new RegExp(String.raw`^[ \t]*(?:best(?:[ \t]+(?:regards|wishes))?|kind(?:est)?[ \t]+regards|warm(?:est)?[ \t]+(?:regards|wishes)|regards|many[ \t]+thanks|thanks(?:[ \t]+(?:again|so[ \t]+much))?|thank[ \t]+you(?:[ \t]+(?:again|so[ \t]+much))?|cheers|sincerely|yours(?:[ \t]+(?:sincerely|truly|faithfully))?|all[ \t]+the[ \t]+best|take[ \t]+care|talk[ \t]+soon|warmly|respectfully|with[ \t]+thanks|love)[ \t]*([,!.]?)[ \t]*(.*)$`, "gimu");
+  const SIGNOFF = new RegExp(String.raw`^[ \t]*(?:best(?:[ \t]+(?:regards|wishes))?|kind(?:est)?[ \t]+regards|warm(?:est)?[ \t]+(?:regards|wishes)|regards|many[ \t]+thanks|thanks(?:[ \t]+(?:again|so[ \t]+much|in[ \t]+advance))?|thx|thank[ \t]+you(?:[ \t]+(?:again|so[ \t]+much|in[ \t]+advance|for[ \t]+your[ \t]+(?:time|help)))?|cheers|sincerely|yours(?:[ \t]+(?:sincerely|truly|faithfully))?|all[ \t]+(?:the[ \t]+)?best|take[ \t]+care|(?:talk|speak)[ \t]+(?:to[ \t]+you[ \t]+)?soon|(?:i[ \t]+am[ \t]+|i'm[ \t]+)?looking[ \t]+forward[ \t]+to[ \t]+hearing[ \t]+from[ \t]+you|have[ \t]+a[ \t]+(?:great|good|nice|lovely|wonderful)[ \t]+(?:day|week|weekend|evening)|warmly|respectfully|with[ \t]+(?:thanks|gratitude)|love)[ \t]*([,!.]?)[ \t]*(.*)$`, "gimu");
   const SIGNOFF_NAME = new RegExp(String.raw`^${PERSON}[ \t]*[.!]?[ \t]*$`, "u");
 
   // Starting only where an address can start keeps a long run of letters,
@@ -61,6 +63,7 @@
     /(?<![\p{L}\p{N}.\/\-])(\d{1,2})([\/.\-])(\d{1,2})\2(?:\d{4}|\d{2})(?![\p{L}\p{N}]|[.\/\-]\p{N})/gu,
   ];
   const DAY = new RegExp(`${OPEN}${WEEKDAY}${CLOSE}`, "gu");
+  const NAMED_DAY = /(?<![\p{L}\p{N}])(?:Black|Cyber|Good|Easter|Ash|Holy|Palm|Maundy|Shrove|Super|Giving)[ \t]+$/u;
   // "pm" and "p.m." but not the full stop after "3pm." that ends a sentence.
   const TIMES = [
     /(?<![\p{L}\p{N}:.])(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:[ \t]?(?:[AaPp][Mm]|[AaPp]\.[Mm]\.?))?(?![\p{L}\p{N}]|:\d)/gu,
@@ -77,6 +80,9 @@
     new RegExp(`(?<![\\p{L}\\p{N}.,])${NUMBER}${SCALE}[ \\t\\u00a0]?${CODES}${CLOSE}`, "gu"),
   ];
 
+  const FISCAL_YEAR = /^(?:(?:FY|CY|Q[1-4]|H[12])[-\/]?(?:19|20)\d\d|(?:19|20)\d\d[-\/]?(?:Q[1-4]|H[12]))$/iu;
+  const STANDARD = /^(?:ISO|IEC|RFC)(?:[-\/](?:IEC|ISO))?[-\/]?\d/u;
+  const STANDARD_BEFORE = /(?<![\p{L}\p{N}])(?:ISO|IEC|RFC|EN)(?:\/IEC)?[ \t]$/u;
   const HASH_ID = /(?<![\p{L}\p{N}&#])#[\p{L}\p{N}](?:[\p{L}\p{N}\-_]*[\p{L}\p{N}])?/gu;
   const TOKEN = /[\p{L}\p{N}]+(?:[\-_\/][\p{L}\p{N}]+)*/gu;
 
@@ -111,10 +117,13 @@
       const rest = match[2];
       if (rest && !SIGNOFF_NAME.test(rest)) return;
       const after = text.slice(match.index + match[0].length).split(/\r\n|[\n\r\u2028\u2029]/u)
-        .filter((line) => line.trim()).length;
-      if (punctuation === "," || rest) {
-        if (after <= 8) strong = match.index;
-      } else if (after <= 2) {
+        .filter((line) => line.trim());
+      // "Kind regards" or "Thanks!" with a name on the next line signs off as
+      // surely as "Best regards," does, however many lines of contact
+      // details follow.
+      if (punctuation === "," || rest || (after.length && SIGNOFF_NAME.test(after[0].trim()))) {
+        if (after.length <= 8) strong = match.index;
+      } else if (after.length <= 2) {
         weak = match.index;
       }
     });
@@ -126,6 +135,8 @@
       const person = match[1];
       const words = person.split(/[ \t]+/u).filter((word) => !/^(?:and|&)$/u.test(word));
       if (words.every((word) => GENERIC.has(word.toLowerCase().replace(/\u2019/gu, "'")))) return;
+      // "Hi Dr.," names nobody; a title alone is never the blank.
+      if (words.every((word) => TITLE_WORD.test(word))) return;
       const end = match.index + match[0].length;
       add("name", end - person.length, end);
     });
@@ -165,10 +176,12 @@
       const groups = value.split(/[ .\-()+]+/u).filter(Boolean);
       if (!value.startsWith("+") && !value.includes("(")) {
         // A bare digit run is left to the number rule; 10.234.567 and
-        // 1 234 567 are thousands; 2025-2026 is a span of years.
+        // 1 234 567 are thousands; 2025-2026 is a span of years; 94107-1234
+        // is a US ZIP+4 code.
         if (groups.length < 2 || !groups.some((group) => group.length >= 3)) return;
         if (groups[0].length <= 3 && groups.slice(1).every((group) => group.length === 3)) return;
         if (/^(?:19|20)\d\d[ \-](?:19|20)\d\d$/u.test(value)) return;
+        if (/^\d{5}-\d{4}$/u.test(value)) return;
       }
       add("phone", match.index, match.index + value.length);
     });
@@ -183,7 +196,11 @@
       }
       add("date", match.index, match.index + match[0].length);
     }));
-    each(DAY, text, (match) => add("day", match.index, match.index + match[0].length));
+    each(DAY, text, (match) => {
+      // Black Friday or Easter Monday is a name, not a day that changes.
+      if (NAMED_DAY.test(text.slice(Math.max(0, match.index - 12), match.index))) return;
+      add("day", match.index, match.index + match[0].length);
+    });
   }
 
   function times(text, add) {
@@ -205,9 +222,10 @@
       // Part of a link, an address, a decimal or a hashtag, not a token of its own.
       if (/[#@.\/\\:_\-]/u.test(before) || /^[@.\/\\:_\-][\p{L}\p{N}]/u.test(after)) return;
       const runs = value.match(/\d+/g) || [];
-      // A year (2026, FY2026, Q4-2026) is not an order number.
-      const id = runs.some((run) => run.length >= 5)
-        || (/\p{L}/u.test(value) && runs.some((run) => run.length === 4 && !/^(?:19|20)\d\d$/u.test(run)));
+      // A year (2026, FY2026, Q4-2026) is not an order number, and nor is a
+      // standard (ISO 27001, RFC9110); INV-2041 and ENG-2034 are.
+      if (FISCAL_YEAR.test(value) || STANDARD.test(value) || STANDARD_BEFORE.test(text.slice(Math.max(0, match.index - 8), match.index))) return;
+      const id = runs.some((run) => run.length >= 5) || (/\p{L}/u.test(value) && runs.some((run) => run.length === 4));
       if (id) add("number", match.index, match.index + value.length);
     });
   }

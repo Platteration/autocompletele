@@ -24,12 +24,16 @@
   ]);
   // A phrase that stops on one of these and runs on into more words is a
   // fragment of a longer thought ("as you can see the", "one of the", "thank
-  // you for"). Such a phrase does not qualify, so it cannot hide the complete
-  // phrase inside it either. It still qualifies where it ends a sentence or
-  // clause at least 3 times ("that is what we are looking for.").
+  // you for", "if you have any"). Such a phrase does not qualify, so it cannot
+  // hide the complete phrase inside it either. It still qualifies where it
+  // ends a sentence or clause at least 3 times ("that is what we are looking
+  // for.", "as soon as you can.").
   const WEAK_ENDINGS = new Set([
     "the", "a", "an", "and", "or", "but", "of", "to", "for", "with", "at", "as", "if", "so",
     "my", "your", "our", "is", "are", "was", "were", "be", "i", "we", "they", "he", "she",
+    // Determiners, quantifiers and auxiliaries that need the word after them.
+    "any", "some", "other", "this", "that", "these", "those", "all", "every", "each", "no", "not", "more",
+    "have", "has", "had", "can", "will", "would", "could", "should", "do", "does", "their", "his", "her", "its",
   ]);
   // "and as you can see" is "as you can see" joined onto the previous clause.
   const WEAK_STARTS = new Set(["and", "or", "but", "so"]);
@@ -135,8 +139,9 @@
    * (the new one would fire first and make the old one impossible to type), or
    * is a prefix of the proposal that a number can still get past. A trigger
    * that is a prefix of the stem itself (an existing "ay" against "aycs/")
-   * cannot be avoided by numbering, so it is left for the library's conflict
-   * warning.
+   * cannot be avoided by numbering, so the proposal stands; the Writing pad
+   * checks it with the library's conflict rules (conflicts.js) and asks for
+   * another trigger before saving one that could never fire.
    *
    * @param {string} stem
    * @param {Array<{trigger: string}|string>} shorthands existing shortcuts or triggers
@@ -172,10 +177,12 @@
    * at least 3 times without overlapping itself across all the texts. It needs
    * 3+ words or 12+ characters, and at least one word outside FUNCTION_WORDS.
    * It must not start with a word in WEAK_STARTS, nor end with one in
-   * WEAK_ENDINGS unless it ends a sentence or clause 3+ times. Of a phrase and a
-   * longer qualifying phrase containing it, the shorter is dropped when the
-   * longer is seen as often; of two phrases seen equally often where every
-   * occurrence of one overlaps the other, only the higher ranked is offered.
+   * WEAK_ENDINGS unless it ends a sentence or clause 3+ times. A phrase at
+   * least half of whose occurrences overlap occurrences of a higher ranked one
+   * is not offered: they are pieces of the same sentences, and the ideas shown
+   * should be different phrases. That includes the spec's rule that only
+   * maximal phrases are kept: a longer phrase seen at least as often as a
+   * phrase inside it ranks higher and covers all of its occurrences.
    * Texts that differ only in spacing count once.
    *
    * @param {string[]} texts
@@ -242,23 +249,9 @@
       if (taken.length < MIN_COUNT || !qualifies(segments, taken, candidate.key)) continue;
       qualified.push({ key: candidate.key, words: candidate.count, seen: taken.length, taken, first: taken[0] });
     }
-    const byKey = new Map(qualified.map((phrase) => [phrase.key, phrase]));
-
-    // Keep only maximal phrases.
-    const dominated = new Set();
-    for (const phrase of qualified) {
-      const segment = segments[phrase.first.segment];
-      for (let length = MIN_WORDS; length < phrase.words; length++) {
-        for (let offset = 0; offset + length <= phrase.words; offset++) {
-          const inner = byKey.get(phraseKey(segment, phrase.first.first + offset, length));
-          if (inner && phrase.seen >= inner.seen) dominated.add(inner.key);
-        }
-      }
-    }
-
     // The first seen breaks ties: two phrases of the same length never start
     // at the same word.
-    const ranked = qualified.filter((phrase) => !dominated.has(phrase.key)).sort((a, b) =>
+    const ranked = qualified.sort((a, b) =>
       b.seen * b.words - a.seen * a.words || b.words - a.words
       || a.first.segment - b.first.segment || a.first.first - b.first.first);
 
@@ -277,11 +270,12 @@
     const results = [];
     const shown = [];
     for (const phrase of ranked) {
-      // A phrase longer than 8 words shows up as several 8-word windows seen
-      // equally often; offer only the best of them. Dismissed and existing
-      // phrases still count here, so dismissing one window hides the rest.
-      if (shown.some((other) => other.seen === phrase.seen
-        && phrase.taken.every((place) => other.taken.some((kept) => overlaps(place, kept))))) continue;
+      // Pieces of one sentence ("let me know if you", "please let me know if
+      // you have any") and the 8-word windows of a longer sentence would
+      // otherwise fill every card. Dismissed and existing phrases still count
+      // here, so dismissing one piece hides the others.
+      const overlapping = phrase.taken.filter((place) => shown.some((other) => other.taken.some((kept) => overlaps(place, kept))));
+      if (overlapping.length * 2 >= phrase.taken.length) continue;
       shown.push(phrase);
       if (excluded.has(phrase.key)) continue;
 
