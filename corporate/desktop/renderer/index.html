@@ -123,6 +123,16 @@
       <table><tbody id="licence"></tbody></table>
       <h2 class="mt">Policy sources</h2>
       <table><thead><tr><th>Source</th><th>Status</th><th class="num">Serial</th><th>Key</th><th>Note</th></tr></thead><tbody id="policy-sources"></tbody></table>
+      <h2 class="mt">Usage report upload</h2>
+      <p class="hint" id="upload-mode"></p>
+      <div class="toolbar">
+        <button class="plain" id="upload-now" hidden>Send now</button>
+        <span class="hint" id="upload-result"></span>
+      </div>
+      <details id="upload-details" hidden>
+        <summary>What was sent last time</summary>
+        <pre class="mono" id="upload-body"></pre>
+      </details>
       <h2 class="mt">Change log</h2>
       <p class="hint">Policy changes, policy sources that failed or recovered, and changes to your own capture rules. Typed text is never recorded here.</p>
       <table><thead><tr><th>When</th><th>Event</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table>

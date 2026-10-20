@@ -33,7 +33,7 @@ function empty() {
     paused: { active: false, message: "" },
     serial: null,
     licence: null,
-    reporting: { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 },
+    reporting: { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12, endpoint: null, uploadEvery: "week", uploadToken: null },
     warnings: [],
   };
 }
@@ -177,6 +177,12 @@ function parse(input) {
   policy.reporting.includeApps = reporting.includeApps === true;
   policy.reporting.period = ["day", "week", "month"].includes(reporting.period) ? reporting.period : "week";
   policy.reporting.periods = Math.min(366, Math.floor(positive(reporting.periods, 12)));
+  // Upload only over https: the report names organisation shortcuts and teams.
+  const endpoint = typeof reporting.endpoint === "string" ? reporting.endpoint.trim() : "";
+  if (endpoint && !/^https:\/\//i.test(endpoint)) policy.warnings.push("reporting.endpoint ignored: only https:// is allowed");
+  policy.reporting.endpoint = /^https:\/\//i.test(endpoint) ? endpoint : null;
+  policy.reporting.uploadEvery = ["day", "week"].includes(reporting.uploadEvery) ? reporting.uploadEvery : "week";
+  policy.reporting.uploadToken = typeof reporting.uploadToken === "string" && reporting.uploadToken.trim() ? reporting.uploadToken.trim() : null;
 
   const retention = source.retention && typeof source.retention === "object" ? source.retention : {};
   policy.retention.metricsDays = Math.floor(positive(retention.metricsDays, policy.retention.metricsDays));

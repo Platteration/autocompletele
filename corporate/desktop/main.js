@@ -226,6 +226,20 @@ function schedulePolicyRefresh() {
   refreshTimer = setInterval(refreshPolicy, minutes * 60 * 1000);
 }
 
+// Usage-report upload: only when the policy names an https endpoint; checked
+// hourly, sent when the policy's interval has passed since the last success.
+let uploadTimer = null;
+async function uploadIfDue() {
+  if (!assistant.uploadDue()) return;
+  await assistant.uploadReport();
+  broadcast({ policy: true });
+}
+
+function scheduleUploads() {
+  uploadTimer = setInterval(() => { uploadIfDue().catch((error) => assistant.log("upload failed: " + error)); }, 60 * 60 * 1000);
+  setTimeout(() => { uploadIfDue().catch((error) => assistant.log("upload failed: " + error)); }, 2 * 60 * 1000);
+}
+
 // Search palette: a global hotkey opens a small window that finds any
 // shortcut or document set; Enter inserts into the application underneath.
 function registerPaletteShortcut() {
@@ -310,6 +324,8 @@ function registerIpc() {
   handle("palette:search", (query) => assistant.paletteSearch(String(query == null ? "" : query), 8));
   handle("palette:choose", (choice) => choosePalette(choice || null));
   handle("palette:close", () => { closePalette(); return { ok: true }; });
+  handle("report:upload", async () => { const r = await assistant.uploadReport(); broadcast({ policy: true }); return r; });
+  handle("report:uploadStatus", () => assistant.uploadStatus());
   handle("policy:info", () => assistant.policyInfo());
   handle("policy:refresh", () => refreshPolicy());
   handle("policy:audit", () => assistant.audit(100));
@@ -387,6 +403,7 @@ function start() {
   if (!sender.isAvailable()) notify("Expansions cannot be typed into other applications: " + sender.unavailableReason());
   for (const warning of assistant.warnings()) notify(warning);
   schedulePolicyRefresh();
+  scheduleUploads();
   registerPaletteShortcut();
   updateTray();
   openDashboard();
@@ -404,6 +421,7 @@ app.on("will-quit", () => globalShortcut.unregisterAll());
 
 app.on("before-quit", () => {
   if (refreshTimer) clearInterval(refreshTimer);
+  if (uploadTimer) clearInterval(uploadTimer);
   if (listener) listener.stop();
   if (assistant) assistant.endSession();
 });

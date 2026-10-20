@@ -19,6 +19,7 @@ module.exports = {
   license: require("./license.js"),
   engine: require("./engine.js"),
   report: require("./report.js"),
+  reportUpload: require("./report-upload.js"),
   suggestions: require("./suggestions.js"),
   store: require("./store.js"),
   cryptoBox: require("./crypto-box.js"),

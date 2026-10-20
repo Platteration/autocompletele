@@ -467,6 +467,32 @@
     if (!entries.length) audit.append(el("tr", {}, [el("td", { colspan: "3", text: "No changes recorded yet." })]));
   }
 
+  async function renderUpload() {
+    const up = await api.getUploadStatus();
+    const when = (ms) => (ms ? new Date(ms).toLocaleString() : "never");
+    if (!up.configured) {
+      text($("upload-mode"), "Your organisation has not asked for usage reports to be sent anywhere. Nothing leaves this computer unless you export a report yourself.");
+    } else {
+      text($("upload-mode"), "Your organisation collects the counts-only usage report at " + up.endpoint + " every " + up.every + (up.signed ? ", signed with the policy's token" : "")
+        + ". Last sent: " + when(up.lastSuccessAt) + (up.lastStatus === "failed" ? ". Last attempt failed: " + up.lastError : "") + (up.nextDueAt ? ". Next: " + when(up.nextDueAt) : "") + ".");
+    }
+    $("upload-now").hidden = !up.configured;
+    $("upload-details").hidden = !up.lastBody;
+    if (up.lastBody) {
+      let pretty = up.lastBody;
+      try { pretty = JSON.stringify(JSON.parse(up.lastBody), null, 2); } catch (error) { /* shown as is */ }
+      text($("upload-body"), pretty);
+    }
+  }
+
+  $("upload-now").addEventListener("click", async () => {
+    text($("upload-result"), "Sending…");
+    const result = await api.uploadReport();
+    text($("upload-result"), result && result.ok ? "Sent (" + result.bytes + " bytes)." : "Not sent: " + ((result && result.error) || "unknown reason"));
+    announce($("upload-result").textContent);
+    await renderUpload();
+  });
+
   $("policy-refresh").addEventListener("click", async () => {
     text($("policy-refresh-result"), "Checking…");
     const result = await api.refreshPolicy();
@@ -502,7 +528,10 @@
     if (what.library) await renderLibrary();
     if (what.learning || what.library) await renderLearning();
     if (what.settings) await renderApps();
-    if (what.settings || what.policy) await renderPolicy();
+    if (what.settings || what.policy) {
+      await renderPolicy();
+      await renderUpload();
+    }
   }
 
   api.onChange((change) => { renderAll(change).catch(console.error); });

@@ -103,11 +103,14 @@ test("the kill switch pauses from any layer and carries a message", () => {
 });
 
 test("reporting settings are validated with safe defaults", () => {
-  assert.deepEqual(orgPolicy.parse({}).reporting, { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 });
-  assert.deepEqual(orgPolicy.parse({ reporting: { team: " Ops ", hourlyRate: "45", currency: "USD", includeApps: true, period: "month", periods: 999 } }).reporting,
-    { team: "Ops", hourlyRate: 45, currency: "USD", includeApps: true, period: "month", periods: 366 });
-  assert.deepEqual(orgPolicy.parse({ reporting: { hourlyRate: -3, includeApps: "yes", period: "year" } }).reporting,
-    { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 });
+  const base = { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12, endpoint: null, uploadEvery: "week", uploadToken: null };
+  assert.deepEqual(orgPolicy.parse({}).reporting, base);
+  assert.deepEqual(orgPolicy.parse({ reporting: { team: " Ops ", hourlyRate: "45", currency: "USD", includeApps: true, period: "month", periods: 999, endpoint: " https://collect.example/actle ", uploadEvery: "day", uploadToken: " s3cret " } }).reporting,
+    { team: "Ops", hourlyRate: 45, currency: "USD", includeApps: true, period: "month", periods: 366, endpoint: "https://collect.example/actle", uploadEvery: "day", uploadToken: "s3cret" });
+  assert.deepEqual(orgPolicy.parse({ reporting: { hourlyRate: -3, includeApps: "yes", period: "year", uploadEvery: "hour" } }).reporting, base);
+  const plain = orgPolicy.parse({ reporting: { endpoint: "http://collect.example/actle" } });
+  assert.equal(plain.reporting.endpoint, null);
+  assert.ok(plain.warnings.some((w) => /reporting.endpoint ignored: only https/.test(w)));
 });
 
 test("a warning rule without a fix is valid; a fix must point at something that exists", () => {

@@ -52,6 +52,8 @@ table { width: 100%; border-collapse: collapse; background: var(--panel); border
 th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
 td.mono, .mono { font-family: ui-monospace, monospace; }
+pre.mono { white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; }
+details summary { cursor: pointer; color: var(--muted); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--soft); color: var(--accent); font-size: 11px; margin-left: 6px; }
 .chart { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; }

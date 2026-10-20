@@ -34,6 +34,9 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `reporting.hourlyRate`, `reporting.currency` | Used to turn hours saved into an estimated value in the roll-up. |
 | `reporting.period`, `reporting.periods` | Buckets in a usage report: `day`, `week` (default) or `month`, and how many (default 12). |
 | `reporting.includeApps` | `true` adds per-application totals to usage reports (default `false`). |
+| `reporting.endpoint` | `https://` address that collects usage reports. Absent: nothing is ever sent. Plain `http://` is refused with a warning. |
+| `reporting.uploadEvery` | `day` or `week` (default): how often a desk sends its report once the endpoint is set. |
+| `reporting.uploadToken` | Optional shared secret. The body is signed with HMAC-SHA256 (`X-Actle-Signature: sha256=…`) so the collector can drop posts from anyone who merely knows the URL. |
 | `retention.metricsDays` | Days of statistics kept on disk (default 365). |
 | `retention.corpusDays` | Days of learning text kept on disk (default 90). |
 
@@ -135,6 +138,19 @@ node admin/actle-admin.js report reports/*.json --policy org.json --rate 38 --cu
 prints desks, hours saved, estimated value, totals per team, organisation
 shortcuts by use and the ones nobody used, and writes the same as CSV. An
 unreadable report is skipped with a warning.
+
+### Automatic upload
+
+With `reporting.endpoint` set, each desk posts the same counts-only report
+(JSON, `Content-Type: application/json`, header `X-Actle-Install` with the
+desk id) at start and then every `uploadEvery`, retrying an hour after a
+failure. The Policy tab shows the endpoint, the last upload, its outcome and
+the full body that was sent, with a "Send now" button. A failed upload is
+recorded in the change log; the desk keeps working. With `uploadToken` the
+body is also signed with HMAC-SHA256 of the token. Desks hold no private key
+and the token sits in every desk's policy cache, so the signature proves
+only "sent by a desk holding this policy". The collector is yours to run:
+anything that accepts an https POST.
 
 ## Phrase suggestions from desks
 

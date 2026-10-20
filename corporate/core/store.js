@@ -22,6 +22,7 @@ const FILES = Object.freeze({
   policyCacheDir: "policy-cache",
   corpusKey: "corpus.key",
   suggestions: "suggestions.json",
+  uploadState: "upload-state.json",
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -353,6 +354,14 @@ function createStore(dir) {
     writeJson(FILES.suggestions, { queued: Array.isArray(queued) ? queued : [] });
   }
 
+  function loadUploadState() {
+    return readJson(FILES.uploadState, null);
+  }
+
+  function saveUploadState(state) {
+    writeJson(FILES.uploadState, state);
+  }
+
   function exportLibraryJson() {
     return JSON.stringify({ version: 1, shorthands: loadLibrary() }, null, 2) + "\n";
   }
@@ -419,6 +428,8 @@ function createStore(dir) {
     loadAudit,
     loadSuggestions,
     saveSuggestions,
+    loadUploadState,
+    saveUploadState,
   };
 }
 

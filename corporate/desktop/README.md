@@ -52,6 +52,7 @@ Everything is in Electron's `userData` folder for the app
 | `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
 | `learned.json`    | SHA-256 digests of proposals the person dismissed (no readable text) |
+| `upload-state.json` | When the policy sets `reporting.endpoint`: time and outcome of the last usage-report upload and the exact body sent |
 | `suggestions.json` | Proposals the person chose to suggest to the organisation, readable, until exported, removed or deleted with the learned text |
 | `deployment.json` | Managed desks only: signed policy sources and pinned public keys, written by IT |
 | `policy-cache/`   | Last good copy of each signed policy layer                     |
@@ -127,7 +128,7 @@ Electron and without the native `uiohook-napi` build:
 - Package installation ran with `--ignore-scripts` to produce the lockfile;
   the Electron download and the uiohook native build were not performed.
 - `safeStorage` (the keychain behind corpus encryption), the policy refresh
-  timer, the save dialogs for usage reports, the warning popover, the global
-  palette hotkey and the return of focus to the previous application after
-  the palette closes have not run inside Electron; their logic is tested in
+  and upload timers, the save dialogs for usage reports, the warning popover,
+  the global palette hotkey and the return of focus to the previous
+  application after the palette closes have not run inside Electron; their logic is tested in
   Node with stand-ins and the pages were rendered in Chromium.

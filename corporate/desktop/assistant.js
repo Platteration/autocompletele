@@ -409,6 +409,15 @@ function createAssistant(options) {
     });
   }
 
+  const uploader = core.reportUpload.createUploader({
+    policy: () => policy,
+    buildReport: usageReport,
+    fetch: settings.fetch,
+    state: { load: store.loadUploadState, save: store.saveUploadState },
+    now: settings.now,
+    audit,
+  });
+
   function licenceInfo() {
     const ent = core.license.entitlements(licence);
     return {
@@ -479,6 +488,9 @@ function createAssistant(options) {
     warnings: () => warnings.concat(sourceReport.warnings, policy.warnings, store.warnings()),
     refreshPolicy,
     usageReport,
+    uploadReport: () => uploader.upload(),
+    uploadDue: () => uploader.due(),
+    uploadStatus: () => uploader.status(),
     corpusInfo,
     clearLearning,
     paletteSearch,

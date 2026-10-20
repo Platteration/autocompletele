@@ -85,6 +85,7 @@ corporate/
     policy-source.js          fetch signed layers, verify, refuse replays, keep the last good copy
     license.js                vendor-signed per-seat licences, licence state, free tier
     report.js                 counts-only usage reports, team roll-up, CSV
+    report-upload.js          opt-in https upload of the report, HMAC-signed with the policy's token
     suggestions.js            phrase suggestions a person shares, ranked across desks
     crypto-box.js             AES-256-GCM records for the learning corpus
     engine.js                 headless assistant: keys + focus in, actions out
@@ -145,8 +146,9 @@ it is bounded on purpose:
   suggestions included; switching an application to triggers mode stops
   learning there.
 - Nothing typed is ever sent anywhere. The only network access is fetching
-  signed policy files on a managed desk; usage reports are files the person
-  saves and hands over.
+  signed policy files on a managed desk and, only when the policy names an
+  https endpoint, posting the counts-only usage report; otherwise usage
+  reports are files the person saves and hands over.
 
 ## Run
 
@@ -186,6 +188,6 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
 - Attaching files directly into a mail client's compose window is
   platform-specific; the shell copies the paths and reveals the files, and
   counts an attachment only when the person confirms it.
-- Usage reports travel as files the person saves; an upload to a collection
-  point is not built, deliberately, so nothing leaves a desk without the
-  person's action.
+- Usage reports travel as files the person saves, or, when the policy names
+  an https collection endpoint, are posted automatically (counts only; the
+  Policy tab shows every body sent).
