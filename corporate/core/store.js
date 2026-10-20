@@ -16,6 +16,12 @@ const FILES = Object.freeze({
   metrics: "metrics.jsonl",
   corpus: "corpus.jsonl",
   learned: "learned.json",
+  deployment: "deployment.json",
+  policyState: "policy-state.json",
+  audit: "audit.jsonl",
+  policyCacheDir: "policy-cache",
+  corpusKey: "corpus.key",
+  suggestions: "suggestions.json",
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -24,11 +30,15 @@ const DEFAULT_SETTINGS = Object.freeze({
   captureApps: [],            // the person's own learn/off rules, same shape as policy.capture.apps
   shiftEnterForNewlines: false,
   startWithSystem: false,
+  installId: null,            // random id that lets an administrator count a desk's reports once
+  paletteShortcut: "CommandOrControl+Shift+Space", // global hotkey for the search palette; "" turns it off
 });
 
 function createStore(dir) {
   const root = path.resolve(String(dir));
   const warnings = [];
+  // When set, learning sessions are written sealed ({"enc": "v1:…"}).
+  let corpusBox = null;
 
   function ensureDir() {
     fs.mkdirSync(root, { recursive: true });
@@ -71,6 +81,7 @@ function createStore(dir) {
   function writeJson(name, value) {
     ensureDir();
     const target = file(name);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
     const temp = target + ".tmp-" + process.pid;
     fs.writeFileSync(temp, JSON.stringify(value, null, 2) + "\n", "utf8");
     fs.renameSync(temp, target);
@@ -141,6 +152,8 @@ function createStore(dir) {
     const cpm = Number(out.charsPerMinute);
     out.charsPerMinute = Number.isFinite(cpm) && cpm > 0 ? cpm : null;
     out.captureApps = Array.isArray(out.captureApps) ? out.captureApps : [];
+    out.installId = typeof out.installId === "string" && out.installId ? out.installId : null;
+    out.paletteShortcut = typeof out.paletteShortcut === "string" ? out.paletteShortcut.trim() : DEFAULT_SETTINGS.paletteShortcut;
     return out;
   }
 
@@ -166,26 +179,121 @@ function createStore(dir) {
     return all.length - kept.length;
   }
 
-  function appendSession(session) {
-    appendLine(FILES.corpus, session);
+  function setCorpusBox(box) {
+    corpusBox = box || null;
   }
 
+  function sealSession(session) {
+    return corpusBox ? { enc: corpusBox.seal(JSON.stringify(session)) } : session;
+  }
+
+  function appendSession(session) {
+    appendLine(FILES.corpus, sealSession(session));
+  }
+
+  /**
+   * Read the corpus. Sealed records this desk cannot open (no key, or a
+   * different key) are returned as `locked` so a rewrite keeps them: a
+   * keychain that is briefly unavailable must not cost the person their
+   * learned text.
+   */
+  function readCorpus() {
+    const sessions = [];
+    const locked = [];
+    let plaintext = 0;
+    for (const record of readLines(FILES.corpus)) {
+      if (typeof record.enc === "string") {
+        const opened = corpusBox ? corpusBox.open(record.enc) : null;
+        let session = null;
+        try {
+          session = opened == null ? null : JSON.parse(opened);
+        } catch (error) {
+          session = null;
+        }
+        if (session && typeof session.text === "string") sessions.push(session);
+        else locked.push(record);
+      } else if (typeof record.text === "string") {
+        plaintext++;
+        sessions.push(record);
+      }
+    }
+    return { sessions, locked, plaintext };
+  }
+
+  let lockedWarned = -1;
   function loadSessions() {
-    return readLines(FILES.corpus).filter((s) => typeof s.text === "string");
+    const corpus = readCorpus();
+    if (corpus.locked.length && corpus.locked.length !== lockedWarned) {
+      warnings.push(corpus.locked.length + " learned session(s) are encrypted with a key this desk cannot read; they are kept but not used");
+    }
+    lockedWarned = corpus.locked.length;
+    return corpus.sessions;
   }
 
   function pruneSessions(keepDays) {
     const days = Number(keepDays);
     if (!Number.isFinite(days) || days <= 0) return 0;
     const cutoff = Date.now() - days * 86400000;
-    const all = loadSessions();
-    const kept = all.filter((s) => Number(s.endedAt || s.startedAt || 0) >= cutoff);
-    if (kept.length !== all.length) rewriteLines(FILES.corpus, kept);
-    return all.length - kept.length;
+    const corpus = readCorpus();
+    const kept = corpus.sessions.filter((s) => Number(s.endedAt || s.startedAt || 0) >= cutoff);
+    const removed = corpus.sessions.length - kept.length;
+    // Rewriting also seals any plain records left from before encryption.
+    if (removed || (corpusBox && corpus.plaintext)) rewriteLines(FILES.corpus, corpus.locked.concat(kept.map(sealSession)));
+    return removed;
+  }
+
+  /** Seal plain records written before encryption was available. Returns how many. */
+  function encryptCorpus() {
+    if (!corpusBox) return 0;
+    const corpus = readCorpus();
+    if (!corpus.plaintext) return 0;
+    rewriteLines(FILES.corpus, corpus.locked.concat(corpus.sessions.map(sealSession)));
+    return corpus.plaintext;
+  }
+
+  function corpusInfo() {
+    const corpus = readCorpus();
+    const times = corpus.sessions.map((s) => Number(s.endedAt || s.startedAt || 0)).filter((t) => t > 0);
+    let bytes = 0;
+    try {
+      bytes = fs.statSync(file(FILES.corpus)).size;
+    } catch (error) {
+      bytes = 0;
+    }
+    return {
+      sessions: corpus.sessions.length,
+      locked: corpus.locked.length,
+      plaintext: corpus.plaintext,
+      encrypted: !!corpusBox,
+      oldest: times.length ? Math.min(...times) : null,
+      newest: times.length ? Math.max(...times) : null,
+      bytes,
+    };
   }
 
   function clearSessions() {
     rewriteLines(FILES.corpus, []);
+  }
+
+  function loadCorpusKeyBlob() {
+    try {
+      return fs.readFileSync(file(FILES.corpusKey));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function saveCorpusKeyBlob(blob) {
+    ensureDir();
+    fs.writeFileSync(file(FILES.corpusKey), blob, { mode: 0o600 });
+  }
+
+  /** Keep an unreadable key file (renamed) instead of deleting it. */
+  function moveCorpusKeyAside() {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const target = file(FILES.corpusKey + ".unreadable-" + stamp);
+    fs.renameSync(file(FILES.corpusKey), target);
+    return path.basename(target);
   }
 
   /** Decisions about learned candidates: texts the person dismissed, so they are not proposed again. */
@@ -196,6 +304,53 @@ function createStore(dir) {
 
   function saveLearned(learned) {
     writeJson(FILES.learned, { dismissed: Array.isArray(learned && learned.dismissed) ? learned.dismissed : [] });
+  }
+
+  // Deployment settings written by IT (policy sources and pinned keys).
+  function loadDeployment() {
+    return readJson(FILES.deployment, null);
+  }
+
+  function cacheName(id) {
+    const safe = String(id).replace(/[^a-z0-9]/gi, "");
+    return path.join(FILES.policyCacheDir, (safe || "source") + ".json");
+  }
+
+  function loadPolicyCache(id) {
+    return readJson(cacheName(id), null);
+  }
+
+  function savePolicyCache(id, value) {
+    writeJson(cacheName(id), value);
+  }
+
+  function loadPolicyState() {
+    return readJson(FILES.policyState, {});
+  }
+
+  function savePolicyState(state) {
+    writeJson(FILES.policyState, state);
+  }
+
+  /** Audit trail of policy and capture-rule changes: what changed and when, never typed text. */
+  function appendAudit(entry) {
+    appendLine(FILES.audit, Object.assign({ at: Date.now() }, entry));
+  }
+
+  function loadAudit(limit) {
+    const all = readLines(FILES.audit);
+    const count = Math.floor(Number(limit));
+    return Number.isFinite(count) && count > 0 ? all.slice(-count) : all;
+  }
+
+  /** Proposals the person chose to suggest to their organisation, not yet exported or removed. */
+  function loadSuggestions() {
+    const data = readJson(FILES.suggestions, {});
+    return Array.isArray(data.queued) ? data.queued : [];
+  }
+
+  function saveSuggestions(queued) {
+    writeJson(FILES.suggestions, { queued: Array.isArray(queued) ? queued : [] });
   }
 
   function exportLibraryJson() {
@@ -241,14 +396,29 @@ function createStore(dir) {
     appendMetric,
     loadMetrics,
     pruneMetrics,
+    setCorpusBox,
     appendSession,
     loadSessions,
     pruneSessions,
+    encryptCorpus,
+    corpusInfo,
     clearSessions,
+    loadCorpusKeyBlob,
+    saveCorpusKeyBlob,
+    moveCorpusKeyAside,
     loadLearned,
     saveLearned,
     exportLibraryJson,
     importLibraryJson,
+    loadDeployment,
+    loadPolicyCache,
+    savePolicyCache,
+    loadPolicyState,
+    savePolicyState,
+    appendAudit,
+    loadAudit,
+    loadSuggestions,
+    saveSuggestions,
   };
 }
 

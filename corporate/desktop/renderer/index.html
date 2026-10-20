@@ -21,6 +21,7 @@
     <button role="tab" data-tab="apps" aria-selected="false">Applications</button>
     <button role="tab" data-tab="keywords" aria-selected="false">Keywords</button>
     <button role="tab" data-tab="documents" aria-selected="false">Documents</button>
+    <button role="tab" data-tab="policy" aria-selected="false">Policy</button>
   </nav>
   <main>
     <div class="banner" id="banner" hidden role="alert"></div>
@@ -44,6 +45,7 @@
         </label>
         <span class="spacer"></span>
         <span class="hint" id="context"></span>
+        <button class="plain" id="report-open">Usage report…</button>
       </div>
       <div class="cards">
         <div class="card"><div class="value" id="m-keystrokes">0</div><div class="label">keystrokes saved</div></div>
@@ -69,14 +71,25 @@
     </section>
 
     <section id="tab-learning" role="tabpanel" hidden>
-      <p class="hint">Proposals from the applications you allowed in learn mode. Accept one to save it as a shortcut; dismiss it and it is not proposed again. Highlighted parts of a template become fill-in blanks.</p>
+      <p class="hint">Proposals from the applications you allowed in learn mode. Accept one to save it as a shortcut; dismiss it and it is not proposed again. Highlighted parts of a template become fill-in blanks; give each a name you will recognise when filling it in.</p>
+      <div class="toolbar">
+        <span class="hint" id="corpus-info"></span>
+        <span class="spacer"></span>
+        <button class="plain" id="corpus-clear">Delete learned text…</button>
+      </div>
       <div id="candidates"></div>
+      <h2 class="mt">Suggested to your organisation</h2>
+      <p class="hint">Proposals you chose to share with whoever maintains your organisation's shortcuts. Exporting saves exactly the texts listed here (templates with their blanks, never the values seen in them), your team and a random desk id; nothing else.</p>
+      <div class="toolbar">
+        <button class="plain" id="suggestions-save">Export suggestions…</button>
+      </div>
+      <table><thead><tr><th>Text</th><th>Your trigger</th><th></th></tr></thead><tbody id="suggestions"></tbody></table>
     </section>
 
     <section id="tab-apps" role="tabpanel" hidden>
-      <p class="hint"><strong>Triggers</strong> keeps only the last 200 characters in memory to spot a trigger; nothing is written. <strong>Learn</strong> keeps the text you type in that application, with card numbers, passwords and tokens masked, so recurring phrases can be proposed. <strong>Off</strong> reads nothing. Credential prompts, password managers and terminals are never learned.</p>
+      <p class="hint"><strong>Triggers</strong> keeps only the last 200 characters in memory to spot a trigger (and, while the organisation has keyword rules, the current field's text, up to 4,000 characters); nothing is written. <strong>Learn</strong> keeps the text you type in that application, with card numbers, passwords and tokens masked, so recurring phrases can be proposed. <strong>Off</strong> reads nothing. Credential prompts, password managers and terminals are never learned.</p>
       <h2>Your rules</h2>
-      <div class="row" class="mb">
+      <div class="row mb">
         <input type="text" id="rule-process" placeholder="Process name, e.g. outlook.exe" aria-label="Process name">
         <input type="text" id="rule-title" placeholder="or window title pattern, e.g. Gmail" aria-label="Window title pattern">
         <select id="rule-mode" aria-label="Mode"><option value="learn">Learn</option><option value="triggers">Triggers</option><option value="off">Off</option></select>
@@ -90,13 +103,26 @@
     </section>
 
     <section id="tab-keywords" role="tabpanel" hidden>
-      <p class="hint">When these words appear in what you write, a small offer appears. Rules come from the organisation policy.</p>
-      <table><thead><tr><th>Rule</th><th>Keywords</th><th>Match</th><th>Inserts</th></tr></thead><tbody id="keywords"></tbody></table>
+      <p class="hint">When these words appear in what you write, a small offer or a warning appears. Rules come from the organisation policy. While there are rules, the text of the field you are typing in is held in memory (up to 4,000 characters) to check them, and dropped when you move to another field; it is never written to disk.</p>
+      <table><thead><tr><th>Rule</th><th>When</th><th>Match</th><th>Does</th></tr></thead><tbody id="keywords"></tbody></table>
     </section>
 
     <section id="tab-documents" role="tabpanel" hidden>
       <p class="hint">Type a document shortcut in any application to list its files; the paths are copied so they can be pasted into an attachment area.</p>
       <div id="documents"></div>
+    </section>
+
+    <section id="tab-policy" role="tabpanel" hidden>
+      <p class="hint" id="policy-mode"></p>
+      <div class="toolbar">
+        <button class="plain" id="policy-refresh">Check for policy updates</button>
+        <span class="hint" id="policy-refresh-result"></span>
+      </div>
+      <h2>Policy sources</h2>
+      <table><thead><tr><th>Source</th><th>Status</th><th class="num">Serial</th><th>Key</th><th>Note</th></tr></thead><tbody id="policy-sources"></tbody></table>
+      <h2 class="mt">Change log</h2>
+      <p class="hint">Policy changes, policy sources that failed or recovered, and changes to your own capture rules. Typed text is never recorded here.</p>
+      <table><thead><tr><th>When</th><th>Event</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table>
     </section>
   </main>
 
@@ -106,11 +132,20 @@
       <label><span>Trigger</span><input type="text" id="editor-trigger" required autocomplete="off"></label>
       <label><span>Expansion (placeholders {date}, {time}, {datetime}, {cursor}; blanks [[name]])</span><textarea id="editor-expansion"></textarea></label>
       <p class="hint" id="editor-error" role="alert"></p>
-      <div class="row" class="end">
+      <div class="row end">
         <button class="plain" type="button" id="editor-cancel">Cancel</button>
         <button class="primary" type="submit">Save</button>
       </div>
     </form>
+  </dialog>
+  <dialog id="report" aria-labelledby="report-title">
+    <h2 id="report-title">Usage report for your organisation</h2>
+    <p class="hint">This is everything the file contains. It holds totals per period and the use of shortcuts your organisation defined. Your own shortcuts are counted as one total and never named. Nothing you typed or inserted is included.</p>
+    <table><tbody id="report-summary"></tbody></table>
+    <div class="row end mt">
+      <button class="plain" type="button" id="report-cancel">Close</button>
+      <button class="primary" type="button" id="report-save">Save report…</button>
+    </div>
   </dialog>
   <div class="status" role="status" aria-live="polite" id="status"></div>
   <script src="dashboard.js"></script>

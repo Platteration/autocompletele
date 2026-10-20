@@ -132,7 +132,9 @@ test("learn mode keeps a scrubbed session and flushes it on focus change", () =>
   engine.tick(5000);
   const { session } = engine.focusChanged({ process: "notepad" });
   assert.equal(session.app, "outlook");
-  assert.equal(session.text, "Hello there, That is really cool! my card is [card].\nBye!");
+  // Only typed text is learned: the expansion actle inserted becomes a paragraph break.
+  assert.equal(session.text, "Hello there, \n\n my card is [card].\nBye!");
+  assert.equal(session.text.includes("That is really cool"), false);
   assert.equal(session.redactions, 1);
   assert.equal(session.endedAt - session.startedAt, 5000);
   assert.equal(engine.session, null);
@@ -170,4 +172,99 @@ test("setLibrary and setPolicy take effect immediately", () => {
   assert.equal(engine.mode, "learn");
   assert.notEqual(engine.session, null);
   assert.deepEqual(engine.type("cool/"), [], "the organisation library is gone too");
+});
+
+test("an organisation pause turns everything off until the policy lifts it", () => {
+  const engine = make();
+  engine.focusChanged({ process: "outlook.exe" });
+  assert.equal(engine.mode, "learn");
+  engine.setPolicy(orgPolicy.parse({ paused: { message: "Paused by IT" }, capture: { defaultMode: "learn" }, library: [{ trigger: "x/", expansion: "X" }] }));
+  assert.equal(engine.paused, true);
+  assert.equal(engine.mode, "off");
+  assert.equal(engine.session, null, "no learning while paused");
+  assert.deepEqual(engine.type("cool/ x/ refund "), []);
+  assert.equal(engine.focusChanged({ process: "notepad" }).reason, "paused by the organisation");
+  engine.setEnabled(true);
+  assert.equal(engine.mode, "off", "the person cannot override an organisation pause");
+  engine.setPolicy(orgPolicy.parse({ library: [{ trigger: "x/", expansion: "X" }] }));
+  assert.equal(engine.paused, false);
+  assert.equal(engine.mode, "triggers");
+  assert.equal(engine.type("x/")[0].text, "X");
+});
+
+test("statistics remember whether a shortcut came from the organisation or the person", () => {
+  const engine = make();
+  engine.focusChanged({ process: "notepad" });
+  engine.type("cool/ sig/ ");
+  engine.recordInsert({ kind: "document", trigger: "/sld", count: 1 });
+  engine.recordInsert({ kind: "keyword", trigger: "refund", inserted: "x", source: "personal" });
+  engine.recordInsert({ kind: "template", trigger: "ack/", inserted: "Hi Sam", typed: "ack/", source: "organization" });
+  assert.deepEqual(engine.ledger.entries().map((e) => [e.trigger, e.source]), [
+    ["cool/", "personal"], ["sig/", "organization"], ["/sld", "organization"], ["refund", "organization"], ["ack/", "organization"],
+  ]);
+});
+
+test("compliance warnings see the whole field, across new lines, and fire once", () => {
+  const engine = make({ policy: orgPolicy.parse({
+    library: [{ trigger: "disc/", expansion: "This message is confidential." }],
+    keywordRules: [
+      { id: "disclaimer", action: "warn", keywords: ["contract"], unless: ["This message is confidential"], message: "Add the disclaimer.", insert: { kind: "shorthand", trigger: "disc/" } },
+      { id: "card", action: "warn", detect: ["card-number"], message: "No card numbers." },
+      { id: "hours", keywords: ["hours"], insert: "9 to 5" },
+    ],
+  }) });
+  engine.focusChanged({ process: "notepad" });
+  const first = engine.type("Hi,\nthe contract ");
+  assert.deepEqual(first.map((a) => a.type), ["warning"]);
+  assert.equal(first[0].hits[0].rule.message, "Add the disclaimer.");
+  assert.deepEqual(engine.type("contract again "), [], "once per field");
+  assert.deepEqual(engine.type("card 4111 1111 1111 1111 and office hours ").map((a) => a.type), ["warning", "keyword"], "different words, different actions");
+
+  engine.focusChanged({ process: "notepad" });
+  engine.type("disc/");
+  assert.deepEqual(engine.type("\n\nAbout the contract "), [], "the disclaimer inserted above, before new lines, counts");
+  assert.equal(engine.fieldText.endsWith("This message is confidential.\n\nAbout the contract "), true);
+  engine.keyTyped({ isBackspace: true });
+  assert.equal(engine.fieldText.endsWith("About the contract"), true, "Backspace removes from the field text too");
+  engine.focusChanged({ process: "other" });
+  assert.equal(engine.fieldText, "", "the field text is dropped when the focus moves");
+});
+
+test("without keyword rules the field text is not kept at all", () => {
+  const engine = make({ policy: orgPolicy.parse({ library: [{ trigger: "a/", expansion: "A" }] }) });
+  engine.focusChanged({ process: "notepad" });
+  engine.type("some private words a/ ");
+  assert.equal(engine.fieldText, "");
+  const kept = make();
+  kept.focusChanged({ process: "notepad" });
+  kept.type("x".repeat(5000));
+  assert.equal(kept.fieldText.length, 4000, "capped");
+  kept.setPolicy(orgPolicy.parse({}));
+  assert.equal(kept.fieldText, "", "dropped when the rules go away");
+});
+
+test("learning keeps what was typed, never what actle inserted, and undo restores the trigger", () => {
+  const engine = make();
+  engine.focusChanged({ process: "outlook.exe" });
+  engine.type("Our signature: sig/");
+  engine.keyTyped({ isBackspace: true });
+  assert.equal(engine.session.text, "Our signature: sig/", "after undo the session holds exactly what was typed");
+  engine.type(" then sig/ and ");
+  engine.recordInsert({ kind: "keyword", trigger: "refund", inserted: "Inserted refund text", typed: "" });
+  engine.type("the end of a long enough message");
+  const { session } = engine.focusChanged({ process: "notepad" });
+  assert.equal(session.text, "Our signature: sig/ then \n\n and \n\nthe end of a long enough message");
+  assert.equal(/Kind regards|Inserted refund/.test(session.text), false);
+});
+
+test("a warning and an offer on the same word arrive together, warning first", () => {
+  const engine = make({ policy: orgPolicy.parse({ keywordRules: [
+    { id: "offer", keywords: ["contract"], insert: "Contract template text" },
+    { id: "warn", action: "warn", keywords: ["contract"], message: "Add the disclaimer." },
+  ] }) });
+  engine.focusChanged({ process: "notepad" });
+  const actions = engine.type("the contract ");
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].type, "warning");
+  assert.deepEqual(actions[0].hits.map((h) => h.rule.id), ["warn", "offer"]);
 });

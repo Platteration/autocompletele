@@ -5,8 +5,10 @@
 "use strict";
 
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const core = require("../core/index.js");
 const learning = require("./learning.js");
+const { loadCorpusKey } = require("./corpus-key.js");
 
 function readPolicyFile(filePath) {
   try {
@@ -23,8 +25,47 @@ function createAssistant(options) {
   const log = typeof settings.log === "function" ? settings.log : () => {};
 
   let userSettings = store.loadSettings();
-  let rawPolicy = store.loadPolicy();
-  if (rawPolicy == null && settings.policyFile) {
+
+  // Learned text is only ever written encrypted. Without a usable keychain
+  // key, sessions are not stored and the dashboard says so.
+  const corpusKey = loadCorpusKey({ store, keychain: settings.keychain });
+  const learningStorage = !!corpusKey.key;
+  if (learningStorage) store.setCorpusBox(core.cryptoBox.createBox(corpusKey.key));
+  else warnings.push(corpusKey.message);
+  if (corpusKey.status === "created" || corpusKey.status === "replaced") {
+    audit({ event: "corpus-key-" + corpusKey.status, aside: corpusKey.aside || null });
+  }
+  const encryptedNow = store.encryptCorpus();
+  if (encryptedNow) audit({ event: "corpus-encrypted", sessions: encryptedNow });
+  // Dismissals written as plain text by an earlier version become digests.
+  const dismissedBefore = store.loadLearned().dismissed;
+  if (dismissedBefore.some((entry) => !entry.startsWith("sha256:"))) {
+    store.saveLearned({ dismissed: [...new Set(dismissedBefore.map(learning.dismissalKey))] });
+  }
+
+  // A desk is "managed" when IT installed a deployment file naming signed
+  // policy sources. Then only signed layers apply; an unsigned local policy
+  // file is ignored, so it cannot override what the organisation signed.
+  const deploymentRaw = settings.deployment !== undefined ? settings.deployment : store.loadDeployment();
+  const policySource = deploymentRaw ? core.policySource.createPolicySource({
+    deployment: deploymentRaw,
+    cache: { load: store.loadPolicyCache, save: store.savePolicyCache },
+    fetch: settings.fetch,
+    readFile: settings.readFile,
+    now: settings.now,
+  }) : null;
+  const managed = !!(policySource && policySource.deployment.sources.length);
+  if (policySource && !managed) warnings.push(...policySource.deployment.warnings);
+  let sourceReport = { sources: [], warnings: [] };
+
+  let rawPolicy = managed ? null : store.loadPolicy();
+  if (managed) {
+    sourceReport = policySource.loadCached();
+    rawPolicy = core.orgPolicy.merge(sourceReport.layers);
+    if (store.loadPolicy() != null || settings.policyFile) {
+      warnings.push("a local policy file is ignored because this desk receives a signed policy from its deployment settings");
+    }
+  } else if (rawPolicy == null && settings.policyFile) {
     const text = readPolicyFile(settings.policyFile);
     if (text == null) {
       warnings.push("policy file " + settings.policyFile + " could not be read; running without an organisation policy");
@@ -36,7 +77,7 @@ function createAssistant(options) {
       }
     }
   }
-  if (rawPolicy == null && settings.policy) rawPolicy = settings.policy;
+  if (!managed && rawPolicy == null && settings.policy) rawPolicy = settings.policy;
 
   function buildPolicy() {
     const policy = core.orgPolicy.parse(rawPolicy == null ? {} : rawPolicy);
@@ -48,7 +89,6 @@ function createAssistant(options) {
   }
 
   let policy = buildPolicy();
-  warnings.push(...policy.warnings);
 
   const ledger = core.metrics.createLedger({ now: settings.now, charsPerMinute: policy.typing.charsPerMinute });
   ledger.load(store.loadMetrics());
@@ -65,9 +105,74 @@ function createAssistant(options) {
     swallowsTriggerKey: settings.swallowsTriggerKey,
   });
   engine.setEnabled(userSettings.enabled);
+  recordPolicyAudit("start");
 
   let cachedCandidates = null;
   const listeners = { session: [], candidates: [] };
+
+  function audit(entry) {
+    store.appendAudit(Object.assign({ at: settings.now() }, entry));
+  }
+
+  function sourceStatusKey(source) {
+    if (source.status === "failed") return "failed: " + (source.error || "");
+    if (source.error) return "cached: " + source.error;
+    return "ok";
+  }
+
+  // Record what the organisation changed, and when a policy source starts or
+  // stops failing. Never typed text: hashes, serials, labels and statuses.
+  function recordPolicyAudit(origin) {
+    const hash = core.policySigning.sha256(JSON.stringify(rawPolicy == null ? {} : rawPolicy));
+    const state = store.loadPolicyState() || {};
+    const previous = state.sourceStatus && typeof state.sourceStatus === "object" ? state.sourceStatus : {};
+    const sourceStatus = {};
+    for (const source of sourceReport.sources) {
+      const key = sourceStatusKey(source);
+      sourceStatus[source.id] = key;
+      const before = previous[source.id] || "ok";
+      if (key !== before) {
+        audit({ event: key === "ok" ? "policy-source-recovered" : "policy-source-problem", source: source.label, location: source.location, status: source.status, error: source.error || null });
+      }
+    }
+    if (state.hash !== hash) {
+      audit({
+        event: "policy-applied",
+        origin,
+        hash,
+        previousHash: state.hash || null,
+        organization: policy.organization,
+        paused: policy.paused.active,
+        sources: sourceReport.sources.map((source) => ({ label: source.label, status: source.status, serial: source.serial || null, keyId: source.keyId || null })),
+        warnings: policy.warnings.length,
+      });
+    }
+    store.savePolicyState({ hash, appliedAt: settings.now(), sourceStatus });
+  }
+
+  // Apply a new policy without disturbing the field being typed in: the
+  // learning session and the field's rule state survive unless the policy
+  // itself ends learning there (then the session is stored).
+  function applyEngineSettings() {
+    persistSession(engine.setPolicy(policy));
+    if (engine.enabled !== userSettings.enabled) persistSession(engine.setEnabled(userSettings.enabled).session);
+  }
+
+  function applyPolicy(origin) {
+    policy = buildPolicy();
+    applyEngineSettings();
+    cachedCandidates = null;
+    recordPolicyAudit(origin);
+  }
+
+  /** Fetch the signed policy layers again (managed desks only). */
+  async function refreshPolicy() {
+    if (!managed) return { ok: false, managed: false, sources: [], warnings: [] };
+    sourceReport = await policySource.refresh();
+    rawPolicy = core.orgPolicy.merge(sourceReport.layers);
+    applyPolicy("refresh");
+    return { ok: true, managed: true, sources: sourceReport.sources.slice(), warnings: sourceReport.warnings.slice(), paused: policy.paused.active };
+  }
 
   function emit(name, value) {
     for (const listener of listeners[name]) listener(value);
@@ -78,7 +183,7 @@ function createAssistant(options) {
   }
 
   function persistSession(session) {
-    if (!session) return;
+    if (!session || !learningStorage) return;
     store.appendSession(session);
     cachedCandidates = null;
     emit("session", session);
@@ -111,6 +216,28 @@ function createAssistant(options) {
     return cachedCandidates.slice();
   }
 
+  function corpusInfo() {
+    return Object.assign(store.corpusInfo(), {
+      storing: learningStorage,
+      problem: learningStorage ? null : corpusKey.message,
+      retentionDays: policy.retention.corpusDays,
+    });
+  }
+
+  /** The person deletes everything learned so far (decisions on proposals are kept). */
+  function clearLearning() {
+    const before = store.corpusInfo();
+    store.clearSessions();
+    // Everything derived from learned text goes too: dismissals and the
+    // suggestions not yet exported.
+    store.saveLearned({ dismissed: [] });
+    store.saveSuggestions([]);
+    cachedCandidates = null;
+    audit({ event: "corpus-deleted", by: "person", sessions: before.sessions + before.locked });
+    emit("candidates", candidates());
+    return corpusInfo();
+  }
+
   function saveShorthand(sh) {
     const trigger = String(sh && sh.trigger == null ? "" : sh.trigger).trim();
     const expansion = String(sh && sh.expansion == null ? "" : sh.expansion);
@@ -133,7 +260,17 @@ function createAssistant(options) {
   }
 
   function acceptCandidate(candidate) {
-    const result = saveShorthand({ trigger: candidate && candidate.trigger, expansion: candidate && candidate.expansion });
+    let expansion = candidate && candidate.expansion;
+    // A template proposal is rebuilt here from its segments, with the
+    // person's names for its blanks, rather than trusting text from the page.
+    if (candidate && candidate.template != null) {
+      const found = candidates().find((c) => c.kind === "template" && c.template === candidate.template);
+      if (!found) return { ok: false, error: "This proposal has changed. Look at the Learning tab again." };
+      const built = core.variableDetector.templateFrom(found.segments, candidate.names);
+      if (!built.ok) return { ok: false, error: built.error };
+      expansion = built.template;
+    }
+    const result = saveShorthand({ trigger: candidate && candidate.trigger, expansion });
     if (result.ok) {
       ledger.record({ kind: "learned", trigger: candidate.trigger, keystrokesSaved: 0, app: "" });
     }
@@ -143,7 +280,8 @@ function createAssistant(options) {
   function dismissCandidate(text) {
     const learned = store.loadLearned();
     const value = String(text == null ? "" : text);
-    if (value && !learned.dismissed.includes(value)) learned.dismissed.push(value);
+    const key = learning.dismissalKey(value);
+    if (value && !learned.dismissed.includes(key)) learned.dismissed.push(key);
     store.saveLearned(learned);
     cachedCandidates = null;
     return candidates();
@@ -151,17 +289,110 @@ function createAssistant(options) {
 
   function saveSettings(next) {
     const merged = Object.assign({}, userSettings, next || {});
+    const before = JSON.stringify(userSettings.captureApps || []);
     store.saveSettings(merged);
     userSettings = store.loadSettings();
+    if (JSON.stringify(userSettings.captureApps || []) !== before) {
+      audit({ event: "capture-rules-changed", by: "person", rules: userSettings.captureApps.map((rule) => ({ label: rule.label || null, mode: rule.mode || null, match: rule.match || { process: rule.process, title: rule.title, bundleId: rule.bundleId } })) });
+    }
     policy = buildPolicy();
-    engine.setPolicy(policy);
-    engine.setEnabled(userSettings.enabled);
+    applyEngineSettings();
     cachedCandidates = null;
     return userSettings;
   }
 
   function setEnabled(value) {
     return saveSettings({ enabled: value !== false });
+  }
+
+  // Search palette: find and insert any shortcut or document set without
+  // remembering its trigger.
+  function paletteSearch(query, limit) {
+    if (policy.paused.active) return [];
+    const items = core.paletteSearch.items(engine.library, policy.documents);
+    return core.paletteSearch.search(items, query, limit).map((item) => ({
+      kind: item.kind, trigger: item.trigger, source: item.source, needsInput: item.needsInput, preview: item.preview,
+    }));
+  }
+
+  /** The action for a palette choice. The query and Enter count as keystrokes spent. */
+  function paletteChoose(choice) {
+    if (policy.paused.active || !choice) return null;
+    const spentKeystrokes = core.metrics.graphemes(String(choice.query == null ? "" : choice.query)) + 1;
+    if (choice.kind === "documents") {
+      const set = policy.documents.shortcuts.find((s) => s.trigger === choice.trigger);
+      return set ? { type: "documents", trigger: set.trigger, label: set.label, documents: set.documents.slice(), backspaces: 0, via: "palette" } : null;
+    }
+    const sh = engine.library.find((item) => item.trigger === choice.trigger);
+    if (!sh) return null;
+    const { template } = core.personal;
+    if (template.requiresInput(sh.expansion)) {
+      return { type: "template", trigger: sh.trigger, expansion: sh.expansion, fields: template.fields(sh.expansion), variables: template.variables(sh.expansion), backspaces: 0, source: sh.source, via: "palette", spentKeystrokes };
+    }
+    const rendered = template.render(sh.expansion, null, new Date(settings.now()));
+    return { type: "expand", trigger: sh.trigger, text: rendered.text, cursorOffset: rendered.cursorOffset, backspaces: 0, source: sh.source, via: "palette", spentKeystrokes };
+  }
+
+  /** Record a palette expansion after the shell inserted it. */
+  function paletteInserted(action) {
+    if (!action || action.type !== "expand") return null;
+    return engine.recordInsert({ kind: "palette", trigger: action.trigger, source: action.source, inserted: action.text, typed: "", spentKeystrokes: action.spentKeystrokes });
+  }
+
+  // Suggestions to the organisation: proposals the person picked.
+  function suggestionText(candidate) {
+    if (candidate && candidate.template != null) {
+      const found = candidates().find((c) => c.kind === "template" && c.template === candidate.template);
+      if (!found) return { ok: false, error: "This proposal has changed. Look at the Learning tab again." };
+      const built = core.variableDetector.templateFrom(found.segments, candidate.names);
+      return built.ok ? { ok: true, text: built.template, kind: "template", sessions: found.sessions } : built;
+    }
+    const found = candidates().find((c) => c.kind !== "template" && c.text === (candidate && candidate.text));
+    if (!found) return { ok: false, error: "This proposal has changed. Look at the Learning tab again." };
+    return { ok: true, text: found.text, kind: found.kind, sessions: found.sessions };
+  }
+
+  function suggest(candidate) {
+    const resolved = suggestionText(candidate);
+    if (!resolved.ok) return resolved;
+    const queued = core.suggestions.enqueue(store.loadSuggestions(), { kind: resolved.kind, text: resolved.text, trigger: candidate.trigger, sessions: resolved.sessions });
+    store.saveSuggestions(queued);
+    return { ok: true, queued };
+  }
+
+  function unsuggest(text) {
+    const key = core.phraseMiner.normalize(text);
+    const queued = store.loadSuggestions().filter((item) => core.phraseMiner.normalize(item.text) !== key);
+    store.saveSuggestions(queued);
+    return { ok: true, queued };
+  }
+
+  function suggestionsExport() {
+    if (!userSettings.installId) {
+      store.saveSettings(Object.assign({}, userSettings, { installId: crypto.randomUUID() }));
+      userSettings = store.loadSettings();
+    }
+    return core.suggestions.buildExport(store.loadSuggestions(), { now: settings.now(), installId: userSettings.installId, team: policy.reporting.team });
+  }
+
+  /** The counts-only report this desk would send to its organisation. */
+  function usageReport() {
+    if (!userSettings.installId) {
+      store.saveSettings(Object.assign({}, userSettings, { installId: crypto.randomUUID() }));
+      userSettings = store.loadSettings();
+    }
+    return core.report.buildReport(ledger.entries(), {
+      now: settings.now(),
+      period: policy.reporting.period,
+      count: policy.reporting.periods,
+      charsPerMinute: policy.typing.charsPerMinute,
+      installId: userSettings.installId,
+      team: policy.reporting.team,
+      organization: policy.organization,
+      includeApps: policy.reporting.includeApps,
+      hourlyRate: policy.reporting.hourlyRate,
+      currency: policy.reporting.currency,
+    });
   }
 
   function policyInfo() {
@@ -175,6 +406,11 @@ function createAssistant(options) {
       organizationLibrary: policy.library.slice(),
       learning: Object.assign({}, policy.learning),
       retention: Object.assign({}, policy.retention),
+      paused: Object.assign({}, policy.paused),
+      reporting: Object.assign({}, policy.reporting),
+      managed,
+      refreshMinutes: managed ? policySource.deployment.refreshMinutes : null,
+      sources: sourceReport.sources.map((source) => Object.assign({}, source)),
     };
   }
 
@@ -208,7 +444,21 @@ function createAssistant(options) {
     summary: (query) => ledger.summary(query),
     series: (query) => ledger.series(query),
     byApp: (query) => ledger.byApp(query),
-    warnings: () => warnings.concat(store.warnings()),
+    warnings: () => warnings.concat(sourceReport.warnings, policy.warnings, store.warnings()),
+    refreshPolicy,
+    usageReport,
+    corpusInfo,
+    clearLearning,
+    paletteSearch,
+    paletteChoose,
+    paletteInserted,
+    suggest,
+    unsuggest,
+    suggestions: () => store.loadSuggestions(),
+    suggestionsExport,
+    audit: (limit) => store.loadAudit(limit),
+    get managed() { return managed; },
+    get paused() { return policy.paused.active; },
     log,
   };
 }

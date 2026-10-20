@@ -4,7 +4,7 @@
 "use strict";
 
 const path = require("node:path");
-const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, shell, nativeImage, Notification, dialog } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, shell, nativeImage, Notification, dialog, safeStorage, globalShortcut } = require("electron");
 const { createAssistant } = require("./assistant.js");
 const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
@@ -28,6 +28,8 @@ let popoverState = null;
 let listenerStatus = { available: false, error: "starting" };
 let dashboardFocused = false;
 let lastContext = {};
+let paletteWindow = null;
+let paletteStatus = { accelerator: "", registered: false, error: null };
 
 function notify(body) {
   if (Notification.isSupported()) new Notification({ title: "actle", body }).show();
@@ -78,9 +80,12 @@ function setOwnWindow(focused) {
 function updateTray() {
   if (!tray) return;
   const enabled = assistant.settings().enabled;
-  tray.setToolTip("actle Corporate: " + (enabled ? (listenerStatus.available ? "on" : "listener unavailable") : "paused"));
+  const state = assistant.paused ? "paused by your organisation"
+    : enabled ? (listenerStatus.available ? "on" : "listener unavailable") : "paused";
+  tray.setToolTip("actle Corporate: " + state);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open dashboard", click: openDashboard },
+    { label: "Search shortcuts…" + (paletteStatus.registered ? " (" + paletteStatus.accelerator.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl") + ")" : ""), click: openPalette },
     { label: "Enabled", type: "checkbox", checked: enabled, click: (item) => { assistant.setEnabled(item.checked); updateTray(); broadcast({ settings: true }); } },
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
@@ -110,8 +115,13 @@ function showPopover(name, state, size) {
   }, size)));
   popover.loadFile(path.join(__dirname, "renderer", name + ".html"));
   popover.once("ready-to-show", () => popover.show());
-  popover.on("blur", () => { if (state.kind === "keyword") closePopover(); });
-  popover.on("closed", () => { popover = null; popoverState = null; });
+  // Values typed into a template form are actle's own input: never expanded
+  // or learned (the keyword popover cannot take the focus at all).
+  popover.on("focus", () => setOwnWindow(true));
+  popover.on("blur", () => { setOwnWindow(false); if (state.kind === "keyword") closePopover(); });
+  // A window closed while focused may not emit "blur" first; never leave the
+  // engine believing actle's own window has the focus.
+  popover.on("closed", () => { popover = null; popoverState = null; setOwnWindow(!!BrowserWindow.getFocusedWindow()); });
 }
 
 function closePopover() {
@@ -131,7 +141,8 @@ function handleAction(action) {
     case "documents":
       return showPopover("documents", Object.assign({ kind: "documents" }, action), { width: 460, height: 160 + 44 * action.documents.length });
     case "keyword":
-      return showPopover("keyword", { kind: "keyword", hits: action.hits.map((hit) => ({ rule: hit.rule, matched: hit.matched })) }, { width: 380, height: 90 + 60 * action.hits.length, focusable: false });
+    case "warning":
+      return showPopover("keyword", { kind: "keyword", warning: action.type === "warning", hits: action.hits.map((hit) => ({ rule: hit.rule, matched: hit.matched })) }, { width: 380, height: 90 + 72 * action.hits.length, focusable: false });
     default:
       return null;
   }
@@ -144,7 +155,9 @@ async function submitPopover(payload) {
   if (state.kind === "template") {
     const rendered = personal.template.render(state.expansion, payload.values || {}, new Date(), payload.pronouns || null);
     await sender.replace({ backspaces: state.backspaces, text: rendered.text, cursorOffset: rendered.cursorOffset });
-    assistant.recordInsert({ kind: "template", trigger: state.trigger, inserted: rendered.text, typed: state.trigger });
+    // The trigger was typed into the field only when it has to be deleted
+    // (typed trigger); from a keyword offer or the palette nothing was typed.
+    assistant.recordInsert({ kind: "template", trigger: state.trigger, source: state.source, inserted: rendered.text, typed: state.backspaces ? state.trigger : "", spentKeystrokes: state.spentKeystrokes });
   } else if (state.kind === "documents") {
     const chosen = state.documents.filter((doc, index) => (payload.selected || []).includes(index));
     if (payload.action === "reveal") {
@@ -158,20 +171,22 @@ async function submitPopover(payload) {
     }
   } else if (state.kind === "keyword") {
     const hit = state.hits[payload.index || 0];
-    if (!hit) return { ok: false };
+    if (!hit || !hit.rule.insert) return { ok: false };
     const insert = hit.rule.insert;
     if (insert.kind === "text") {
       await sender.replace({ backspaces: 0, text: insert.text, cursorOffset: insert.text.length });
       assistant.recordInsert({ kind: "keyword", trigger: hit.rule.id, inserted: insert.text, typed: "" });
     } else if (insert.kind === "shorthand") {
-      const sh = assistant.library().find((item) => item.trigger === insert.trigger);
+      // A keyword rule names an organisation shortcut; a person's own shortcut
+      // with the same trigger must not be inserted in its place.
+      const sh = assistant.policy().library.map((item) => Object.assign({ source: "organization" }, item)).find((item) => item.trigger === insert.trigger);
       if (sh) {
         if (personal.template.requiresInput(sh.expansion)) {
-          handleAction({ type: "template", trigger: sh.trigger, expansion: sh.expansion, fields: personal.template.fields(sh.expansion), variables: personal.template.variables(sh.expansion), backspaces: 0 });
+          handleAction({ type: "template", trigger: sh.trigger, expansion: sh.expansion, fields: personal.template.fields(sh.expansion), variables: personal.template.variables(sh.expansion), backspaces: 0, source: sh.source });
         } else {
           const rendered = personal.template.render(sh.expansion, null, new Date());
           await sender.replace({ backspaces: 0, text: rendered.text, cursorOffset: rendered.cursorOffset });
-          assistant.recordInsert({ kind: "keyword", trigger: sh.trigger, inserted: rendered.text, typed: "" });
+          assistant.recordInsert({ kind: "keyword", trigger: hit.rule.id, inserted: rendered.text, typed: "" });
         }
       }
     } else if (insert.kind === "document") {
@@ -180,6 +195,91 @@ async function submitPopover(payload) {
     }
   }
   broadcast({ metrics: true });
+  return { ok: true };
+}
+
+// Signed policy layers are fetched at start and then every refreshMinutes.
+// A failed fetch keeps the last good copy (the assistant warns and audits it).
+let refreshTimer = null;
+async function refreshPolicy() {
+  const wasPaused = assistant.paused;
+  let result;
+  try {
+    result = await assistant.refreshPolicy();
+  } catch (error) {
+    result = { ok: false, error: String(error && error.message || error) };
+    assistant.log("policy refresh failed: " + result.error);
+  }
+  if (assistant.paused !== wasPaused) {
+    const message = assistant.policyInfo().paused.message;
+    notify(assistant.paused ? "Paused by your organisation" + (message ? ": " + message : ".") : "Your organisation resumed actle.");
+  }
+  updateTray();
+  broadcast({ settings: true, status: true, policy: true });
+  return result;
+}
+
+function schedulePolicyRefresh() {
+  if (!assistant.managed) return;
+  refreshPolicy();
+  const minutes = assistant.policyInfo().refreshMinutes || 60;
+  refreshTimer = setInterval(refreshPolicy, minutes * 60 * 1000);
+}
+
+// Search palette: a global hotkey opens a small window that finds any
+// shortcut or document set; Enter inserts into the application underneath.
+function registerPaletteShortcut() {
+  const accelerator = assistant.settings().paletteShortcut;
+  paletteStatus = { accelerator, registered: false, error: null };
+  if (!accelerator) return;
+  try {
+    paletteStatus.registered = globalShortcut.register(accelerator, openPalette);
+    if (!paletteStatus.registered) paletteStatus.error = "another application already uses it";
+  } catch (error) {
+    paletteStatus.error = String(error && error.message || error);
+  }
+  if (!paletteStatus.registered) notify("The search palette shortcut " + accelerator + " is not available: " + paletteStatus.error + ".");
+}
+
+function openPalette() {
+  if (assistant.paused) {
+    notify("Paused by your organisation; the search palette is unavailable.");
+    return;
+  }
+  if (paletteWindow && !paletteWindow.isDestroyed()) {
+    paletteWindow.focus();
+    return;
+  }
+  paletteWindow = new BrowserWindow(windowOptions({
+    width: 560, height: 420, frame: false, alwaysOnTop: true, resizable: false, skipTaskbar: true, center: true, title: "actle search",
+  }));
+  paletteWindow.loadFile(path.join(__dirname, "renderer", "palette.html"));
+  paletteWindow.once("ready-to-show", () => { paletteWindow.show(); paletteWindow.focus(); });
+  // Typing a query must not expand or be learned.
+  paletteWindow.on("focus", () => setOwnWindow(true));
+  paletteWindow.on("blur", () => { setOwnWindow(false); closePalette(); });
+  paletteWindow.on("closed", () => { paletteWindow = null; setOwnWindow(!!BrowserWindow.getFocusedWindow()); });
+}
+
+function closePalette() {
+  if (paletteWindow && !paletteWindow.isDestroyed()) paletteWindow.close();
+  paletteWindow = null;
+}
+
+async function choosePalette(choice) {
+  closePalette();
+  // Give the focus back to the application the person was writing in.
+  if (process.platform === "darwin") app.hide();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const action = assistant.paletteChoose(choice);
+  if (!action) return { ok: false };
+  if (action.type === "expand") {
+    await sender.replace(action);
+    assistant.paletteInserted(action);
+    broadcast({ metrics: true });
+  } else {
+    handleAction(action);
+  }
   return { ok: true };
 }
 
@@ -198,19 +298,50 @@ function registerIpc() {
     require("node:fs").writeFileSync(result.filePath, assistant.exportLibrary(), "utf8");
     return { ok: true, path: result.filePath };
   });
+  handle("report:preview", () => assistant.usageReport());
+  handle("report:save", async () => {
+    const report = assistant.usageReport();
+    const name = "actle-usage-" + new Date(report.generatedAt).toISOString().slice(0, 10) + ".json";
+    const result = await dialog.showSaveDialog({ defaultPath: name, filters: [{ name: "JSON", extensions: ["json"] }] });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    require("node:fs").writeFileSync(result.filePath, JSON.stringify(report, null, 2) + "\n", "utf8");
+    return { ok: true, path: result.filePath };
+  });
+  handle("palette:search", (query) => assistant.paletteSearch(String(query == null ? "" : query), 8));
+  handle("palette:choose", (choice) => choosePalette(choice || null));
+  handle("palette:close", () => { closePalette(); return { ok: true }; });
   handle("policy:info", () => assistant.policyInfo());
+  handle("policy:refresh", () => refreshPolicy());
+  handle("policy:audit", () => assistant.audit(100));
   handle("settings:get", () => assistant.settings());
   handle("settings:save", (next) => { const r = assistant.saveSettings(next || {}); updateTray(); broadcast({ settings: true }); return r; });
   handle("settings:enabled", (value) => { const r = assistant.setEnabled(value !== false); updateTray(); broadcast({ settings: true }); return r; });
   handle("learning:candidates", () => assistant.candidates());
   handle("learning:accept", (c) => { const r = assistant.acceptCandidate(c || {}); broadcast({ library: true, learning: true }); return r; });
   handle("learning:dismiss", (text) => { const r = assistant.dismissCandidate(text); broadcast({ learning: true }); return r; });
+  handle("learning:info", () => assistant.corpusInfo());
+  handle("suggestions:add", (candidate) => { const r = assistant.suggest(candidate || {}); broadcast({ learning: true }); return r; });
+  handle("suggestions:remove", (text) => { const r = assistant.unsuggest(String(text || "")); broadcast({ learning: true }); return r; });
+  handle("suggestions:list", () => assistant.suggestions());
+  handle("suggestions:save", async () => {
+    const data = assistant.suggestionsExport();
+    if (!data.suggestions.length) return { ok: false, error: "Nothing to export." };
+    const name = "actle-suggestions-" + new Date(data.generatedAt).toISOString().slice(0, 10) + ".json";
+    const result = await dialog.showSaveDialog({ defaultPath: name, filters: [{ name: "JSON", extensions: ["json"] }] });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    require("node:fs").writeFileSync(result.filePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+    return { ok: true, path: result.filePath };
+  });
+  handle("learning:clear", () => { const r = assistant.clearLearning(); broadcast({ learning: true, policy: true }); return r; });
   handle("app:status", () => ({
     listener: listenerStatus,
     sender: { available: sender.isAvailable(), reason: sender.isAvailable() ? null : sender.unavailableReason() },
     warnings: assistant.warnings(),
     dataDir: assistant.store.root,
     mode: assistant.engine.mode,
+    paused: assistant.paused,
+    pausedMessage: assistant.policyInfo().paused.message,
+    palette: paletteStatus,
     context: lastContext,
     version: app.getVersion(),
   }));
@@ -224,6 +355,7 @@ function start() {
     dataDir: app.getPath("userData"),
     policyFile: process.env.ACTLE_POLICY_FILE || null,
     swallowsTriggerKey: false,
+    keychain: safeStorage,
     log: (line) => console.log(line),
   });
   sender = createSender({ clipboard, notify });
@@ -254,6 +386,9 @@ function start() {
   listener.start();
   if (!sender.isAvailable()) notify("Expansions cannot be typed into other applications: " + sender.unavailableReason());
   for (const warning of assistant.warnings()) notify(warning);
+  schedulePolicyRefresh();
+  registerPaletteShortcut();
+  updateTray();
   openDashboard();
 }
 
@@ -265,7 +400,10 @@ app.on("window-all-closed", () => {
   // Stay in the tray.
 });
 
+app.on("will-quit", () => globalShortcut.unregisterAll());
+
 app.on("before-quit", () => {
+  if (refreshTimer) clearInterval(refreshTimer);
   if (listener) listener.stop();
   if (assistant) assistant.endSession();
 });

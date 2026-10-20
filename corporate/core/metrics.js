@@ -3,8 +3,9 @@
 "use strict";
 
 const DEFAULT_CHARS_PER_MINUTE = 200; // 40 words per minute at five characters a word
-const KINDS = Object.freeze(["expansion", "suggestion", "template", "learned", "keyword", "document"]);
+const KINDS = Object.freeze(["expansion", "suggestion", "template", "learned", "keyword", "document", "palette"]);
 const PERIODS = Object.freeze(["all", "day", "week", "month"]);
+const SOURCES = Object.freeze(["personal", "organization"]);
 
 const segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
   ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
@@ -114,6 +115,9 @@ function normalizeEntry(raw, nowMs) {
     kind,
     app: String(raw.app == null ? "" : raw.app),
     trigger: String(raw.trigger == null ? "" : raw.trigger),
+    // Whether the shortcut came from the organisation policy or the person's
+    // own library; usage reports name only organisation shortcuts.
+    source: SOURCES.includes(raw.source) ? raw.source : "",
     keystrokesSaved: saved,
     fixedSeconds: fixed,
   };
@@ -138,6 +142,9 @@ function addTo(totals, entry, options) {
  */
 function createLedger(options) {
   const settings = Object.assign({ charsPerMinute: DEFAULT_CHARS_PER_MINUTE, now: () => Date.now() }, options || {});
+  // An absent or invalid speed (for example `undefined` from a caller's own
+  // options) must not replace the default.
+  settings.charsPerMinute = charsPerMinute(settings);
   const entries = [];
   const listeners = [];
 
@@ -152,6 +159,7 @@ function createLedger(options) {
       kind: data.kind,
       app: data.app,
       trigger: data.trigger,
+      source: data.source,
       keystrokesSaved: saved,
       fixedSeconds: data.fixedSeconds,
     }, nowMs);
@@ -276,6 +284,7 @@ module.exports = {
   DEFAULT_CHARS_PER_MINUTE,
   KINDS,
   PERIODS,
+  SOURCES,
   graphemes,
   keystrokesSaved,
   secondsSaved,

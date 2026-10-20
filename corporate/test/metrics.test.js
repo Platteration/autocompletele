@@ -95,3 +95,9 @@ test("load tolerates junk, onRecord notifies, prune drops old entries", () => {
   assert.equal(ledger.size(), 3);
   assert.equal(ledger.prune("no"), 0);
 });
+
+test("an undefined or invalid typing speed keeps the default", () => {
+  assert.equal(metrics.createLedger({ charsPerMinute: undefined }).charsPerMinute, 200);
+  assert.equal(metrics.createLedger({ charsPerMinute: -5 }).charsPerMinute, 200);
+  assert.equal(metrics.createLedger({ charsPerMinute: 300 }).charsPerMinute, 300);
+});

@@ -30,8 +30,72 @@ function empty() {
     library: [],
     learning: { minCount: miner.DEFAULTS.minCount, minLength: miner.DEFAULTS.minLength, minWords: miner.DEFAULTS.minWords },
     retention: { metricsDays: 365, corpusDays: 90 },
+    paused: { active: false, message: "" },
+    serial: null,
+    reporting: { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 },
     warnings: [],
   };
+}
+
+function isObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function libraryList(value) {
+  if (isObject(value) && Array.isArray(value.shorthands)) return value.shorthands;
+  return Array.isArray(value) ? value : [];
+}
+
+function byKey(lists, key) {
+  const map = new Map();
+  const loose = [];
+  for (const list of lists) {
+    for (const item of list) {
+      if (isObject(item) && typeof item[key] === "string" && item[key].trim()) map.set(item[key].trim(), item);
+      else loose.push(item);
+    }
+  }
+  return [...map.values()].concat(loose);
+}
+
+/**
+ * Layer several raw policies, most general first (organisation, then
+ * department, then team). Later layers win field by field; shortcuts, keyword
+ * rules and document sets are merged by trigger or id; capture rules from
+ * later layers are tried first. A pause in any layer pauses the result.
+ */
+function merge(layers) {
+  const list = (Array.isArray(layers) ? layers : []).filter(isObject);
+  const out = {};
+  for (const layer of list) {
+    if (typeof layer.organization === "string") out.organization = layer.organization;
+    for (const section of ["typing", "learning", "retention", "reporting"]) {
+      if (isObject(layer[section])) out[section] = Object.assign({}, out[section], layer[section]);
+    }
+    if (layer.paused && !(out.paused && pausedOf(out.paused).active)) out.paused = layer.paused;
+    if (isObject(layer.capture)) {
+      const capture = out.capture || { apps: [] };
+      if (layer.capture.defaultMode !== undefined) capture.defaultMode = layer.capture.defaultMode;
+      if (Array.isArray(layer.capture.apps)) capture.apps = layer.capture.apps.concat(capture.apps);
+      out.capture = capture;
+    }
+  }
+  const libraries = list.map((layer) => libraryList(layer.library)).filter((l) => l.length);
+  if (libraries.length) out.library = { version: 1, shorthands: byKey(libraries, "trigger") };
+  const rules = list.map((layer) => Array.isArray(layer.keywordRules) ? layer.keywordRules : []).filter((l) => l.length);
+  if (rules.length) out.keywordRules = byKey(rules, "id");
+  const docs = list.map((layer) => isObject(layer.documents) && Array.isArray(layer.documents.shortcuts) ? layer.documents.shortcuts : [])
+    .filter((l) => l.length);
+  if (docs.length) out.documents = { shortcuts: byKey(docs, "trigger") };
+  return out;
+}
+
+function pausedOf(value) {
+  if (value === true) return { active: true, message: "" };
+  if (isObject(value) && value.active !== false) {
+    return { active: true, message: String(value.message == null ? "" : value.message).trim() };
+  }
+  return { active: false, message: "" };
 }
 
 /** Parse a policy object or JSON string. Always returns a usable policy plus warnings. */
@@ -80,6 +144,7 @@ function parse(input) {
   const triggers = new Set(policy.library.map((sh) => sh.trigger));
   const shortcuts = new Set(policy.documents.shortcuts.map((s) => s.trigger));
   policy.keywordRules = policy.keywordRules.filter((rule) => {
+    if (!rule.insert) return true;
     if (rule.insert.kind === "shorthand" && !triggers.has(rule.insert.trigger)) {
       policy.warnings.push("keyword rule " + rule.id + " ignored: shortcut " + rule.insert.trigger + " is not in the policy library");
       return false;
@@ -96,10 +161,23 @@ function parse(input) {
   policy.learning.minLength = Math.floor(positive(learning.minLength, policy.learning.minLength));
   policy.learning.minWords = Math.floor(positive(learning.minWords, policy.learning.minWords));
 
+  // Kill switch: an administrator can pause the assistant on every desk.
+  // Nothing is expanded, offered or learned while paused; nothing is deleted.
+  policy.paused = pausedOf(source.paused);
+  if (Number.isSafeInteger(source.serial) && source.serial > 0) policy.serial = source.serial;
+
+  const reporting = isObject(source.reporting) ? source.reporting : {};
+  policy.reporting.team = String(reporting.team == null ? "" : reporting.team).trim();
+  policy.reporting.hourlyRate = positive(reporting.hourlyRate, null);
+  policy.reporting.currency = typeof reporting.currency === "string" && reporting.currency.trim() ? reporting.currency.trim() : null;
+  policy.reporting.includeApps = reporting.includeApps === true;
+  policy.reporting.period = ["day", "week", "month"].includes(reporting.period) ? reporting.period : "week";
+  policy.reporting.periods = Math.min(366, Math.floor(positive(reporting.periods, 12)));
+
   const retention = source.retention && typeof source.retention === "object" ? source.retention : {};
   policy.retention.metricsDays = Math.floor(positive(retention.metricsDays, policy.retention.metricsDays));
   policy.retention.corpusDays = Math.floor(positive(retention.corpusDays, policy.retention.corpusDays));
   return policy;
 }
 
-module.exports = { VERSION, empty, parse };
+module.exports = { VERSION, empty, parse, merge };

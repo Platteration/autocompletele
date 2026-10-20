@@ -156,13 +156,14 @@
   });
 
   // Learning
-  function overlay(candidate) {
+  function overlay(candidate, names) {
     const box = el("div", { class: "overlay" });
     for (const segment of candidate.segments) {
       if (segment.type === "same") box.append(document.createTextNode(segment.text));
       else {
+        const name = (names && names[segment.name] && names[segment.name].trim()) || segment.name;
         const slot = el("span", { class: "slot", title: "Seen as: " + segment.values.join(", ") }, [
-          el("abbr", { title: "Seen as: " + segment.values.join(", "), text: "[[" + segment.name + "]]" }),
+          el("abbr", { title: "Seen as: " + segment.values.join(", "), text: "[[" + name + "]]" }),
         ]);
         box.append(slot);
       }
@@ -170,7 +171,46 @@
     return box;
   }
 
+  async function renderCorpusInfo() {
+    const info = await api.getLearningInfo();
+    let line;
+    if (!info.storing) line = info.problem;
+    else if (!info.sessions) line = "No learned text stored. Learned text is encrypted with your system keychain and kept for " + info.retentionDays + " days.";
+    else line = info.sessions + " learned message(s) from " + new Date(info.oldest).toLocaleDateString() + " to " + new Date(info.newest).toLocaleDateString()
+      + ", encrypted with your system keychain and kept for " + info.retentionDays + " days.";
+    if (info.locked) line += " " + info.locked + " older message(s) cannot be read with the current key and are kept.";
+    text($("corpus-info"), line);
+    $("corpus-clear").disabled = !(info.sessions || info.locked);
+  }
+
+  $("corpus-clear").addEventListener("click", async () => {
+    if (!window.confirm("Delete all learned text on this computer, including suggestions not yet exported? Proposals based on it disappear. Your shortcuts and statistics are not affected.")) return;
+    await api.clearLearning();
+    announce("Learned text deleted");
+  });
+
+  async function renderSuggestions() {
+    const queued = await api.getSuggestions();
+    const body = $("suggestions");
+    body.textContent = "";
+    for (const item of queued) {
+      const remove = el("button", { class: "plain", text: "Remove" });
+      remove.addEventListener("click", () => api.unsuggest(item.text));
+      body.append(el("tr", {}, [el("td", { class: "mono", text: item.text }), el("td", { class: "mono", text: item.trigger }), el("td", {}, [remove])]));
+    }
+    if (!queued.length) body.append(el("tr", {}, [el("td", { colspan: "3", text: "Nothing suggested yet. Use Suggest to organisation on a proposal above." })]));
+    $("suggestions-save").disabled = !queued.length;
+  }
+
+  $("suggestions-save").addEventListener("click", async () => {
+    const result = await api.saveSuggestions();
+    if (result && result.ok) announce("Suggestions saved to " + result.path);
+    else if (result && result.error) announce(result.error);
+  });
+
   async function renderLearning() {
+    await renderCorpusInfo();
+    await renderSuggestions();
     const list = await api.getCandidates();
     const host = $("candidates");
     host.textContent = "";
@@ -182,10 +222,22 @@
       const card = el("div", { class: "candidate" });
       const kind = candidate.kind === "template" ? "Template" : candidate.kind === "paragraph" ? "Paragraph" : candidate.kind === "sentence" ? "Sentence" : "Phrase";
       card.append(el("div", { class: "meta", text: kind + " seen in " + candidate.sessions + " messages" }));
+      const names = {};
       if (candidate.kind === "template") {
-        card.append(overlay(candidate));
+        let preview = overlay(candidate, names);
+        card.append(preview);
+        // Each blank can be renamed before saving; the overlay follows.
         const slots = el("ul", { class: "slots" });
-        for (const slot of candidate.slots) slots.append(el("li", { text: "[[" + slot.name + "]] seen as: " + slot.values.join(" | ") }));
+        for (const slot of candidate.slots) {
+          const input = el("input", { type: "text", value: slot.name, class: "slot-name", "aria-label": "Name for the blank seen as " + slot.values.join(", ") });
+          input.addEventListener("input", () => {
+            names[slot.name] = input.value;
+            const next = overlay(candidate, names);
+            preview.replaceWith(next);
+            preview = next;
+          });
+          slots.append(el("li", {}, [input, el("span", { text: " seen as: " + slot.values.join(" | ") })]));
+        }
         card.append(slots);
       } else {
         card.append(el("div", { class: "overlay", text: candidate.text }));
@@ -193,13 +245,23 @@
       const trigger = el("input", { type: "text", value: candidate.suggestedTrigger, "aria-label": "Trigger" });
       const accept = el("button", { class: "primary", text: "Save as shortcut" });
       accept.addEventListener("click", async () => {
-        const result = await api.acceptCandidate({ trigger: trigger.value, expansion: candidate.text });
+        const result = await api.acceptCandidate(candidate.kind === "template"
+          ? { trigger: trigger.value, template: candidate.template, names }
+          : { trigger: trigger.value, expansion: candidate.text });
         if (!result.ok) alert(result.error);
         else announce("Saved " + trigger.value);
       });
       const dismiss = el("button", { class: "plain", text: "Dismiss" });
       dismiss.addEventListener("click", () => api.dismissCandidate(candidate.text));
-      card.append(el("div", { class: "row" }, [el("span", { class: "mono", text: "Trigger" }), trigger, accept, dismiss]));
+      const share = el("button", { class: "plain", text: "Suggest to organisation" });
+      share.addEventListener("click", async () => {
+        const result = await api.suggest(candidate.kind === "template"
+          ? { trigger: trigger.value, template: candidate.template, names }
+          : { trigger: trigger.value, text: candidate.text });
+        if (!result.ok) alert(result.error);
+        else announce("Added to your suggestions");
+      });
+      card.append(el("div", { class: "row" }, [el("span", { class: "mono", text: "Trigger" }), trigger, accept, share, dismiss]));
       host.append(card);
     }
   }
@@ -269,9 +331,13 @@
     const kw = $("keywords");
     kw.textContent = "";
     for (const rule of policy.keywordRules) {
-      const inserts = rule.insert.kind === "text" ? "text: " + preview(rule.insert.text)
-        : rule.insert.kind === "shorthand" ? "shortcut " + rule.insert.trigger : "documents " + rule.insert.shortcut;
-      kw.append(el("tr", {}, [el("td", { text: rule.label }), el("td", { text: rule.keywords.join(", ") }), el("td", { text: rule.match }), el("td", { text: inserts })]));
+      const insert = rule.insert;
+      const inserts = !insert ? "" : insert.kind === "text" ? "text: " + preview(insert.text)
+        : insert.kind === "shorthand" ? "shortcut " + insert.trigger : "documents " + insert.shortcut;
+      const does = rule.action === "warn" ? "Warns: " + rule.message + (inserts ? " Fix: " + inserts : "") : inserts;
+      const when = rule.keywords.concat((rule.detect || []).map((name) => "[" + name + "]")).join(", ")
+        + ((rule.unless || []).length ? " unless: " + rule.unless.join("; ") : "");
+      kw.append(el("tr", {}, [el("td", { text: rule.label }), el("td", { text: when }), el("td", { text: rule.match }), el("td", { text: does })]));
     }
     if (!policy.keywordRules.length) kw.append(el("tr", {}, [el("td", { colspan: "4", text: "No keyword rules in the policy." })]));
     const docs = $("documents");
@@ -286,26 +352,140 @@
     if (!policy.documents.length) docs.append(el("p", { class: "hint", text: "No document shortcuts in the policy." }));
   }
 
+  // Usage report preview and export
+  async function openReport() {
+    const report = await api.previewReport();
+    const rows = [
+      ["Organisation", report.organization || "(not named)"],
+      ["Team", report.team || "(not set)"],
+      ["Period", new Date(report.range.from).toLocaleDateString() + " to " + new Date(report.range.to - 1).toLocaleDateString() + " (" + report.series.length + " " + report.period + "s)"],
+      ["Inserts", report.totals.inserts],
+      ["Keystrokes saved", report.totals.keystrokesSaved],
+      ["Estimated time saved", seconds(report.totals.secondsSaved)],
+      ["Organisation shortcuts used", report.byShortcut.map((s) => s.trigger + " (" + s.inserts + ")").join(", ") || "none"],
+      ["Your own shortcuts", report.personal.inserts + " inserts, not named"],
+      ["Applications", report.byApp ? report.byApp.map((a) => a.app).join(", ") || "none" : "not included"],
+      ["Desk id", report.installId],
+    ];
+    const body = $("report-summary");
+    body.textContent = "";
+    for (const [label, value] of rows) body.append(el("tr", {}, [el("th", { scope: "row", text: label }), el("td", { text: value })]));
+    $("report").showModal();
+  }
+  $("report-open").addEventListener("click", () => { openReport().catch(console.error); });
+  $("report-cancel").addEventListener("click", () => $("report").close());
+  $("report-save").addEventListener("click", async () => {
+    const result = await api.saveReport();
+    if (result && result.ok) {
+      $("report").close();
+      announce("Report saved to " + result.path);
+    }
+  });
+
+  // Policy sources and the change log
+  const EVENT_LABELS = {
+    "policy-applied": "Policy applied",
+    "policy-source-problem": "Policy source failing",
+    "policy-source-recovered": "Policy source recovered",
+    "capture-rules-changed": "Your capture rules changed",
+    "corpus-key-created": "Learning key created",
+    "corpus-key-replaced": "Learning key replaced",
+    "corpus-encrypted": "Learned text encrypted",
+    "corpus-deleted": "Learned text deleted",
+  };
+
+  function auditDetail(entry) {
+    switch (entry.event) {
+      case "policy-applied": {
+        const sources = (entry.sources || []).map((s) => s.label + (s.serial == null ? " (" + s.status + ")" : " #" + s.serial));
+        return (entry.organization || "No organisation policy") + (entry.paused ? ", paused" : "")
+          + (sources.length ? "; sources: " + sources.join(", ") : "")
+          + (entry.warnings ? "; " + entry.warnings + " warning(s)" : "");
+      }
+      case "corpus-encrypted":
+        return entry.sessions + " message(s) from an earlier version";
+      case "corpus-deleted":
+        return entry.sessions + " message(s)";
+      case "corpus-key-replaced":
+        return "the previous key could not be read and protected nothing; kept as " + entry.aside;
+      case "policy-source-problem":
+        return entry.source + ": " + (entry.error || entry.status);
+      case "policy-source-recovered":
+        return entry.source + " is reachable again";
+      case "capture-rules-changed":
+        return (entry.rules || []).map((r) => (r.label || JSON.stringify(r.match)) + " = " + r.mode).join(", ") || "all own rules removed";
+      default:
+        return "";
+    }
+  }
+
+  async function renderPolicy() {
+    const info = await api.getPolicyInfo();
+    text($("policy-mode"), info.managed
+      ? "This desk receives a signed policy from your organisation and checks for updates every " + info.refreshMinutes + " minutes."
+      : "This desk is not centrally managed; it uses a local policy file if one is installed.");
+    $("policy-refresh").hidden = !info.managed;
+    const sources = $("policy-sources");
+    sources.textContent = "";
+    for (const source of info.sources || []) {
+      sources.append(el("tr", {}, [
+        el("td", { text: source.label }),
+        el("td", { text: source.status }),
+        el("td", { class: "num", text: source.serial == null ? "" : source.serial }),
+        el("td", { class: "mono", text: source.keyId || "" }),
+        el("td", { text: source.error || "" }),
+      ]));
+    }
+    if (!(info.sources || []).length) sources.append(el("tr", {}, [el("td", { colspan: "5", text: "No signed policy sources." })]));
+    const audit = $("audit");
+    audit.textContent = "";
+    const entries = (await api.getAudit()).slice().reverse();
+    for (const entry of entries) {
+      audit.append(el("tr", {}, [
+        el("td", { text: new Date(entry.at).toLocaleString() }),
+        el("td", { text: EVENT_LABELS[entry.event] || entry.event }),
+        el("td", { text: auditDetail(entry) }),
+      ]));
+    }
+    if (!entries.length) audit.append(el("tr", {}, [el("td", { colspan: "3", text: "No changes recorded yet." })]));
+  }
+
+  $("policy-refresh").addEventListener("click", async () => {
+    text($("policy-refresh-result"), "Checking…");
+    const result = await api.refreshPolicy();
+    text($("policy-refresh-result"), result && result.ok ? "Checked." : "Could not check: " + ((result && result.error) || "not managed"));
+    announce($("policy-refresh-result").textContent);
+  });
+
   async function renderStatus() {
     const status = await api.getStatus();
     const problems = [];
+    if (status.paused) {
+      const reason = status.pausedMessage ? ": " + status.pausedMessage.replace(/[.!?]*$/, ".") : ".";
+      problems.push("Paused by your organisation" + reason + " Nothing is expanded, offered or learned until it is resumed.");
+    }
     if (!status.listener.available) problems.push("Keyboard listener unavailable: " + (status.listener.error || "unknown reason") + ". Shortcuts are not expanded until this is fixed.");
     if (!status.sender.available) problems.push("Cannot type into other applications: " + status.sender.reason + ".");
+    if (status.palette && status.palette.accelerator && !status.palette.registered) {
+      problems.push("The search palette shortcut " + status.palette.accelerator + " is not available (" + (status.palette.error || "unknown reason") + "). Use Search shortcuts in the tray menu instead.");
+    }
     for (const warning of status.warnings) problems.push(warning);
     $("banner").hidden = !problems.length;
-    text($("banner"), problems.join(" "));
+    $("banner").textContent = "";
+    for (const problem of problems) $("banner").append(el("div", { text: problem }));
     const ctx = status.context || {};
     text($("context"), ctx.process ? "Focused: " + ctx.process + " (" + status.mode + ")" : "");
   }
 
   async function renderAll(change) {
-    const what = change || { metrics: true, library: true, learning: true, settings: true, status: true, context: true };
+    const what = change || { metrics: true, library: true, learning: true, settings: true, status: true, context: true, policy: true };
     if (what.status || what.context) await renderStatus();
     if (what.settings || what.library || what.learning) await renderPolicyTabs();
     if (what.metrics || what.settings) await renderOverview();
     if (what.library) await renderLibrary();
     if (what.learning || what.library) await renderLearning();
     if (what.settings) await renderApps();
+    if (what.settings || what.policy) await renderPolicy();
   }
 
   api.onChange((change) => { renderAll(change).catch(console.error); });

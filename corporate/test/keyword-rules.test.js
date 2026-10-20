@@ -57,3 +57,41 @@ test("detect offers each rule once per field session and looks only at recent te
   assert.equal(keywords.detect(old, rules, keywords.createState()).length, 0);
   assert.equal(keywords.detect(old, rules, keywords.createState(), { windowChars: 1000 }).length, 1);
 });
+
+test("warning rules need a message; their fix is optional and validated", () => {
+  const { rules, warnings } = keywords.normalizeRules([
+    { id: "disclaimer", action: "warn", keywords: ["contract"], unless: ["This message is confidential"], message: "Add the legal disclaimer.", insert: { kind: "text", text: "This message is confidential." } },
+    { id: "card", action: "warn", detect: "card-number", message: "Do not send card numbers by email." },
+    { id: "silent", action: "warn", keywords: ["x"] },
+    { id: "odd", action: "shout", keywords: ["x"], message: "m" },
+    { id: "badfix", action: "warn", keywords: ["x"], message: "m", insert: { kind: "text", text: "" } },
+    { id: "nodetector", action: "warn", detect: ["iban"], message: "m" },
+    { id: "offer-needs-insert", keywords: ["x"] },
+  ]);
+  assert.deepEqual(rules.map((r) => r.id), ["disclaimer", "card"]);
+  assert.equal(rules[0].action, "warn");
+  assert.deepEqual(rules[0].unless, ["This message is confidential"]);
+  assert.equal(rules[1].insert, null);
+  assert.deepEqual(rules[1].detect, ["card-number"]);
+  assert.equal(rules[1].label, "card-number");
+  assert.equal(warnings.length, 5);
+  assert.ok(warnings.some((w) => /needs a message/.test(w)));
+  assert.ok(warnings.some((w) => /offer or warn/.test(w)));
+  assert.ok(warnings.some((w) => /unknown detector iban/.test(w)));
+});
+
+test("unless phrases anywhere in the field suppress a rule; detectors look at recent text", () => {
+  const { rules } = keywords.normalizeRules([
+    { id: "disclaimer", action: "warn", keywords: ["contract"], unless: ["This message is  confidential"], message: "Add the disclaimer." },
+    { id: "card", action: "warn", detect: ["card-number"], message: "No card numbers." },
+    { id: "card-in-quote", action: "warn", keywords: ["quote"], detect: ["card-number"], message: "Both." },
+  ]);
+  const ids = (text) => keywords.detect(text, rules).map((h) => h.rule.id);
+  assert.deepEqual(ids("Please sign the contract today."), ["disclaimer"]);
+  assert.deepEqual(ids("THIS MESSAGE IS\nCONFIDENTIAL.\n" + "x ".repeat(400) + "Please sign the contract today."), [], "the phrase can be far above and differently spaced");
+  assert.deepEqual(ids("My card is 4111 1111 1111 1111 thanks"), ["card"]);
+  assert.deepEqual(ids("Order 4111 1111 1111 1112 thanks"), [], "not a valid card number");
+  assert.deepEqual(ids("quote for 4111-1111-1111-1111 "), ["card", "card-in-quote"]);
+  assert.deepEqual(keywords.detect("contract", rules)[0].matched, ["contract"]);
+  assert.deepEqual(keywords.detect("4111 1111 1111 1111", rules)[0].matched, ["card-number"]);
+});

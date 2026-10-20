@@ -23,7 +23,9 @@
   "keywordRules": [
     { "id": "returns", "label": "Returns policy", "keywords": ["return", "returns", "refund"], "match": "any", "insert": { "kind": "shorthand", "trigger": "ret/" } },
     { "id": "shipping-docs", "label": "Shipping documents", "keywords": ["customs", "shipment"], "match": "all", "insert": { "kind": "document", "shortcut": "/sld" } },
-    { "id": "office-hours", "label": "Office hours", "keywords": ["opening hours", "office hours"], "insert": { "kind": "text", "text": "Our office hours are Monday to Friday, 08:00 to 17:00." } }
+    { "id": "office-hours", "label": "Office hours", "keywords": ["opening hours", "office hours"], "insert": { "kind": "text", "text": "Our office hours are Monday to Friday, 08:00 to 17:00." } },
+    { "id": "contract-disclaimer", "label": "Contract disclaimer", "action": "warn", "keywords": ["contract", "agreement"], "unless": ["This message and any attachments are confidential"], "message": "Messages about contracts need the legal disclaimer.", "insert": { "kind": "text", "text": "This message and any attachments are confidential and intended only for the addressee." } },
+    { "id": "card-numbers", "label": "Card numbers", "action": "warn", "detect": ["card-number"], "message": "Card numbers must not be sent by email. Use the secure payment link instead." }
   ],
   "documents": {
     "shortcuts": [

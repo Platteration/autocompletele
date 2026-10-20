@@ -12,7 +12,13 @@ module.exports = {
   phraseMiner: require("./phrase-miner.js"),
   keywordRules: require("./keyword-rules.js"),
   documents: require("./documents.js"),
+  paletteSearch: require("./palette-search.js"),
   orgPolicy: require("./org-policy.js"),
+  policySigning: require("./policy-signing.js"),
+  policySource: require("./policy-source.js"),
   engine: require("./engine.js"),
+  report: require("./report.js"),
+  suggestions: require("./suggestions.js"),
   store: require("./store.js"),
+  cryptoBox: require("./crypto-box.js"),
 };

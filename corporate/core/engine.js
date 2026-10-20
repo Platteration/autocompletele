@@ -13,6 +13,9 @@ const orgPolicy = require("./org-policy.js");
 
 const DEFAULTS = Object.freeze({
   maxBuffer: 200,
+  // Keyword and compliance rules look at the current field's text, held in
+  // memory only, only while the policy has such rules, and never written.
+  maxFieldText: 4000,
   minSessionLength: 20,
   // Whether the input adapter swallows the key that completes a trigger (the
   // Windows hook does; uiohook-style listeners cannot, so the character
@@ -49,12 +52,19 @@ function createEngine(options) {
   const keywordState = keywords.createState();
 
   let buffer = "";
+  let fieldText = "";
   let context = {};
   let decision = { mode: policy.capture.defaultMode, reason: "default", rule: null };
   let session = null;
   let undo = null;
   let pendingRecord = null;
   let enabled = true;
+
+  function decideMode() {
+    if (policy.paused && policy.paused.active) return { mode: "off", reason: "paused by the organisation", rule: null };
+    if (!enabled) return { mode: "off", reason: "paused", rule: null };
+    return capture.decide(context, policy.capture);
+  }
 
   function appName() {
     return capture.baseName(context.process) || String(context.app || "").trim() || "";
@@ -85,24 +95,57 @@ function createEngine(options) {
     return { app: ended.app, startedAt: ended.startedAt, endedAt: now(), text: scrubbed.text, redactions: scrubbed.redactions };
   }
 
-  function sessionAppend(text) {
-    if (session) session.text += text;
+  function tracksField() {
+    return policy.keywordRules.length > 0;
   }
 
-  function sessionReplaceTail(typedChars, inserted) {
+  function capField() {
+    if (fieldText.length > settings.maxFieldText) fieldText = fieldText.slice(fieldText.length - settings.maxFieldText);
+  }
+
+  function sessionAppend(text) {
+    if (session) session.text += text;
+    if (tracksField()) {
+      fieldText += text;
+      capField();
+    }
+  }
+
+  // Learning is about what the person types. Where actle inserts text, the
+  // learning session gets a paragraph break instead, so the miner never
+  // proposes actle's own output (a signature, an address) back as a phrase.
+  // The field text keeps the insertion: a disclaimer inserted by a shortcut
+  // must count for compliance rules.
+  const LEARN_GAP = "\n\n";
+
+  function sessionTail(remove, add) {
     if (!session) return;
-    if (typedChars > 0) session.text = session.text.slice(0, Math.max(0, session.text.length - typedChars));
-    session.text += inserted;
+    if (remove > 0) session.text = session.text.slice(0, Math.max(0, session.text.length - remove));
+    session.text += add;
+  }
+
+  function fieldTail(remove, add) {
+    if (!tracksField()) return;
+    if (remove > 0) fieldText = fieldText.slice(0, Math.max(0, fieldText.length - remove));
+    fieldText += add;
+    capField();
+  }
+
+  /** actle replaced `typedChars` just typed with `inserted`. */
+  function insertedText(typedChars, inserted) {
+    sessionTail(typedChars, inserted ? LEARN_GAP : "");
+    fieldTail(typedChars, inserted);
   }
 
   /** Tell the engine which window has the focus. Returns the learning session that just ended, if any. */
   function focusChanged(nextContext) {
     clearUndo();
     buffer = "";
+    fieldText = "";
     keywordState.reset();
     const ended = flushSession();
     context = nextContext && typeof nextContext === "object" ? Object.assign({}, nextContext) : {};
-    decision = enabled ? capture.decide(context, policy.capture) : { mode: "off", reason: "paused", rule: null };
+    decision = decideMode();
     if (decision.mode === "learn") startSession();
     return { mode: decision.mode, reason: decision.reason, session: ended };
   }
@@ -111,6 +154,7 @@ function createEngine(options) {
   function endSession() {
     clearUndo();
     buffer = "";
+    fieldText = "";
     keywordState.reset();
     const ended = flushSession();
     if (decision.mode === "learn") startSession();
@@ -134,9 +178,9 @@ function createEngine(options) {
       };
     }
     const rendered = template.render(sh.expansion, null, new Date(now()));
-    undo = { trigger: sh.trigger, text: rendered.text, cursorOffset: rendered.cursorOffset };
-    pendingRecord = { kind: "expansion", trigger: sh.trigger, inserted: rendered.text, typed: sh.trigger, app: appName() };
-    sessionReplaceTail(sh.trigger.length, rendered.text);
+    undo = { trigger: sh.trigger, text: rendered.text, cursorOffset: rendered.cursorOffset, learned: rendered.text ? LEARN_GAP.length : 0 };
+    pendingRecord = { kind: "expansion", trigger: sh.trigger, source: sh.source, inserted: rendered.text, typed: sh.trigger, app: appName() };
+    insertedText(sh.trigger.length, rendered.text);
     return {
       type: "expand",
       trigger: sh.trigger,
@@ -163,7 +207,8 @@ function createEngine(options) {
       undo = null;
       pendingRecord = null;
       buffer = reverted.trigger;
-      sessionReplaceTail(reverted.text.length, reverted.trigger);
+      sessionTail(reverted.learned, reverted.trigger);
+      fieldTail(reverted.text.length, reverted.trigger);
       return [{
         type: "undo",
         trigger: reverted.trigger,
@@ -178,6 +223,7 @@ function createEngine(options) {
     if (k.isBackspace) {
       buffer = popGrapheme(buffer);
       if (session) session.text = popGrapheme(session.text);
+      fieldText = popGrapheme(fieldText);
       return [];
     }
     if (k.resetsBuffer) {
@@ -204,7 +250,7 @@ function createEngine(options) {
     if (doc) {
       const typedInField = settings.swallowsTriggerKey ? doc.shortcut.trigger.length - text.length : doc.shortcut.trigger.length;
       buffer = "";
-      sessionReplaceTail(doc.shortcut.trigger.length, "");
+      insertedText(doc.shortcut.trigger.length, "");
       actions.push({
         type: "documents",
         trigger: doc.shortcut.trigger,
@@ -216,8 +262,12 @@ function createEngine(options) {
     }
     // Keywords are checked when a word ends, so "invoices" is not offered on "inv".
     if (policy.keywordRules.length && !expander.isBoundary(buffer[buffer.length - 2]) && expander.isBoundary(text[text.length - 1])) {
-      const hits = keywords.detect(session ? session.text : buffer, policy.keywordRules, keywordState);
-      if (hits.length) actions.push({ type: "keyword", hits });
+      const hits = keywords.detect(fieldText, policy.keywordRules, keywordState);
+      // One action for all hits, warnings first: the shell shows one popover,
+      // so a warning is never replaced by an offer that fired on the same word.
+      const warnings = hits.filter((hit) => hit.rule.action === "warn");
+      const offers = hits.filter((hit) => hit.rule.action !== "warn");
+      if (hits.length) actions.push({ type: warnings.length ? "warning" : "keyword", hits: warnings.concat(offers) });
     }
     return actions;
   }
@@ -231,11 +281,17 @@ function createEngine(options) {
     const kind = metrics.KINDS.includes(data.kind) ? data.kind : "suggestion";
     const inserted = String(data.inserted == null ? "" : data.inserted);
     const typed = String(data.typed == null ? "" : data.typed);
-    if (inserted) sessionReplaceTail(typed.length, inserted);
+    // Keystrokes spent outside the field (a palette query and its Enter key)
+    // are subtracted so the statistics do not flatter the palette.
+    const spent = Math.max(0, Math.floor(Number(data.spentKeystrokes) || 0));
+    if (inserted) insertedText(typed.length, inserted);
     const fixedSeconds = kind === "document"
       ? Math.max(1, Math.floor(Number(data.count) || 1)) * policy.typing.secondsPerAttachment
       : Number(data.fixedSeconds) || 0;
-    return ledger.record({ kind, trigger: data.trigger, inserted, typed, fixedSeconds, app: appName() });
+    // Keyword rules and document sets only exist in the organisation policy.
+    const source = kind === "document" || kind === "keyword" ? "organization" : data.source;
+    const keystrokesSaved = Math.max(0, metrics.keystrokesSaved(inserted, typed) - spent);
+    return ledger.record({ kind, trigger: data.trigger, source, keystrokesSaved, fixedSeconds, app: appName() });
   }
 
   function setLibrary(next) {
@@ -246,10 +302,14 @@ function createEngine(options) {
   function setPolicy(next) {
     policy = next && Array.isArray(next.keywordRules) ? next : orgPolicy.parse(next);
     library = mergeLibraries(personal, policy.library);
+    if (!tracksField()) fieldText = "";
     ledger.setCharsPerMinute(policy.typing.charsPerMinute);
-    decision = enabled ? capture.decide(context, policy.capture) : decision;
-    if (decision.mode !== "learn") session = null;
+    decision = decideMode();
+    // A session ended by the new policy is handed back to be stored, not dropped.
+    let ended = null;
+    if (decision.mode !== "learn") ended = flushSession();
     else if (!session) startSession();
+    return ended;
   }
 
   function setEnabled(value) {
@@ -267,6 +327,7 @@ function createEngine(options) {
     setEnabled,
     ledger,
     get enabled() { return enabled; },
+    get paused() { return !!(policy.paused && policy.paused.active); },
     get mode() { return decision.mode; },
     get decision() { return decision; },
     get context() { return Object.assign({}, context); },
@@ -274,6 +335,7 @@ function createEngine(options) {
     get library() { return library.slice(); },
     get policy() { return policy; },
     get session() { return session ? Object.assign({}, session) : null; },
+    get fieldText() { return fieldText; },
   };
 }
 
