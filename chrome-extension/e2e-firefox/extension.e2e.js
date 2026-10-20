@@ -172,16 +172,29 @@ test("Firefox: real temporary add-on and browser UI", { timeout: 120000 }, async
   });
 
   await t.test("picker trigger changes and can be disabled", async () => {
-    await app.settings({ pickerTrigger: "//" });
-    await app.openFixture();
-    await keys("#inp", "//");
-    await driver.wait(pickerVisible, 5000);
-    await keys("#inp", Key.ESCAPE);
-    await app.settings({ pickerTrigger: "" });
-    await app.openFixture();
-    await keys("#inp", ";; //");
-    assert.equal(await pickerVisible(), false);
-    await app.settings({ pickerTrigger: ";;" });
+    // The content script reads settings asynchronously after the page loads.
+    // Expanding a known shorthand first proves it has read the settings saved
+    // above, so typing the trigger tests the setting rather than the race.
+    async function openReadyFixture() {
+      await app.openFixture();
+      await fill("#inp", "cool/");
+      await waitValue("#inp", "That is really cool!");
+      await fill("#inp", "");
+    }
+    try {
+      await app.settings({ pickerTrigger: "//" });
+      await openReadyFixture();
+      await keys("#inp", "//");
+      await driver.wait(pickerVisible, 5000);
+      await keys("#inp", Key.ESCAPE);
+      await app.settings({ pickerTrigger: "" });
+      await openReadyFixture();
+      await keys("#inp", ";; //");
+      assert.equal(await pickerVisible(), false);
+    } finally {
+      // Later tests expect the default trigger even if this one fails.
+      await app.settings({ pickerTrigger: ";;" });
+    }
   });
 
   await t.test("popup document searches and copies via the real clipboard", async () => {

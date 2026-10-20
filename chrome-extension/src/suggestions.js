@@ -44,6 +44,48 @@
     return null;
   }
 
+  // Finishing a saved paragraph: the words before the caret match the fixed
+  // opening of a snippet (the text before its first [[blank]] or {variable}),
+  // ignoring case and runs of whitespace. Short snippets are left to triggers.
+  const PHRASE_MIN_WORDS = 6;
+  const PHRASE_SCAN = 400;
+  const squash = (text) => text.replace(/\s+/g, " ").toLowerCase();
+  const wordCount = (text) => text.split(/\s+/).filter(Boolean).length;
+
+  function findPhrase(before, shorthands, minWords, usageCounts) {
+    if (typeof before !== "string" || !Number.isInteger(minWords) || minWords < 1 || !Array.isArray(shorthands)) return null;
+    const saved = [];
+    shorthands.forEach((sh, order) => {
+      if (!sh || typeof sh.trigger !== "string" || typeof sh.expansion !== "string") return;
+      if (wordCount(sh.expansion) < PHRASE_MIN_WORDS) return;
+      const cut = sh.expansion.search(/\[\[|\{/);
+      const opening = squash(cut < 0 ? sh.expansion : sh.expansion.slice(0, cut));
+      saved.push({ sh, order, opening, whole: squash(sh.expansion).trimEnd() });
+    });
+    if (!saved.length) return null;
+    // The earliest word start that still matches covers the most typed words.
+    for (let start = Math.max(0, before.length - PHRASE_SCAN); start < before.length; start++) {
+      if (/\s/.test(before[start]) || !expander.isBoundary(before[start - 1])) continue;
+      const query = before.slice(start);
+      if (wordCount(query) < minWords) break;
+      const typed = squash(query);
+      const matching = saved.filter((entry) => entry.opening.startsWith(typed) && typed.trimEnd() !== entry.whole);
+      if (!matching.length) continue;
+      const uses = (entry) => { const count = usageCounts && usageCounts[entry.sh.id]; return Number.isFinite(count) && count > 0 ? count : 0; };
+      matching.sort((a, b) => uses(b) - uses(a) || a.order - b.order);
+      return { start, query, items: matching.slice(0, MAX_RESULTS).map((entry) => entry.sh), phrase: true };
+    }
+    return null;
+  }
+
+  /** A finished paragraph keeps the case of the first letter the person typed. */
+  function keepTypedCase(typed, expansion) {
+    const [first] = String(typed);
+    const [saved] = String(expansion);
+    if (!first || !saved || first === saved || first.toLowerCase() !== saved.toLowerCase()) return expansion;
+    return first + expansion.slice(saved.length);
+  }
+
   const HOST_ID = "actle-suggestions-host";
   let host = null;
   let listEl = null;
@@ -56,6 +98,7 @@
   let selected = -1;
   let onPick = null;
   let onDismiss = null;
+  let phrase = false;
 
   function anchorFocused() {
     const tree = anchor && anchor.getRootNode ? anchor.getRootNode() : document;
@@ -75,37 +118,43 @@
       :host { all: initial; }
       :host {
         position: fixed; z-index: 2147483647; color-scheme: light dark;
-        --panel: #fff; --text: #172033; --muted: #526078;
-        --line: #d7deea; --control: #7d8ba1; --accent: #2357d7;
-        --soft: #eaf0ff; --pressed: #dce6ff;
+        --bg: #fff; --surface: #f5f6f8; --sunken: #eceef1; --ink: #1b1f24; --muted: #59636e;
+        --line: #d3d8de; --control: #7a838e; --accent: #1a5fd0; --button: #1a5fd0;
+        --frame: #1b1f24; --shadow: 0 4px 16px rgb(0 0 0 / 12%);
       }
       .panel {
         width: 320px; max-width: calc(100vw - 16px); overflow: hidden;
-        background: var(--panel); color: var(--text); border: 1px solid var(--control);
-        border-radius: 12px; box-shadow: 0 10px 30px rgba(13,19,32,.18);
-        font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: var(--bg); color: var(--ink); border: 1px solid var(--frame);
+        border-radius: 0; box-shadow: var(--shadow);
+        font: 13px/20px system-ui, -apple-system, "Segoe UI", sans-serif;
       }
       .heading {
-        display: flex; align-items: center; gap: 7px; padding: 9px 12px;
-        border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px;
+        display: flex; align-items: baseline; gap: 8px; padding: 8px 12px;
+        border-bottom: 1px solid var(--line); color: var(--muted);
+        font: 650 11px/16px system-ui, -apple-system, "Segoe UI", sans-serif;
+        letter-spacing: .08em; text-transform: uppercase;
       }
-      .brand { color: var(--accent); font-weight: 750; font-size: 13px; }
-      .count { margin-left: auto; }
-      .list { max-height: min(240px, max(40px, calc(100vh - 100px))); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--control) var(--panel); }
-      .item { padding: 8px 12px; cursor: pointer; border-left: 3px solid transparent; }
-      .item:hover { background: var(--soft); }
-      .item[data-selected="true"] { background: var(--soft); border-left-color: var(--accent); }
-      .item:active { background: var(--pressed); }
-      .trigger { display: block; color: var(--accent); font: 600 13px/1.45 ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .typed { color: var(--text); font-weight: 400; }
-      .expansion { display: block; margin-top: 2px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .hint { padding: 8px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+      .brand { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .count { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; }
+      .list { max-height: min(240px, max(40px, calc(100vh - 100px))); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--control) var(--bg); }
+      .item { padding: 8px 12px; cursor: pointer; }
+      .item + .item { border-top: 1px solid var(--line); }
+      .item:hover { background: var(--surface); }
+      .item:active { background: var(--sunken); }
+      .item[data-selected="true"] { background: var(--button); color: #fff; }
+      .trigger { display: block; color: var(--accent); font: 650 13px/20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .typed { color: var(--ink); font-weight: 400; }
+      .expansion { display: block; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .item[data-selected="true"] .trigger, .item[data-selected="true"] .typed, .item[data-selected="true"] .expansion { color: #fff; }
+      .hint { padding: 8px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 16px; }
       .status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
       @media (prefers-color-scheme: dark) {
-        :host { --panel: #151d2c; --text: #eef2f7; --muted: #a7b4c8; --line: #344159; --control: #7f8da5; --accent: #a4bdff; --soft: #233354; --pressed: #30446c; }
+        :host { --bg: #0f1115; --surface: #16191e; --sunken: #1c2026; --ink: #e7eaee; --muted: #a2aab4; --line: #2e343c; --control: #7d8691; --accent: #7aa7ff; --button: #2f6be0; --frame: #7d8691; --shadow: none; }
       }
       @media (forced-colors: active) {
         .panel { border-color: ButtonText; }
+        /* The bar the selected row has always shown in this mode. */
+        .item { border-left: 3px solid transparent; }
         .item[data-selected="true"] { border-left-color: Highlight; outline: 1px solid Highlight; outline-offset: -1px; }
       }
     `);
@@ -162,10 +211,14 @@
       row.setAttribute("aria-selected", String(index === selected));
       const trigger = document.createElement("span");
       trigger.className = "trigger";
-      const typed = document.createElement("span");
-      typed.className = "typed";
-      typed.textContent = query;
-      trigger.append(typed, document.createTextNode(sh.trigger.slice(query.length)));
+      if (phrase) {
+        trigger.textContent = sh.trigger;
+      } else {
+        const typed = document.createElement("span");
+        typed.className = "typed";
+        typed.textContent = query;
+        trigger.append(typed, document.createTextNode(sh.trigger.slice(query.length)));
+      }
       const expansion = document.createElement("span");
       expansion.className = "expansion";
       expansion.textContent = preview(sh);
@@ -175,8 +228,9 @@
     const chosen = listEl.querySelector('[data-selected="true"]');
     if (chosen) chosen.scrollIntoView({ block: "nearest" });
     statusEl.textContent = selected < 0
-      ? `${items.length} shorthand suggestion${items.length === 1 ? "" : "s"}. Press Down arrow to choose, then Enter to insert.`
-      : `${items[selected].trigger}: ${preview(items[selected])}. Press Enter to insert.`;
+      ? (phrase ? `${items.length} saved paragraph${items.length === 1 ? "" : "s"} to finish. Press Down arrow to choose, then Enter to finish it.`
+        : `${items.length} shorthand suggestion${items.length === 1 ? "" : "s"}. Press Down arrow to choose, then Enter to insert.`)
+      : `${items[selected].trigger}: ${preview(items[selected])}. Press Enter to ${phrase ? "finish it" : "insert"}.`;
     position();
   }
 
@@ -189,6 +243,7 @@
     selected = -1;
     onPick = null;
     onDismiss = null;
+    phrase = false;
   }
 
   function dismiss() {
@@ -212,10 +267,11 @@
     }
     build();
     const next = opts.items.slice(0, MAX_RESULTS);
-    if (anchor !== opts.anchorEl || query !== opts.query || items.length !== next.length
+    if (anchor !== opts.anchorEl || query !== opts.query || phrase !== !!opts.phrase || items.length !== next.length
         || next.some((sh, index) => sh !== items[index])) selected = -1;
     anchor = opts.anchorEl;
     query = opts.query;
+    phrase = !!opts.phrase;
     items = next;
     onPick = opts.onPick;
     onDismiss = opts.onDismiss;
@@ -262,5 +318,5 @@
     return false;
   }
 
-  return { find, show, update: show, close, isOpen: () => open, isHost: (el) => !!host && el === host, handleKeyDown };
+  return { find, findPhrase, keepTypedCase, show, update: show, close, isOpen: () => open, isHost: (el) => !!host && el === host, handleKeyDown };
 });

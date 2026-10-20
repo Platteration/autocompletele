@@ -28,9 +28,20 @@
     <string name="replace">Replace</string>
     <string name="merge">Merge</string>
     <string name="import_done">Imported %1$d shorthand(s).</string>
+    <string name="import_done_undo">Imported %1$d shorthand(s). Undo last import is in the menu.</string>
+    <string name="import_keep_failed">Your current shorthands could not be kept before the import. Import anyway?</string>
+    <string name="import_anyway">Import anyway</string>
+    <string name="menu_undo_import">Undo last import</string>
+    <string name="undo_import_message">Put back the %1$d shorthand(s) you had before your last import? This replaces your current %2$d shorthand(s).</string>
+    <string name="undo_import_confirm">Put back</string>
+    <string name="undo_import_done">Put back the %1$d shorthand(s) you had before your last import.</string>
+    <string name="delete_confirm">Delete %1$s?</string>
     <string name="import_failed">Could not read that file: %1$s</string>
     <string name="import_empty">No shorthands were found in that file.</string>
     <string name="export_done">Exported %1$d shorthand(s).</string>
     <string name="export_failed">Could not write that file: %1$s</string>
     <string name="export_file_name">shorthands.json</string>
+    <string name="saved_list_unreadable">Your saved shorthands could not be read. They were kept aside unchanged, and the list started empty.</string>
+    <string name="saved_list_unreadable_not_copied">Your saved shorthands could not be read, and a copy could not be made. They were left unchanged, and nothing will be saved over them until a copy can be made.</string>
+    <string name="save_refused_unreadable">Not saved. Your earlier shorthands could not be read or copied aside, so they were left as they are.</string>
 </resources>

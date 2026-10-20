@@ -204,6 +204,7 @@ namespace ShorthandExpander
                     return;
                 }
             }
+            string? editedTrigger = target >= 0 ? _items[target].Trigger : null;
             if (target >= 0)
             {
                 _items[target] = new Shorthand(trigger, expansion);
@@ -212,29 +213,42 @@ namespace ShorthandExpander
             {
                 _items.Add(new Shorthand(trigger, expansion));
             }
-            Persist();
-            ClearEditor();
+            if (Persist()) ClearEditor();
+            // The list was reloaded; Save again still edits the same saved shorthand.
+            else _editingIndex = editedTrigger == null ? -1 : _items.FindIndex(s => s.Trigger == editedTrigger);
         }
 
         private void DeleteSelected()
         {
             if (_editingIndex < 0 || _editingIndex >= _items.Count) return;
+            var answer = MessageBox.Show(this, $"Delete {_items[_editingIndex].Trigger}?", Text,
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return;
             _items.RemoveAt(_editingIndex);
             Persist();
             ClearEditor();
         }
 
-        private void Persist()
+        /// <summary>
+        /// Saves the edited list. When the save fails the list goes back to what is saved and in use, so the window
+        /// never shows shorthands that are not stored; callers keep the editor filled so nothing typed is lost.
+        /// </summary>
+        private bool Persist()
         {
+            bool saved = true;
             try
             {
                 _store.SaveShorthands(_items);
             }
             catch (Exception ex)
             {
+                saved = false;
+                _items.Clear();
+                _items.AddRange(_store.Shorthands.Select(s => new Shorthand(s.Trigger, s.Expansion)));
                 MessageBox.Show(this, "Could not save shorthands:\n" + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             RefreshList();
+            return saved;
         }
 
         private void Import()
@@ -256,6 +270,7 @@ namespace ShorthandExpander
                 MessageBox.Show(this, "No shorthands were found in that file.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
+            int importedCount = list.Count;
             if (_items.Count > 0)
             {
                 var answer = MessageBox.Show(this,
@@ -269,10 +284,32 @@ namespace ShorthandExpander
                     list = merged;
                 }
             }
+            // Replace and Merge both change the list, so a copy of it is kept first.
+            string? copy = null;
+            if (_items.Count > 0)
+            {
+                try
+                {
+                    copy = _store.KeepCopyBeforeImport();
+                }
+                catch (Exception ex)
+                {
+                    var goOn = MessageBox.Show(this,
+                        $"Your current shorthands could not be copied before the import ({ex.Message}). Import anyway?",
+                        Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                    if (goOn != DialogResult.Yes) return;
+                }
+            }
             _items.Clear();
             _items.AddRange(list);
-            Persist();
+            bool saved = Persist();
             ClearEditor();
+            if (saved && copy != null)
+            {
+                MessageBox.Show(this,
+                    $"Imported {importedCount} shorthand(s).\n\nYour previous list was saved as:\n{copy}\n\nTo bring it back, choose Import JSON…, open that file and answer Yes (replace, not merge).",
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
         }
 
         private void Export()
@@ -310,7 +347,15 @@ namespace ShorthandExpander
         private void SaveSettings()
         {
             if (_loadingSettings) return;
-            _store.SaveSettings(new AppSettings { Enabled = _enabled.Checked, ShiftEnterForNewlines = _shiftEnter.Checked });
+            try
+            {
+                _store.SaveSettings(new AppSettings { Enabled = _enabled.Checked, ShiftEnterForNewlines = _shiftEnter.Checked });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Could not save settings:\n" + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LoadSettings(); // show what the store actually holds
+            }
         }
 
         private void ApplyStartup()

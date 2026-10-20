@@ -107,3 +107,77 @@ test("the enabled setting is respected", async (t) => {
   await page.keyboard.type("cool/");
   assert.equal(await page.inputValue("#inp"), "cool/");
 });
+
+test("a page left open when actle reloads stops expanding and asks once for a reload", { timeout: 60000 }, async (t) => {
+  // Chrome does not re-inject content scripts after an update or reload; the
+  // old script stays in open pages, cut off from storage and settings.
+  const app = await launch({ settings: { animationMode: "off" } });
+  t.after(() => app.close());
+  const { page } = app;
+  await page.click("#inp");
+  await page.keyboard.type("cool/");
+  assert.equal(await page.inputValue("#inp"), "That is really cool!");
+  await app.worker.evaluate(() => chrome.runtime.reload()).catch(() => {});
+  await page.waitForTimeout(1000);
+  await page.fill("#inp", "");
+  await page.click("#inp");
+  await page.keyboard.type("brb/");
+  await page.waitForTimeout(300);
+  assert.equal(await page.inputValue("#inp"), "brb/", "a stale page must not expand with a library it can no longer check");
+  const notice = () => page.evaluate(() => {
+    const host = document.getElementById("actle-usage-notice");
+    return host ? host.getAttribute("id") : null;
+  });
+  assert.equal(await notice(), "actle-usage-notice", "the person is told why");
+  // Recovery after reloading the page is not checked here: under Playwright the
+  // reloaded unpacked extension does not start again.
+});
+
+test("triggers on a new line and after a corrected typo expand", { timeout: 60000 }, async (t) => {
+  const app = await launch({ settings: { animationMode: "off" } });
+  t.after(() => app.close());
+  const { page } = app;
+
+  await t.test("a trigger typed first on a new line of a rich editor expands", async () => {
+    await page.click("#ce");
+    await page.evaluate(() => { document.querySelector("#ce").textContent = ""; });
+    await page.click("#ce");
+    await page.keyboard.type("Hello");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("cool/");
+    await page.waitForFunction(() => document.querySelector("#ce").innerText.includes("That is really cool!"));
+    assert.equal(await page.evaluate(() => document.querySelector("#ce").innerText.replace(/\n+/g, "|")), "Hello|That is really cool!");
+  });
+
+  await t.test("a typo fixed with Backspace still lets the trigger expand in every field type", async () => {
+    for (const selector of ["#inp", "#ta", "#ce"]) {
+      await page.evaluate((s) => { const el = document.querySelector(s); if ("value" in el) el.value = ""; else el.textContent = ""; }, selector);
+      await page.click(selector);
+      await page.keyboard.type("cox");
+      await page.keyboard.press("Backspace");
+      await page.keyboard.type("ol/");
+      const read = () => page.evaluate((s) => { const el = document.querySelector(s); return "value" in el ? el.value : el.textContent; }, selector);
+      await page.waitForFunction((s) => { const el = document.querySelector(s); return ("value" in el ? el.value : el.textContent) === "That is really cool!"; }, selector, { timeout: 3000 })
+        .catch(() => {});
+      assert.equal(await read(), "That is really cool!", selector);
+    }
+  });
+
+  await t.test("a page that rewrites the field during Backspace does not get the snippet", async () => {
+    await page.evaluate(() => { const el = document.querySelector("#inp"); el.value = ""; });
+    await page.click("#inp");
+    await page.keyboard.type("zzzzz");
+    await page.evaluate(() => {
+      document.querySelector("#inp").addEventListener("keydown", (e) => {
+        if (e.key !== "Backspace") return;
+        e.preventDefault();
+        const el = e.target; el.value = "coo"; el.setSelectionRange(3, 3);
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+      }, { once: true });
+    });
+    await page.keyboard.press("Backspace");
+    await page.keyboard.type("l/");
+    await page.waitForTimeout(200);
+    assert.equal(await page.inputValue("#inp"), "cool/");
+  });
+});

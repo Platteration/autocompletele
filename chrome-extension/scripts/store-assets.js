@@ -22,14 +22,14 @@ const FILLED_HELLO = "Hi Morgan,\n\nYour design brief is ready for Friday.\nLet 
 function demoHtml(template = false) {
   return `<!doctype html><html lang="en"><meta charset="utf-8">
 <title>actle — writing demo</title><style>
-*{box-sizing:border-box}body{margin:0;background:#f4f6f8;color:#172033;font:18px/1.6 system-ui,sans-serif}
-main{max-width:1100px;margin:84px auto}.brand{display:flex;align-items:baseline;gap:12px;color:#2357d7}
-.brand-short{font-size:26px;font-weight:750;letter-spacing:-.04em}.brand-arrow{font-size:20px}.brand-full{font-size:24px;font-weight:650;letter-spacing:-.04em}.demo-label{margin-left:12px;color:#536075;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
-.layout{display:grid;grid-template-columns:360px 1fr;gap:64px;margin-top:58px}h1{font-size:44px;line-height:1.12;letter-spacing:-.04em;margin:0 0 24px}
-p{color:#536075}code{color:#2357d7;background:#e9efff;border-radius:5px;padding:2px 6px}
-.editor{background:white;border:1px solid #dfe4ea;border-radius:16px;padding:28px;box-shadow:0 10px 30px #1720330a}
-label{display:block;font-weight:650;margin-bottom:14px}textarea{display:block;resize:none;width:100%;height:280px;font:18px/1.65 system-ui,sans-serif;padding:18px;border:1px solid #bdc9dc;border-radius:9px;color:#172033}
-textarea:focus{outline:2px solid #2357d7;outline-offset:2px}.caption{font-size:13px;color:#677386;margin:14px 0 0}
+*{box-sizing:border-box}body{margin:0;background:#ffffff;color:#1b1f24;font:18px/28px system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1100px;margin:80px auto}.brand{display:flex;align-items:baseline;gap:12px;padding-bottom:16px;border-bottom:1px solid #d3d8de;color:#1b1f24}
+.brand-short{font-size:26px;font-weight:700;letter-spacing:-.02em}.brand-arrow{color:#59636e;font-size:20px}.brand-full{color:#1a5fd0;font-size:24px;font-weight:650;letter-spacing:-.02em}.demo-label{margin-left:12px;color:#59636e;font-size:11px;line-height:16px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
+.layout{display:grid;grid-template-columns:360px 1fr;gap:64px;margin-top:48px}h1{font-size:36px;line-height:40px;font-weight:700;letter-spacing:-.02em;margin:0 0 24px}
+p{color:#59636e}code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#1a5fd0;background:#e8effc;border-radius:2px;padding:2px 4px}
+.editor{background:#f5f6f8;border-radius:0;padding:24px}
+label{display:block;font-weight:650;margin-bottom:12px}textarea{display:block;resize:none;width:100%;height:280px;font:18px/28px system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px;border:1px solid #7a838e;border-radius:2px;background:#ffffff;color:#1b1f24}
+textarea:focus{border-color:#1a5fd0;outline:2px solid #1a5fd0;outline-offset:2px}.caption{font-size:12px;line-height:18px;color:#59636e;margin:12px 0 0}
 </style><main><div class="brand"><span class="brand-short">actle</span><span class="brand-arrow">→</span><span class="brand-full">autocompletele</span><span class="demo-label">Writing demo</span></div>
 <div class="layout"><section><h1>${template ? "One script.<br>Make it personal." : "The right words,<br>at your fingertips."}</h1>
 ${template ? "<p>Type <code>hello/</code> and fill in the details that change.</p><p>Preview your message.<br>Press Enter to insert.</p>" : "<p>Type <code>;;</code> in a supported text field to find a saved snippet.</p><p>Choose with the arrow keys.<br>Press Enter to insert.</p>"}</section>
@@ -39,10 +39,10 @@ ${template ? "<p>Type <code>hello/</code> and fill in the details that change.</
 
 function promotionalHtml(icon) {
   return `<!doctype html><html lang="en"><meta charset="utf-8"><title>actle</title><style>
-*{box-sizing:border-box}body{margin:0;width:440px;height:280px;padding:28px 30px;background:#14264d;color:#fff;font-family:system-ui,sans-serif}
-header{display:flex;align-items:center;gap:14px}img{width:54px;height:54px;border-radius:12px}.brand{display:flex;align-items:baseline;gap:8px;white-space:nowrap}strong{font-size:25px;letter-spacing:-.035em}.brand-arrow{color:#a4bdff;font-size:18px}.brand-full{color:#d2e0ff;font-size:20px;font-weight:600;letter-spacing:-.035em}
-h1{font-size:33px;line-height:1.16;letter-spacing:-.035em;margin:22px 0 15px;font-weight:650}
-p{margin:0;color:#d2e0ff;font-size:15px}code{font-size:14px;background:#fff;color:#193d91;border-radius:6px;padding:5px 9px}.example-arrow{padding:0 9px}
+*{box-sizing:border-box}body{margin:0;width:440px;height:280px;padding:32px;background:#0f1115;color:#e7eaee;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;gap:16px;padding-bottom:16px;border-bottom:1px solid #2e343c}img{width:48px;height:48px;border-radius:0}.brand{display:flex;align-items:baseline;gap:8px;white-space:nowrap}strong{font-size:24px;font-weight:700;letter-spacing:-.02em}.brand-arrow{color:#a2aab4;font-size:18px}.brand-full{color:#7aa7ff;font-size:20px;font-weight:650;letter-spacing:-.02em}
+h1{font-size:32px;line-height:40px;letter-spacing:-.02em;margin:24px 0;font-weight:700}
+p{margin:0;color:#e7eaee;font-size:15px}code{font:650 14px/20px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#1a2840;color:#7aa7ff;border-radius:2px;padding:4px 8px}.example-arrow{padding:0 8px;color:#a2aab4}
 </style><header><img src="data:image/png;base64,${icon}" alt=""><div class="brand"><strong>actle</strong><span class="brand-arrow">→</span><span class="brand-full">autocompletele</span></div></header>
 <h1>Your repeated text,<br>one shortcut away.</h1><p><code>thanks/</code><span class="example-arrow">→</span>Thanks for your help!</p></html>`;
 }

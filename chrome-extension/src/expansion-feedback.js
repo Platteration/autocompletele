@@ -14,14 +14,14 @@
     }
     .frame {
       position: absolute; box-sizing: border-box; pointer-events: none;
-      overflow: hidden; border: 1px solid #2357d7; border-radius: 8px;
-      background: transparent; box-shadow: 0 0 0 3px rgb(35 87 215 / 16%);
+      overflow: hidden; border: 1px solid #1a5fd0; border-radius: 2px;
+      background: transparent; box-shadow: 0 0 0 3px rgb(26 95 208 / 16%);
       opacity: 0; animation: actle-expansion-fade ${DURATION}ms ease-out both;
     }
     .frame::after {
       content: ""; position: absolute; left: 0; bottom: 0;
       width: 42%; height: 2px; pointer-events: none;
-      background: linear-gradient(90deg, transparent, #2357d7, transparent);
+      background: linear-gradient(90deg, transparent, #1a5fd0, transparent);
       animation: actle-expansion-sweep ${DURATION}ms cubic-bezier(.2, .65, .3, 1) both;
     }
     .mask {
@@ -44,8 +44,8 @@
       85%, 100% { transform: translateX(350%); }
     }
     @media (prefers-color-scheme: dark) {
-      .frame { border-color: #a4bdff; box-shadow: 0 0 0 3px rgb(164 189 255 / 16%); }
-      .frame::after { background: linear-gradient(90deg, transparent, #a4bdff, transparent); }
+      .frame { border-color: #7aa7ff; box-shadow: 0 0 0 3px rgb(122 167 255 / 16%); }
+      .frame::after { background: linear-gradient(90deg, transparent, #7aa7ff, transparent); }
     }
     @media (prefers-reduced-motion: reduce) {
       .frame, .frame::after { animation: none; }

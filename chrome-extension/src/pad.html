@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Writing pad · actle</title>
+  <link rel="stylesheet" href="pad.css">
+  <link rel="stylesheet" href="brand.css">
+</head>
+<body>
+  <div class="pad-shell">
+  <header class="pad-header">
+    <div class="pad-brand">
+      <a class="brand-home" href="options.html" aria-label="actle library"><img src="../icons/icon48.png" width="32" height="32" alt=""></a>
+      <button class="actle-brand" type="button" data-actle-brand aria-label="actle — autocompletes to autocompletele. Replay logo animation" title="actle → autocompletele"><span class="actle-brand__word" aria-hidden="true">actle</span></button>
+    </div>
+    <div class="pad-heading">
+      <h1>Writing pad</h1>
+      <p class="pad-tagline">Drafts are saved on this device as you type. They are never sent or synced.</p>
+    </div>
+    <a class="pad-library-link" href="options.html">Your library</a>
+  </header>
+
+  <div class="pad-layout">
+  <aside class="pad-rail" aria-labelledby="draftsTitle">
+    <div class="rail-head">
+      <h2 id="draftsTitle" class="rail-title">Drafts <span id="draftCount" class="count-pill">0</span></h2>
+      <!-- Narrow windows show the list box left of New draft: it comes first, so Tab follows the eye. -->
+      <label class="sr-only" for="draftSelect">Open a draft</label>
+      <select id="draftSelect" class="draft-select" aria-describedby="draftSelectHint" data-shorthand-ignore></select>
+      <span id="draftSelectHint" class="sr-only">Press Enter to open the draft you chose.</span>
+      <button type="button" id="newDraftBtn" class="new-draft">New draft</button>
+    </div>
+    <ul id="draftList" class="draft-list" aria-labelledby="draftsTitle"></ul>
+    <p id="draftsEmpty" class="rail-empty">No drafts yet. Start typing and your first draft is saved on this device.</p>
+    <details id="padTrash" class="trash">
+      <summary id="padTrashSummary">Recently deleted drafts <span id="padTrashCount" class="count-pill">0</span></summary>
+      <p class="trash-note">Kept only in this browser on this device. The 20 most recent stay until you restore them or delete them for good.</p>
+      <p id="padTrashEmpty" class="trash-empty">No recently deleted drafts.</p>
+      <ul id="padTrashList" class="trash-list" aria-label="Recently deleted drafts"></ul>
+      <button type="button" id="padEmptyTrashBtn" class="danger small" hidden>Empty</button>
+    </details>
+  </aside>
+
+  <main class="pad-main">
+    <div class="pad-editor">
+      <p id="padIntro" class="pad-intro" hidden>A calm place for the words that matter: emails, notes, anything. Nothing here can be sent by accident. Your shortcuts work here too.</p>
+      <div id="padLockNotice" class="pad-notice" hidden>
+        <span id="padLockText" role="status"></span>
+        <button type="button" id="padTakeOver" class="secondary small">Edit here instead</button>
+      </div>
+      <label class="sr-only" for="padTitle">Draft title</label>
+      <input type="text" id="padTitle" class="pad-title" placeholder="Untitled draft" autocomplete="off" spellcheck="true" readonly>
+      <label class="sr-only" for="padBody">Draft text</label>
+      <textarea id="padBody" class="pad-body" placeholder="Start writing…" spellcheck="true" readonly></textarea>
+      <div class="pad-status">
+        <span id="padSave" class="save-state" role="status"></span>
+        <span id="padMsg" class="pad-msg" role="status"></span>
+        <button type="button" id="padUndo" class="secondary small" hidden>Undo</button>
+        <span id="padWords" class="pad-words"></span>
+      </div>
+      <div class="pad-actions">
+        <button type="button" id="copyBtn" class="secondary">Copy text</button>
+        <button type="button" id="downloadBtn" class="secondary">Download .txt</button>
+        <button type="button" id="deleteBtn" class="danger">Delete draft</button>
+      </div>
+    </div>
+  </main>
+
+  <aside class="pad-side" aria-labelledby="suggestionsTitle">
+    <h2 id="suggestionsTitle" class="side-title">Suggestions</h2>
+    <label class="toggle-row">
+      <span><strong id="suggestToggleLabel">Writing suggestions</strong><small id="suggestToggleHint"></small></span>
+      <input type="checkbox" id="suggestToggle" aria-labelledby="suggestToggleLabel" aria-describedby="suggestToggleHint" disabled>
+    </label>
+    <!-- pad-suggestions.js renders its cards inside #padSuggestions, with its
+         own status lines: the cards hold the draft's text, which must not be
+         read out on every change. pad.js empties and hides it while
+         suggestions are off; see self.ActlePad in pad.js. -->
+    <div id="padSuggestions" class="suggestion-panel" data-pad-suggestions hidden></div>
+    <div id="padDismissed" class="dismissed-note" hidden>
+      <span id="padDismissedText" role="status"></span>
+      <button type="button" id="padClearDismissed" class="secondary small">Clear</button>
+    </div>
+  </aside>
+  </div>
+  </div>
+
+  <script src="brand.js"></script>
+  <script src="expander.js"></script>
+  <script src="template.js"></script>
+  <script src="conflicts.js"></script>
+  <script src="storage.js"></script>
+  <script src="field-safety.js"></script>
+  <script src="picker.js"></script>
+  <script src="suggestions.js"></script>
+  <script src="template-form.js"></script>
+  <script src="animation-frames.js"></script>
+  <script src="expansion-feedback.js"></script>
+  <script src="premium-config.js"></script>
+  <script src="premium-client.js"></script>
+  <script src="content.js"></script>
+  <script src="pad-store.js"></script>
+  <script src="phrase-miner.js"></script>
+  <script src="template-maker.js"></script>
+  <script src="pad.js"></script>
+  <script src="pad-suggestions.js"></script>
+</body>
+</html>

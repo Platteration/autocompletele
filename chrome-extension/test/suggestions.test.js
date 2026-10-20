@@ -104,3 +104,60 @@ test("finding suggestions preserves the saved list and snippet objects", () => {
   assert.deepEqual(find("br", saved).items, [brb, brief]);
   assert.deepEqual(saved, [brief, brb]);
 });
+
+const { findPhrase } = require("../src/suggestions.js");
+const reply = { id: "r", trigger: "thx/", expansion: "Thanks for reaching out about your order, we will reply soon." };
+const invite = { id: "i", trigger: "inv/", expansion: "Thanks for reaching out [[name]], we would love to have you on {date}." };
+const shortOne = { id: "s", trigger: "ty/", expansion: "Thanks for reaching out!" };
+
+test("a saved paragraph is offered once the chosen number of its opening words is typed", () => {
+  const match = findPhrase("Hi there, thanks for reaching", [reply, shortOne], 3);
+  assert.deepEqual({ start: match.start, query: match.query, triggers: match.items.map((sh) => sh.trigger), phrase: match.phrase },
+    { start: 10, query: "thanks for reaching", triggers: ["thx/"], phrase: true });
+  assert.equal(findPhrase("Hi there, thanks for", [reply], 3), null, "two words are not enough at the default");
+  assert.equal(findPhrase("Hi there, thanks for", [reply], 2).query, "thanks for");
+  assert.equal(findPhrase("thanks for reach", [reply], 3).query, "thanks for reach", "the last word may be partial");
+});
+
+test("matching ignores case and runs of whitespace but never starts inside a word", () => {
+  assert.equal(findPhrase("THANKS   for\nreaching ", [reply], 3).query, "THANKS   for\nreaching ");
+  assert.equal(findPhrase("nothanks for reaching", [reply], 3), null);
+  assert.equal(findPhrase("thanks for reading", [reply], 3), null);
+});
+
+test("only the fixed opening before a blank or variable can match, and short snippets are left to triggers", () => {
+  assert.deepEqual(findPhrase("thanks for reaching", [invite, shortOne], 3).items.map((sh) => sh.trigger), ["inv/"]);
+  assert.equal(findPhrase("thanks for reaching out Sam", [invite], 3), null, "typed text past a blank cannot be checked");
+  assert.equal(findPhrase("thanks for reaching out", [shortOne], 3), null, "under six words");
+});
+
+test("nothing is offered once the whole snippet is already typed", () => {
+  assert.equal(findPhrase(reply.expansion, [reply], 3), null);
+  assert.equal(findPhrase(reply.expansion + " ", [reply], 3), null);
+});
+
+test("the earliest matching start wins and choices rank by use, then library order, up to five", () => {
+  const other = { id: "o", trigger: "ord/", expansion: "Thanks for reaching out about the delivery date for your parcel." };
+  const many = Array.from({ length: 7 }, (_, i) => ({ id: "m" + i, trigger: `m${i}/`, expansion: "for reaching out about your order and more words " + i }));
+  const match = findPhrase("thanks for reaching out about", [reply, other, ...many], 3, { o: 4 });
+  assert.equal(match.query, "thanks for reaching out about", "the start covering the most typed words");
+  assert.deepEqual(match.items.map((sh) => sh.trigger), ["ord/", "thx/"]);
+  assert.equal(findPhrase("for reaching out about", many, 3).items.length, 5);
+});
+
+test("invalid input offers nothing", () => {
+  for (const words of [0, -1, 2.5, "3", null]) assert.equal(findPhrase("thanks for reaching", [reply], words), null, String(words));
+  assert.equal(findPhrase(null, [reply], 3), null);
+  assert.equal(findPhrase("thanks for reaching", null, 3), null);
+  assert.equal(findPhrase("thanks for reaching", [null, { trigger: "x/" }], 3), null);
+});
+
+test("a finished paragraph keeps the case of the first letter typed", () => {
+  const { keepTypedCase } = require("../src/suggestions.js");
+  assert.equal(keepTypedCase("thanks for", "Thanks for reaching out."), "thanks for reaching out.");
+  assert.equal(keepTypedCase("Thanks for", "thanks for reaching out."), "Thanks for reaching out.");
+  assert.equal(keepTypedCase("THANKS FOR", "Thanks for reaching out."), "Thanks for reaching out.", "only the first letter changes");
+  assert.equal(keepTypedCase("élan", "Élan vital is here."), "élan vital is here.");
+  assert.equal(keepTypedCase("x", "Thanks"), "Thanks", "a different letter is left alone");
+  assert.equal(keepTypedCase("", "Thanks"), "Thanks");
+});

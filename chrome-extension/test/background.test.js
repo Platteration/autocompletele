@@ -16,7 +16,7 @@ for (const browser of ["chrome", "firefox"]) {
     const storage = {
       AREA: browser === "firefox" ? "local" : "sync",
       getAll: async () => ({ shorthands, settings }),
-      replaceAll: async (items) => { shorthands = items; },
+      seedExamples: async (items) => { if (shorthands.length) return false; shorthands = items; return true; },
       savePendingDraft: async (text) => { draft = text; return true; },
     };
     const context = {

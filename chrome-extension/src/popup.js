@@ -182,4 +182,6 @@
   });
 
   document.getElementById("options").addEventListener("click", () => chrome.runtime.openOptionsPage());
+  // An extension page of its own, in a new tab: tabs.create needs no permission.
+  document.getElementById("pad").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("src/pad.html") }));
 })();

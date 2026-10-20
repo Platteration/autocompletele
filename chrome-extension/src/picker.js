@@ -71,46 +71,58 @@
         :host { all: initial; }
         :host {
           position: fixed; z-index: 2147483647; color-scheme: light dark;
-          --panel: #fff; --text: #172033; --muted: #526078;
-          --line: #d7deea; --control: #7d8ba1; --accent: #2357d7;
-          --soft: #eaf0ff; --pressed: #dce6ff;
+          --bg: #fff; --surface: #f5f6f8; --sunken: #eceef1; --ink: #1b1f24; --muted: #59636e;
+          --line: #d3d8de; --control: #7a838e; --accent: #1a5fd0; --button: #1a5fd0;
+          --frame: #1b1f24; --shadow: 0 4px 16px rgb(0 0 0 / 12%);
         }
         .panel {
           width: 340px; max-width: 90vw;
-          background: var(--panel); color: var(--text); border: 1px solid var(--control);
-          border-radius: 12px; box-shadow: 0 12px 32px rgba(13,19,32,.2);
-          font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+          background: var(--bg); color: var(--ink); border: 1px solid var(--frame);
+          border-radius: 0; box-shadow: var(--shadow);
+          font: 13px/20px system-ui, -apple-system, "Segoe UI", sans-serif;
           overflow: hidden;
+        }
+        /* The overlay header strip; the empty alternative keeps it out of
+           the accessible name, which stays "Insert shorthand". */
+        .panel::before {
+          content: "actle"; content: "actle" / "";
+          display: block; padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--muted);
+          font: 650 11px/16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          letter-spacing: .08em; text-transform: uppercase;
         }
         @media (prefers-color-scheme: dark) {
           :host {
-            --panel: #151d2c; --text: #eef2f7; --muted: #a7b4c8;
-            --line: #344159; --control: #7f8da5; --accent: #a4bdff;
-            --soft: #233354; --pressed: #30446c;
+            --bg: #0f1115; --surface: #16191e; --sunken: #1c2026; --ink: #e7eaee; --muted: #a2aab4;
+            --line: #2e343c; --control: #7d8691; --accent: #7aa7ff; --button: #2f6be0;
+            --frame: #7d8691; --shadow: none;
           }
         }
         .query {
-          padding: 10px 12px; border-bottom: 1px solid var(--line);
-          font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all;
+          padding: 12px; border-bottom: 1px solid var(--line);
+          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all;
         }
         .caret { color: var(--muted); }
-        .list { max-height: 260px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--control) var(--panel); }
-        .item { padding: 9px 12px; cursor: pointer; display: block; border-left: 3px solid transparent; }
-        .item:hover { background: var(--soft); }
-        .item[data-selected="true"] { background: var(--soft); border-left-color: var(--accent); }
-        .item:active { background: var(--pressed); }
+        .list { max-height: 260px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--control) var(--bg); }
+        .item { padding: 8px 12px; cursor: pointer; display: block; }
+        .item + .item { border-top: 1px solid var(--line); }
+        .item:hover { background: var(--surface); }
+        .item:active { background: var(--sunken); }
+        .item[data-selected="true"] { background: var(--button); color: #fff; }
         .trigger {
-          display: block; font-family: ui-monospace, monospace; font-weight: 600;
+          display: block; font: 650 13px/20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
           color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .expansion {
-          display: block; margin-top: 2px; color: var(--muted); white-space: nowrap;
+          display: block; color: var(--muted); white-space: nowrap;
           overflow: hidden; text-overflow: ellipsis;
         }
-        .empty, .hint { padding: 10px 12px; color: var(--muted); }
-        .hint { border-top: 1px solid var(--line); font-size: 11px; }
+        .item[data-selected="true"] .trigger, .item[data-selected="true"] .expansion { color: #fff; }
+        .empty { padding: 12px; color: var(--muted); }
+        .hint { padding: 8px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 16px; }
         @media (forced-colors: active) {
           .panel { border-color: ButtonText; }
+          /* The bar the selected row has always shown in this mode. */
+          .item { border-left: 3px solid transparent; }
           .item[data-selected="true"] { border-left-color: Highlight; outline: 1px solid Highlight; outline-offset: -1px; }
         }
     `);

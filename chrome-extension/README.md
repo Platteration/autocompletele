@@ -23,6 +23,18 @@ A trigger fires only when you typed it (or pasted it). A page can read whatever
 lands in its own fields, so text a page's script writes into a field, input
 events it dispatches and keys it fakes in the search overlay never produce an
 expansion; otherwise any site could try `addr/` and read your address back.
+Correcting a typo with Backspace keeps the rest of the word trusted, and a
+trigger typed at the start of a new line in a rich editor expands too.
+
+On a fresh install the three examples (`cool/`, `sig/`, `td/`) are added only
+while the library is still empty, and never replace anything. On Chrome a
+library synced from another device can still arrive after them; delete the
+examples you do not want.
+
+After actle is updated, reloaded, turned off or removed, Chrome keeps the old
+copy running in pages that were already open, cut off from your current
+library and settings. Those pages stop expanding: the first time you type a
+saved trigger there, a note asks you to reload the page.
 
 ## Toolbar command palette
 
@@ -47,6 +59,142 @@ shorthand**. The library opens with the selection as a draft expansion; give
 it a trigger and save. Nothing is added to your library until you save, and
 the one-time draft is kept only in local storage until the library shows it.
 
+## Deleting and Recently deleted
+
+**Delete** on a library row removes the shorthand and says so under the list,
+with an **Undo** button that puts it back under its original id and place in
+the list. The offer stays until your next library action or a reload.
+
+Each deleted shorthand is also copied to **Recently deleted**, a collapsed
+section below the list. The copies stay in this browser's local storage on
+this device, in Chrome and Firefox alike: they are never synced, exported, or
+sent anywhere, and do not count toward Chrome's sync quota. Only the 50 most
+recent are kept; deleting another drops the oldest. **Restore** puts one back,
+**Delete for good** removes one copy, and **Empty Recently deleted** (after a
+confirmation) removes them all. Restore is refused, and the copy kept, while
+another shorthand uses the same trigger or when the shorthand would no longer
+fit in Chrome's sync storage. If sync has already brought the shorthand back
+with the same text, Restore only removes the copy. If it came back with other
+text, the copy is never dropped for it: Restore adds the copy as a separate
+shorthand once its trigger is free, and deleting the one that came back keeps
+both copies. If the copy cannot be saved, the page asks before deleting the
+shorthand without one.
+
+In Chrome, the deletion itself still syncs to your other devices; only the
+device where you deleted it has the copy.
+
+## Writing pad
+
+**Writing pad** in the toolbar popup, or **06 Writing pad** in the library's
+sidebar, opens a page of its own in a new tab: a quiet place to write an email
+or notes without any risk of sending them, because the pad has nothing to send
+with. **Your library** in its header leads back.
+
+- Drafts save as you type: 0.4 seconds after you stop, at least every 2
+  seconds while you keep typing, and at once when you leave the editor, switch
+  or start a draft, or hide the tab. The line under the editor says
+  **Saving…** or **Saved** with the time. If the browser refuses a save, it
+  says **Not saved** and why; the text stays in the editor for you to copy or
+  download, the next change tries again, and the pad does not switch away from
+  that draft until its text is saved. Closing or reloading the tab while a
+  save is pending or has failed asks first. Ctrl+S (⌘S on a Mac) saves at once.
+- A save cannot finish once a tab is closing, so if you close or reload the
+  tab before it has, the unsaved text is kept on this device in one quick
+  write. The next time the pad opens (or at once, if another pad tab is open)
+  it goes into its draft, or, if that draft was changed or deleted elsewhere in
+  the meantime, into a new draft titled "… (recovered)". A save that cannot be
+  made at all, such as one refused because storage is full, is not kept this
+  way: the pad asks before closing so that you can copy or download the text.
+- A draft is created when you first type, so opening the pad never makes an
+  empty one. **New draft** starts another. The list of drafts (a drop-down on
+  narrow windows) shows each one's title, or its first line, when it was last
+  edited, and its word count.
+- **Copy text** copies the draft's text. **Download .txt** saves its title and
+  text as a plain text file named after the title.
+- Your shortcuts work in the pad as in the library playground: triggers expand,
+  the suggestion list and paragraph completion appear, `;;` opens the search
+  overlay and fill-in templates open their form. Like the playground's, these
+  insertions count toward the daily allowance whenever it is enabled (see
+  [Plans and support](#plans-and-support)).
+- One tab edits a draft at a time. A draft that is open in another tab shows
+  here read-only, with **Edit here instead**; that tab then saves what it has
+  and becomes read-only itself. Saves are made one at a time across tabs (with
+  the browser's Web Locks, which current Chrome and Firefox have), so when a
+  tab saves over a version another tab saved or deleted in the meantime, such
+  as just after **Edit here instead**, its text does not overwrite that
+  version: it is kept as a new draft titled "… (copy from another tab)". In a
+  browser without Web Locks, two tabs saving the same draft at the same
+  moment could still overwrite each other.
+- **Delete draft** asks first, then offers **Undo**. Deleted drafts go to
+  **Recently deleted drafts** at the bottom of the list, which keeps the 20 most
+  recent; deleting another drops the oldest. **Restore** brings one back (as a
+  separate draft if a draft now uses its place), **Delete for good** removes
+  one, and **Empty** removes them all after a confirmation. When the copy
+  cannot be kept, for example because storage is full, the pad says why and
+  asks whether to download the draft as a text file and delete it without a
+  copy; that is how a full pad makes room, and it cannot be undone.
+- The **Suggestions** panel has a **Writing suggestions** switch, on by default
+  and remembered. Suggestions come only from your drafts in the pad, never from
+  text you type on websites. While the switch is off, the pad does not look
+  through your drafts for ideas; your shortcuts, the suggestion list and
+  paragraph completion still work in the pad, as on any page, under their own
+  settings. Suggestions are worked out again 1.5 seconds after you stop
+  typing, and when you open a draft.
+  - **Shortcut ideas.** A phrase of 2 to 8 words that you have written at least
+    three times across your drafts ("You've written “as you can see” 4 times.")
+    is offered with a trigger made of its initials, such as `aycs/` (`aycs2/`
+    when that one is taken). You can change the trigger; **Make shortcut**
+    checks it as the library does (not empty, no spaces, not already used),
+    refuses one that could never fire because a shorter trigger expands first,
+    and adds the phrase to your library. If the library would warn about the
+    new trigger (it is only letters, so it fires inside words, or it makes an
+    older trigger impossible to type), the pad shows that warning after saving.
+    **Not now** hides the idea until the pad is opened again; **Don't suggest
+    this** hides it for good on this device. Three ideas show at a time, each a
+    different phrase: pieces of the same sentence are not offered side by side,
+    and phrases that already are a shortcut's text are not offered. A phrase is
+    at most 8 words, so a longer sentence is offered as its best 8 words. In a
+    very large pad, only the open draft and then the newest drafts, about
+    100,000 characters in all, are searched.
+  - **Fill-in template.** A draft of 20 words or more that contains a greeting
+    name ("Hi Sam,"), email address, link, phone number, date, weekday, time,
+    amount or order number can be turned into a fill-in template. The draft is
+    shown with each such value as a chip: click it, or press Space on it, to
+    keep that value as written, and rename the blanks in the list under it.
+    Nothing from your sign-off on becomes a blank: a closing such as "Best
+    regards," or "Thanks in advance,", or one without a comma such as "Kind
+    regards" with your name on the next line, and the contact details under
+    it.
+    **Save as template** adds it to your library under the trigger shown (the
+    initials of the title's first two or three words, else `draft/`); typing
+    that trigger opens the fill-in form for the blanks. **Not now** hides it
+    for that draft until the pad is opened again.
+
+  Shortcuts and templates made here are ordinary library shortcuts, stored
+  and, in Chrome, synced like any other; each card says so beside its button.
+  Chrome sync allows about 8 KB per shortcut, so a long draft may not save as
+  a template; the panel then shows the browser's reason, as the library does.
+  A template keeps text that actle would otherwise read as a placeholder or a
+  blank (such as `{date}` or `[[name]]` written in the draft) as `{{date}}` or
+  `\[[name]]`, so that typing the trigger inserts it as written; copying the
+  template from the toolbar popup copies its saved text, escapes included.
+- Phrases you chose not to see again are counted under the Suggestions panel,
+  with **Clear** to forget them, whether suggestions are on or off.
+
+Drafts, Recently deleted drafts, the pad's preferences (the suggestions switch
+and which draft was open last), phrases you asked not to be suggested again,
+and text a closing tab could not save until the pad stores it, stay in this
+browser's extension local storage on this device, in Chrome and Firefox
+alike. They are never synced, never part of the library's JSON export, and
+never sent anywhere. actle's own scripts in the pages you have open can read
+that storage and are told when it changes (in Chrome, each save of a draft
+reaches them, though they only act on library changes); the web pages
+themselves cannot read it. On Firefox 143 and later, when those scripts read
+your library, they read only its entries. Chrome limits an extension's local
+storage to about 10 MB in all; if it fills, saving fails visibly as described
+above. Removing the extension deletes its storage, drafts included, so
+download anything you want to keep first.
+
 ## Search overlay
 
 Typing `;;` in a supported field opens a search overlay listing every shorthand: type
@@ -65,6 +213,10 @@ Chrome stores your library and settings in extension sync storage, so they can
 follow your Chrome profile when its sync settings permit it. Firefox stores
 them locally in your browser profile and does not automatically sync them.
 Use JSON export and import to move your library between browsers or devices.
+When sync merges two devices' libraries into two shorthands with the same
+trigger, the library marks both rows: typing the trigger expands only one of
+them (the one used most in this browser, or the first in the list when they
+are tied), so rename or delete the other.
 Use **Export JSON** / **Import JSON** on the options page to move it to the
 Windows and Android apps (same file format, see `../shared/SPEC.md`). Imports
 are previewed before applying: the manager shows how many triggers are new,
@@ -88,6 +240,20 @@ Press ↑ or ↓ to select a result, then Enter to insert it, or click a result.
 Focus stays in the page's field while browsing suggestions. Enter before you
 select a result keeps its normal behavior; Tab always keeps its normal behavior.
 Escape hides suggestions for the current shortcut while you keep typing it.
+
+### Finish saved paragraphs
+
+The same list also offers to finish a saved snippet you start typing in full.
+When the words before the caret match the opening of a snippet that has at
+least six words, ignoring case and runs of spaces, the snippet appears; choose
+it to replace the words you typed with the whole snippet. The first letter keeps
+the case you typed, so a lowercase start mid-sentence stays lowercase.
+Backspace right after puts your words back. Only the fixed opening counts: the
+text before a snippet's first `[[blank]]` or `{variable}`. A trigger prefix
+takes priority when both match, and the words must have been typed in one go.
+
+Settings → **Finish saved paragraphs** chooses how many words are needed, from 2
+to 6 (3 by default), or Off. It works while suggestions are on.
 Fully typed triggers still expand immediately, including after suggestions are
 dismissed. Backspace immediately after accepting a suggestion restores the
 partial trigger you actually typed.
@@ -118,6 +284,24 @@ These checks use field metadata, not entered text. A page that does not identify
 its fields may not be recognized. You can pause actle on that site from the
 toolbar or add its hostname under **Never expand on these sites**.
 
+## Google Docs and Slides (experimental)
+
+Docs and Slides draw text themselves and take typing through a hidden frame, so
+ordinary field handling never sees it. In those two editors, actle remembers the
+characters you physically type until the caret moves another way (a click, an
+arrow key, Enter, Tab or a shortcut). When they end in a trigger, it removes the
+trigger with simulated Backspaces and pastes the expansion; `{cursor}` moves the
+caret back with simulated arrow keys. Fill-in templates open the usual form.
+
+This depends on how Google's editors handle simulated keys and paste, which can
+change without notice, and it has been tested only against a stand-in page.
+Limits: undo with the editor's own Ctrl+Z (Backspace does not restore the
+trigger), and the `;;` picker and suggestions do not appear there. A trigger
+typed right after clicking into the middle of a word can expand, because the
+characters before the click are unknown. Add `docs.google.com` under **Never
+expand on these sites** to turn it off. Sheets, Forms and Drive's own fields
+use the normal handling.
+
 ## Plans and support
 
 This release is an **unlimited free preview**. The library's **Plans & support**
@@ -127,7 +311,7 @@ are not configured yet; no price or payment provider has been selected.
 The prepared free plan allows **100 auto completes per browser profile per
 day**, resetting at local midnight. Complete triggers, accepted suggestions,
 picker selections, and confirmed templates each count as one successful
-insertion, including the library playground. Opening or cancelling a template
+insertion, including the library playground and the Writing pad. Opening or cancelling a template
 does not count. Undo remains available and does not refund the original use.
 Your library, editing, import/export, and toolbar copying remain free at the
 limit. A denied insertion leaves the trigger in place; a denied template keeps
@@ -169,6 +353,7 @@ Use the appropriate `autocomplete` tokens on credential and payment controls.
 | `src/storage.js`      | Chrome sync / Firefox local storage (one key per shorthand)    |
 | `src/content.js`      | Watches editable fields and performs the replacement           |
 | `src/suggestions.js`  | Saved-trigger prefix matching and the in-field suggestion list |
+| `src/google-docs.js`  | Experimental Google Docs and Slides typing bridge              |
 | `src/field-safety.js` | Identifies credential and payment fields from page metadata    |
 | `src/animation-frames.js` | Grapheme-aware Expand and Casino animation frames             |
 | `src/expansion-feedback.js` | Temporary in-field animation, respecting reduced motion    |
@@ -182,6 +367,11 @@ Use the appropriate `autocomplete` tokens on credential and payment controls.
 | `src/premium-client.js` | Insertion allowance, accounting, and limit notices            |
 | `src/premium-ui.js`   | Plan, usage, and license controls in the library and toolbar     |
 | `src/options.*`       | Library manager, previewed imports, export, excluded sites     |
+| `src/pad.*`           | Writing pad: drafts that save as you type, with shortcuts working |
+| `src/pad-store.js`    | Writing pad drafts, Recently deleted drafts and preferences (local storage) |
+| `src/pad-suggestions.js` | Writing pad Suggestions panel: shortcut ideas and the fill-in template card |
+| `src/phrase-miner.js` | Pure: phrases repeated across pad drafts, with proposed triggers |
+| `src/template-maker.js` | Pure: values in a draft that become blanks, and the escaped template text |
 | `src/popup.*`         | Toolbar search/copy palette plus global and per-site controls  |
 | `test/`               | Unit tests (`npm test` in `chrome-extension/`)                 |
 | `scripts/build.js`    | Browser-specific manifests and reproducible release ZIPs      |

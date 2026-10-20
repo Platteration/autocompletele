@@ -44,6 +44,9 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.ok(files.includes("src/expansion-feedback.js"));
     assert.ok(files.includes("src/field-safety.js"));
     assert.ok(files.includes("src/suggestions.js"));
+    assert.ok(files.includes("src/google-docs.js"));
+    assert.ok(files.includes("src/phrase-miner.js"));
+    assert.ok(files.includes("src/template-maker.js"));
     for (const name of ["premium-config", "license", "premium-service", "premium-client", "premium-ui"]) {
       assert.ok(files.includes(`src/${name}.js`), `${name} must ship in both browser packages`);
     }
@@ -54,7 +57,7 @@ test("browser packages contain only runtime files and installable manifests", as
       assert.ok(feedbackIndex >= 0 && feedbackIndex < content.js.indexOf("src/content.js"), "Feedback must load before the content script that uses it");
       const framesIndex = content.js.indexOf("src/animation-frames.js");
       assert.ok(framesIndex >= 0 && framesIndex < feedbackIndex, "Glyph frame generation must load before the feedback renderer");
-      for (const name of ["field-safety", "suggestions"]) {
+      for (const name of ["field-safety", "suggestions", "google-docs"]) {
         const index = content.js.indexOf(`src/${name}.js`);
         assert.ok(index >= 0 && index < content.js.indexOf("src/content.js"), `${name} must load before the content script`);
       }
@@ -77,6 +80,32 @@ test("browser packages contain only runtime files and installable manifests", as
     const expanderIndex = optionScripts.indexOf("expander.js");
     assert.ok(expanderIndex >= 0 && expanderIndex < optionScripts.indexOf("suggestions.js"));
     assert.ok(optionScripts.indexOf("premium-client.js") < optionScripts.indexOf("content.js"));
+
+    // The Writing pad runs the playground's engine, in the playground's order.
+    for (const name of ["pad.html", "pad.js", "pad.css", "pad-store.js"]) {
+      assert.ok(files.includes(`src/${name}`), `${name} must ship in both browser packages`);
+    }
+    const pad = fs.readFileSync(path.join(directory, "src/pad.html"), "utf8");
+    const padScripts = [...pad.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
+    const engine = ["expander.js", "template.js", "storage.js", "field-safety.js", "picker.js", "suggestions.js",
+      "template-form.js", "animation-frames.js", "expansion-feedback.js", "premium-config.js", "premium-client.js", "content.js"];
+    assert.deepEqual(optionScripts.filter((name) => engine.includes(name)), engine, "The playground's engine order changed; update the pad with it");
+    assert.deepEqual(padScripts.filter((name) => engine.includes(name)), engine, "The pad must load the playground's engine in the same order");
+    for (const file of padScripts) assert.ok(files.includes(`src/${file}`), `The pad loads ${file}, which must ship`);
+    const storeIndex = padScripts.indexOf("pad-store.js");
+    assert.ok(storeIndex > padScripts.indexOf("content.js") && storeIndex < padScripts.indexOf("pad.js"), "The pad's storage must load before the pad");
+    // The Suggestions panel uses the pad's hook, the library storage and both engines.
+    assert.ok(files.includes("src/pad-suggestions.js"), "pad-suggestions.js must ship in both browser packages");
+    const panelIndex = padScripts.indexOf("pad-suggestions.js");
+    for (const name of ["storage.js", "conflicts.js", "phrase-miner.js", "template-maker.js", "pad.js"]) {
+      const index = padScripts.indexOf(name);
+      assert.ok(index >= 0 && index < panelIndex, `The pad must load ${name} before pad-suggestions.js`);
+    }
+    for (const name of ["phrase-miner.js", "template-maker.js"]) {
+      assert.ok(padScripts.indexOf(name) < padScripts.indexOf("pad.js"), `The pad loads ${name} before pad.js`);
+    }
+    assert.doesNotMatch(pad, /<script(?![^>]*\bsrc=)[^>]*>/, "Extension pages allow no inline scripts");
+    assert.doesNotMatch(pad, /\son[a-z]+\s*=/i, "Extension pages allow no inline event handlers");
     const popup = fs.readFileSync(path.join(directory, manifest.action.default_popup), "utf8");
     const popupScripts = [...popup.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
     for (const scripts of [optionScripts, popupScripts]) {

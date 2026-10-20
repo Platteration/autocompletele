@@ -81,7 +81,7 @@
       const ch = src[i];
       if (ch === "{") {
         // Escaped literal: {{name}} -> {name}
-        const escaped = /^\{\{([a-z]+(?:[+-]\d{1,4})?)\}\}/i.exec(src.slice(i));
+        const escaped = /^\{\{([a-z]+[1-4]?(?:[+-]\d{1,4})?)\}\}/i.exec(src.slice(i));
         if (escaped) {
           out += "{" + escaped[1] + "}";
           i += escaped[0].length;

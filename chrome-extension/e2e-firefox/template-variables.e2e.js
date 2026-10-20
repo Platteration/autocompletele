@@ -13,6 +13,7 @@ const TEMPLATES = [
   { trigger: "only/", expansion: "{Subject} thanked {object}." },
   { trigger: "custom/", expansion: "{subject} / {object} / {possessive} / {possessivepronoun} / {reflexive}; [[name]]; {subject}" },
   { trigger: "unicode/", expansion: "[[name]]{cursor}{subject}" },
+  { trigger: "two/", expansion: "{Subject} gave {possessive2} keys to {object2}; {Subject2} thanked {object}." },
 ];
 
 test("Firefox: template variables, synchronized views, and editor tools", { timeout: 120000 }, async (t) => {
@@ -209,6 +210,40 @@ test("Firefox: template variables, synchronized views, and editor tools", { time
     await app.openFixture();
     await (await element("#inp")).sendKeys(Key.chord(Key.CONTROL, "v"));
     await waitValue("#inp", `Avery said they would bring their notes for them; They kept theirs and reminded themself. THEY arrives on ${day}.`);
+  });
+
+  await t.test("each numbered person in a script gets their own required pronoun choice", async () => {
+    await start("two/");
+    assert.deepEqual(await formRead((form) => [...form.querySelectorAll(".pronouns > label")].map((label) => label.firstChild.textContent)),
+      ["Pronouns for person 1", "Pronouns for person 2"]);
+    await formSelect("she/her");
+    await formClick("#template-submit");
+    assert.equal(await visible(), true, "Every person needs a pronoun choice");
+    assert.equal(await value("#inp"), "two/");
+    assert.equal(await formRead((form) => form.getRootNode().activeElement.id), "template-pronouns-2");
+    await select(await formElement("#template-pronouns-2"), "he/him");
+    const expected = "She gave his keys to him; He thanked her.";
+    assert.equal(await formRead((form) => form.querySelector("#template-preview").textContent), expected);
+    assert.equal(await formRead((form) => form.querySelector(".count").textContent), "2 of 2 filled");
+    await submit();
+    assert.equal(await value("#inp"), expected);
+    await keys(Key.BACK_SPACE);
+    assert.equal(await value("#inp"), "two/");
+  });
+
+  await t.test("the editor inserts another person's pronoun only for pronoun variables", async () => {
+    await app.openOptions();
+    assert.equal(await (await element("#variablePerson")).isEnabled(), false, "Weekday has no person");
+    await fill("#expansion", "");
+    await select(await element("#variableToken"), "{possessive}");
+    assert.equal(await (await element("#variablePerson")).isEnabled(), true);
+    await select(await element("#variablePerson"), "3");
+    await (await element("#addVariableBtn")).click();
+    await select(await element("#variableToken"), "{date}");
+    assert.equal(await (await element("#variablePerson")).isEnabled(), false);
+    await (await element("#addVariableBtn")).click();
+    assert.equal(await value("#expansion"), "{possessive3}{date}");
+    await fill("#expansion", "");
   });
 
   await t.test("editor tools insert variables and reuse blanks at the remembered caret and export the script", async () => {

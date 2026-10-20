@@ -18,6 +18,7 @@
   let pickerTrigger = storage.DEFAULT_SETTINGS.pickerTrigger;
   let animationMode = storage.DEFAULT_SETTINGS.animationMode;
   let suggestionsEnabled = storage.DEFAULT_SETTINGS.suggestionsEnabled;
+  let phraseWords = storage.DEFAULT_SETTINGS.phraseWords;
   let suggestionTarget = null;
   let dismissedSuggestion = null;
   let suggestionFrame = 0;
@@ -26,6 +27,7 @@
   let templateTarget = null; // original insertion point while a fill-in form has focus
   let inputGrant = null;
   const trustedEdits = new WeakMap();
+  const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
   const TEXT_INPUT_TYPES = new Set(["text", "search", "url", "email", "tel", ""]);
   const IGNORE_ATTR = "data-shorthand-ignore";
@@ -65,7 +67,14 @@
     if (node !== range.endContainer || !el.contains(node)) return null;
     if (isIgnored(node.nodeType === Node.TEXT_NODE ? node.parentElement : node)) return null;
     if (node.nodeType !== Node.TEXT_NODE) {
-      return el.textContent === "" && sel.isCollapsed ? { value: "", start: 0, end: 0, node: null, rootValue: "", offset: 0 } : null;
+      // A caret on an empty line (an empty editor, or the <div><br></div> or
+      // <p><br></p> that Enter leaves) has no text node yet. The first typed
+      // character creates one; consumeEdit then checks the whole editor.
+      if (!sel.isCollapsed || node.textContent !== "") return null;
+      const preceding = document.createRange();
+      preceding.selectNodeContents(el);
+      preceding.setEnd(node, range.startOffset);
+      return { value: "", start: 0, end: 0, node: null, rootValue: el.textContent, offset: preceding.toString().length };
     }
     const before = document.createRange();
     before.selectNodeContents(el);
@@ -97,6 +106,11 @@
       if (!data) return;
       if (isTextInput(el)) data = data.replace(/\r\n?/g, "\n");
       inputType = ev.type === "paste" ? "insertFromPaste" : "insertFromDrop";
+    } else if (ev.key === "Backspace") {
+      // Correcting a typo keeps the rest of the word trusted: consumeEdit
+      // accepts only the removal of the one character before the caret.
+      data = "";
+      inputType = "deleteContentBackward";
     } else {
       if (!ev.key || Array.from(ev.key).length !== 1) return;
       data = ev.key;
@@ -119,6 +133,7 @@
     // Browser-trusted execCommand input must not substitute another edit for a physical key,
     // paste or drop. Text, original selection and the resulting value must all agree.
     if (grant.inputType === "insertText" && ev.data !== grant.data) return false;
+    if (grant.inputType === "deleteContentBackward") return consumeBackspace(grant, el);
     const before = grant.before;
     const expected = before.value.slice(0, before.start) + grant.data + before.value.slice(before.end);
     const live = editSnapshot(el);
@@ -129,12 +144,45 @@
       if (!sameText(el.textContent, rootExpected)) return false;
     }
     const previous = trustedEdits.get(el);
-    const continuing = previous && previous.value === before.value && previous.node === before.node &&
+    // Editors such as ProseMirror redraw a line after its first character,
+    // swapping the typed text node for a copy. A copy holding the same text
+    // at the same place, after the typed node left the page, continues it.
+    const sameNode = previous && (previous.node === before.node || (previous.node && before.node
+      && !previous.node.isConnected && previous.offset === before.offset));
+    const continuing = sameNode && previous.value === before.value &&
       before.start >= previous.start && before.end <= previous.end;
     const start = continuing ? previous.start : before.start;
     const end = continuing ? previous.end + grant.data.length - (before.end - before.start) : live.start;
-    trustedEdits.set(el, { value: live.value, node: live.node, start, end });
+    trustedEdits.set(el, { value: live.value, node: live.node, offset: live.offset, start, end });
     return true;
+  }
+
+  // A physical Backspace inside the typed run removed one code point or one
+  // grapheme before the caret, and nothing else; the run shrinks by that much.
+  // Any other deletion (selected text, a page's own edit) ends the run.
+  function consumeBackspace(grant, el) {
+    const before = grant.before;
+    const previous = trustedEdits.get(el);
+    if (before.start !== before.end || !previous || previous.node !== before.node || previous.value !== before.value
+        || before.start > previous.end) return false;
+    const head = before.value.slice(0, before.start);
+    const graphemes = Array.from(graphemeSegmenter.segment(head));
+    const lastGrapheme = graphemes.length ? graphemes[graphemes.length - 1].segment.length : 0;
+    const lastCodePoint = head.length ? Array.from(head).pop().length : 0;
+    const live = editSnapshot(el);
+    if (!live || live.start !== live.end || (before.node && live.node !== before.node)) return false;
+    for (const removed of new Set([lastCodePoint, lastGrapheme])) {
+      if (!removed || before.start - removed < previous.start || live.start !== before.start - removed) continue;
+      const expected = head.slice(0, -removed) + before.value.slice(before.start);
+      if (!sameText(live.value, expected)) continue;
+      if (isEditable(el)) {
+        const at = before.offset + before.start;
+        if (!sameText(el.textContent, before.rootValue.slice(0, at - removed) + before.rootValue.slice(at))) continue;
+      }
+      trustedEdits.set(el, { value: live.value, node: live.node, offset: live.offset, start: previous.start, end: previous.end - removed });
+      return true;
+    }
+    return false;
   }
 
   function typedTrigger(el, start, end, node = null) {
@@ -155,6 +203,7 @@
       const previousMode = animationMode;
       animationMode = data.settings.animationMode;
       suggestionsEnabled = data.settings.suggestionsEnabled;
+      phraseWords = data.settings.phraseWords;
       closeSuggestions();
       if (previousMode !== animationMode || !enabled || hostExcluded) {
         self.ShorthandExpansionFeedback.clear();
@@ -322,6 +371,7 @@
       actionLabel: "Insert text",
       anchorEl: target.el,
       async onSubmit(result) {
+        if (!connected()) return STALE_MESSAGE;
         let settings;
         try {
           ({ settings } = await storage.getAll());
@@ -549,17 +599,22 @@
 
   function acceptSuggestion(sh, target) {
     closeSuggestions();
+    if (!connected()) return;
     if (!activeSuggestion(target) || !shorthands.some((saved) => saved.id === sh.id
         && saved.trigger === sh.trigger && saved.expansion === sh.expansion)) return;
-    if (fillTemplate(sh, target)) return;
-    insertExpansion(target, template.render(sh.expansion));
+    const chosen = target.phrase ? { ...sh, expansion: suggestions.keepTypedCase(target.trigger, sh.expansion) } : sh;
+    if (fillTemplate(chosen, target)) return;
+    insertExpansion(target, template.render(chosen.expansion));
   }
 
   function offerSuggestions(el) {
     if (!suggestionsEnabled || templateTarget || templateForm.isOpen()) return;
     const snapshot = editSnapshot(el);
     if (!snapshot || snapshot.start == null || snapshot.start !== snapshot.end) return;
-    const match = suggestions.find(snapshot.value.slice(0, snapshot.end), shorthands, usageCounts);
+    const before = snapshot.value.slice(0, snapshot.end);
+    // A trigger prefix wins; otherwise offer to finish a saved paragraph.
+    const match = suggestions.find(before, shorthands, usageCounts)
+      || (phraseWords ? suggestions.findPhrase(before, shorthands, phraseWords, usageCounts) : null);
     if (!match || !typedTrigger(el, match.start, snapshot.end, snapshot.node)) {
       dismissedSuggestion = null;
       return;
@@ -570,9 +625,10 @@
       ? nodeTarget(el, snapshot.node, match.start, snapshot.end, match.query)
       : fieldTarget(el, match.start, snapshot.end, match.query);
     if (!activeSuggestion(target)) return;
+    target.phrase = !!match.phrase;
     suggestionTarget = target;
     const shown = suggestions.show({
-      query: match.query, items: match.items, anchorEl: el,
+      query: match.query, items: match.items, anchorEl: el, phrase: match.phrase,
       onPick(sh) { acceptSuggestion(sh, target); },
       onDismiss() {
         dismissedSuggestion = { el, node: snapshot.node, start: match.start };
@@ -594,6 +650,31 @@
 
   // ---- wiring ---------------------------------------------------------------
 
+  // Chrome leaves this script running in open pages after actle is updated,
+  // reloaded, disabled or removed, cut off from storage. It must not keep
+  // expanding with a stale library and stale pause or site choices; once a
+  // saved trigger is typed it says the page needs a reload.
+  const STALE_MESSAGE = "actle was updated or turned off. Reload this page to use your shortcuts here.";
+  let staleNoticeShown = false;
+
+  function connected() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function noteStaleTrigger(el) {
+    if (staleNoticeShown || !enabled || hostExcluded) return;
+    const snapshot = editSnapshot(el);
+    if (!snapshot || snapshot.start == null) return;
+    const match = findMatch(snapshot.value.slice(0, snapshot.end), shorthands);
+    if (!match || !typedTrigger(el, match.start, snapshot.end, snapshot.node)) return;
+    staleNoticeShown = true;
+    premium.notify(STALE_MESSAGE);
+  }
+
   function onInput(ev) {
     // dispatchEvent() on a page-owned field must never release stored text.
     if (suppress || !ev.isTrusted) return;
@@ -611,6 +692,7 @@
       return;
     }
     if (self.ShorthandPicker && self.ShorthandPicker.isOpen()) return;
+    if (!connected()) { noteStaleTrigger(el); return; }
     if (!enabled || hostExcluded || shorthands.length === 0) return;
     if (ev.isComposing) return; // IME composition in progress
     const t = ev.inputType;
@@ -643,7 +725,9 @@
         || (self.ShorthandPicker && self.ShorthandPicker.isOpen())) return;
     const altGraph = ev.getModifierState && ev.getModifierState("AltGraph");
     inputGrant = null;
-    if ((!ev.ctrlKey && !ev.metaKey && !ev.altKey || altGraph) && !ev.isComposing && Array.from(ev.key).length === 1) grantUserInput(ev);
+    const plainBackspace = ev.key === "Backspace" && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.shiftKey;
+    if ((!ev.ctrlKey && !ev.metaKey && !ev.altKey || altGraph) && !ev.isComposing
+        && (Array.from(ev.key).length === 1 || plainBackspace)) grantUserInput(ev);
     const u = lastExpansion;
     if (!u) return;
     if (ev.key !== "Backspace" || ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) {
@@ -693,8 +777,65 @@
       shorthands = sortByUsage(shorthands);
       return;
     }
-    if (area === storage.AREA && Object.keys(_changes).some((key) => key !== "actle-premium")) reload();
+    if (storage.isLibraryChange(_changes, area)) reload();
   });
+
+  // ---- Google Docs and Slides (experimental) --------------------------------
+  // The canvas editors type through a hidden frame; see google-docs.js. Undo is
+  // the editor's own Ctrl+Z there, and the picker and suggestions do not show.
+
+  const googleDocs = self.ShorthandGoogleDocs;
+
+  function insertInGoogleDocs(frame, shorthand, result, fromForm) {
+    return premium.execute(() => {
+      if (!frame.isConnected || !googleDocs.replace(frame, shorthand.trigger, result)) return false;
+      noteUse(shorthand.id);
+      return true;
+    }, () => frame.isConnected && enabled && !hostExcluded, { notice: !fromForm });
+  }
+
+  function expandInGoogleDocs(typed, frame) {
+    if (!connected() || !enabled || hostExcluded || templateTarget || templateForm.isOpen()) return;
+    const match = findMatch(typed, shorthands);
+    if (!match) return;
+    const shorthand = match.shorthand;
+    if (!template.requiresInput(shorthand.expansion)) {
+      insertInGoogleDocs(frame, shorthand, template.render(shorthand.expansion), false);
+      return;
+    }
+    templateTarget = { frame };
+    const shown = templateForm.show({
+      trigger: shorthand.trigger,
+      expansion: shorthand.expansion,
+      actionLabel: "Insert text",
+      anchorEl: frame,
+      async onSubmit(result) {
+        let settings;
+        try {
+          ({ settings } = await storage.getAll());
+        } catch (_) {
+          return "Could not check your settings. Cancel this form and try again.";
+        }
+        if (settings.enabled === false || (settings.excludedHosts || []).includes(location.hostname)) {
+          return "Shorthand expansion is paused. Cancel this form and enable expansion before trying again.";
+        }
+        googleDocs.focus(frame);
+        if (!await insertInGoogleDocs(frame, shorthand, result, true)) return premium.lastError()
+          || "The document is no longer ready. Cancel and try the shorthand again.";
+        templateTarget = null;
+        return true;
+      },
+      onCancel() {
+        templateTarget = null;
+        googleDocs.focus(frame);
+      },
+    });
+    if (!shown) templateTarget = null;
+  }
+
+  if (googleDocs && window === window.top && googleDocs.supports(location)) {
+    googleDocs.attach(document, expandInGoogleDocs);
+  }
 
   reload();
 })();

@@ -21,6 +21,7 @@
       <a href="#settings"><span aria-hidden="true">03</span> Settings</a>
       <a href="#backup"><span aria-hidden="true">04</span> Import / export</a>
       <a href="#premium"><span aria-hidden="true">05</span> Plans & support</a>
+      <a href="pad.html" target="_blank" rel="noopener"><span aria-hidden="true">06</span> Writing pad<span class="sr-only"> (opens in a new tab)</span></a>
     </nav>
     <div class="sidebar-note"><span class="sidebar-note-label">A little shortcut</span><p>Type <kbd>;;</kbd> to find the right words without leaving your page.</p></div>
   </aside>
@@ -60,6 +61,17 @@
       </div>
       <p id="empty" class="empty-state" hidden>Your library starts here. Create a shorthand in the editor.</p>
       <p id="noMatches" class="empty-state" hidden>No shorthand matches that search.</p>
+      <div class="library-status">
+        <span id="libraryMsg" class="msg" role="status"></span>
+        <button type="button" id="undoBtn" class="secondary small" hidden>Undo</button>
+      </div>
+      <details id="trash" class="trash">
+        <summary id="trashSummary">Recently deleted <span id="trashCount" class="trash-count">0</span></summary>
+        <p class="hint">Kept only in this browser on this device: never synced or exported. The 50 most recent stay until you restore them or delete them for good.</p>
+        <p id="trashEmpty" class="trash-empty">No recently deleted shorthands.</p>
+        <ul id="trashList" class="trash-list" aria-label="Recently deleted shorthands"></ul>
+        <button type="button" id="emptyTrashBtn" class="danger small" hidden>Empty Recently deleted</button>
+      </details>
       <p class="library-note">Add <code>[[name]]</code> to a script for a fill-in blank.</p>
     </div>
 
@@ -109,10 +121,16 @@
                 <option value="{cursor}">Cursor position · {cursor}</option>
               </optgroup>
             </select>
+            <select id="variablePerson" aria-label="Whose pronouns" aria-describedby="variableHint" disabled data-shorthand-ignore>
+              <option value="1">Person 1</option>
+              <option value="2">Person 2</option>
+              <option value="3">Person 3</option>
+              <option value="4">Person 4</option>
+            </select>
             <button type="button" id="addVariableBtn" class="secondary">Insert variable</button>
           </div>
         </div>
-        <p id="variableHint" class="hint">Weekday uses your local day. Choose pronouns each time you use the script.</p>
+        <p id="variableHint" class="hint">Weekday uses your local day. Choose pronouns each time you use the script; pick Person 2 to 4 when it mentions more than one person.</p>
       </div>
       <div class="template-preview">
         <div class="preview-title"><h4>Script preview</h4><span id="templateFieldCount">No fill-in blanks</span></div>
@@ -153,6 +171,7 @@
         <div><dt><code>{possessive}</code></dt><dd>her, his, their, or custom</dd></div>
         <div><dt><code>{possessivepronoun}</code></dt><dd>hers, his, theirs, or custom</dd></div>
         <div><dt><code>{reflexive}</code></dt><dd>herself, himself, themself, or custom</dd></div>
+        <div><dt><code>{possessive2}</code></dt><dd>Another person's pronouns: add 2, 3 or 4 to any pronoun variable</dd></div>
         <div><dt><code>{cursor}</code></dt><dd>Where typing continues</dd></div>
       </dl>
     </div>
@@ -173,6 +192,19 @@
         </label>
         <span id="suggestionsMsg" class="msg" role="status"></span>
         <small>Username, password, sign-in code and payment fields are skipped when identified by the page.</small>
+      </div>
+      <div class="row column">
+        <label for="phraseWords"><strong>Finish saved paragraphs</strong></label>
+        <select id="phraseWords" aria-describedby="phraseHint phraseMsg" data-shorthand-ignore>
+          <option value="0">Off</option>
+          <option value="2">After 2 matching words</option>
+          <option value="3">After 3 matching words</option>
+          <option value="4">After 4 matching words</option>
+          <option value="5">After 5 matching words</option>
+          <option value="6">After 6 matching words</option>
+        </select>
+        <small id="phraseHint">When the words you type match the start of a saved snippet of six or more words, the suggestion list offers the rest. Press ↓ then Enter; Backspace right after puts your words back. Works while suggestions are on.</small>
+        <span id="phraseMsg" class="msg" role="status"></span>
       </div>
       <div class="row column">
         <label for="animationMode"><strong>Text animation</strong></label>

@@ -10,8 +10,8 @@ def png(width, height, rows):
             + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
 
 def icon(size):
-    bg = (37, 99, 235); fg = (255, 255, 255)
-    radius = size * 0.22
+    bg = (26, 95, 208); fg = (255, 255, 255)
+    radius = size * 0.12
     rows = []
     ss = 4  # supersampling per axis
     for y in range(size):
@@ -21,7 +21,7 @@ def icon(size):
             for sy in range(ss):
                 for sx in range(ss):
                     px = x + (sx + 0.5) / ss; py = y + (sy + 0.5) / ss
-                    # rounded square
+                    # square tile with slightly rounded corners
                     dx = max(radius - px, px - (size - radius), 0)
                     dy = max(radius - py, py - (size - radius), 0)
                     inside = (dx * dx + dy * dy) <= radius * radius

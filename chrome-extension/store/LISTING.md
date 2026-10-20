@@ -27,12 +27,16 @@ webpage field to insert your saved text.
   trigger. Choose with ↑ or ↓, then Enter, or click a result. Suggestions are
   on by default and can be turned off in settings. Enter before selection and
   Tab keep their normal behavior.
+- Start typing a saved paragraph and the same list offers to finish it after
+  three matching words; choose 2 to 6 words, or Off, in settings.
 - Turn one script into a fill-in template with `[[name]]`, `[[company]]`, or
   other named blanks. Answer each blank, check the live preview, and confirm
   insertion. Fill blue blanks directly in the message or use a table with one
   row per name. Repeated names share one answer; answers are not saved.
 - Insert `{weekday}` for the current local weekday in English. Choose pronouns
-  for each use of a script: she/her, he/him, they/them, or custom forms.
+  for each use of a script: she/her, he/him, they/them, or custom forms. A
+  script can mention up to four people, each with their own pronouns, using
+  `{subject2}`, `{possessive3}` and so on.
 - Add `{date}`, `{time}`, and `{datetime}` placeholders, or use `{cursor}` to
   choose where typing continues after insertion.
 - Type `;;` to search snippets from the field and select one to insert or fill
@@ -70,9 +74,10 @@ follow your Chrome profile when sync is enabled. In Firefox, they stay in your
 local Firefox profile and do not automatically sync. Move your library between
 browsers or devices using JSON export and import.
 
-Text matching happens in your browser. Suggestions match your saved library;
-they do not learn from typing history or send field text to a prediction
-service. The extension has no publisher-operated data server, analytics, or
+Text matching happens in your browser. The suggestion list matches your saved
+library; it does not learn from typing history or send field text to a
+prediction service. The Writing pad's optional writing suggestions look only
+at your pad drafts, in your browser. The extension has no publisher-operated data server, analytics, or
 advertising. Chrome's browser sync may transfer your snippets and settings
 through Google's sync service.
 
@@ -102,10 +107,20 @@ Template answers and chosen/custom pronouns are used temporarily to preview
 and fill the script; they are not saved to extension storage or included in
 library exports.
 
-Per-snippet use counts that rank suggestions and search, and any one-time
-draft from **Save selection as actle shorthand**, also use local storage only
+Per-snippet use counts that rank suggestions and search, any one-time
+draft from **Save selection as actle shorthand**, and copies of up to 50
+deleted snippets kept for **Recently deleted** also use local storage only
 and are excluded from snippet exports. The draft becomes a snippet only when
 the user gives it a trigger and saves it in the library.
+
+Writing pad drafts (title, text, and creation and edit times), copies of up
+to 20 deleted drafts kept for **Recently deleted drafts**, the pad's
+preferences (writing suggestions on or off, the last open draft) and up to 200
+phrases the user chose not to have suggested again use local storage only, in
+both browsers, as does the unsaved text of a pad tab that closes before its
+last save finishes, until the pad next opens and stores it as a draft. They
+do not sync, are excluded from snippet exports, and are not transmitted. Pad suggestions are computed locally from pad drafts only;
+a suggestion becomes a library snippet only when the user saves it.
 
 **Context menus:** Adds one right-click item, shown only when text is
 selected, that opens the library with that selection as a draft expansion.

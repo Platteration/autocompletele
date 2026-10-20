@@ -37,6 +37,26 @@ The executable lands in `ShorthandExpander\bin\Release\net8.0-windows\win-x64\pu
   same format used by the Chrome extension and the Android app
   (see `../shared/SPEC.md`), so you can copy the file between devices or use
   the Import / Export buttons.
+* **Delete** asks before it removes a shorthand (No is the default).
+* Before **Import JSON…** replaces or merges into a list that is not empty
+  (merging also overwrites the expansions of triggers you already have), the
+  current list is saved as `shorthands.before-import-<date>-<time>.json` next
+  to `shorthands.json`, in the same file format. An earlier copy is never
+  overwritten. The app tells you the copy's name after the import; to go back,
+  import that file and answer Yes to replace your list (merging would keep the
+  imported shorthands). If the copy cannot be written, the app asks whether to
+  import anyway, and nothing changes unless you choose Yes. The copies are
+  never deleted automatically, so a shorthand you delete later is still in
+  them; delete the copies yourself when you no longer need them.
+* Saves are written to `shorthands.json.tmp` first and then swapped in, keeping
+  the previous version as `shorthands.json.bak` (`settings.json` works the same
+  way). If a save was interrupted and only those files are left, the app puts
+  the newest readable one back on start-up.
+* If `shorthands.json` or `settings.json` cannot be read, the app copies it
+  byte for byte to `shorthands.unreadable-<date>-<time>.json` (or
+  `settings.unreadable-…`) next to it, tells you, and starts with an empty list
+  or default settings. If that copy cannot be made, the file is left alone and
+  saving is turned off until the app is restarted.
 * Placeholders `{date}`, `{time}`, `{datetime}` and `{cursor}` are supported.
 * Press Backspace right after an expansion to put the trigger back.
 

@@ -13,7 +13,9 @@ const LIBRARY = [
   { trigger: "sig/", expansion: "ab{cursor}cd" },
   { trigger: "hello/", expansion: "Hi [[name]]." },
   { trigger: "yg", expansion: "you got it" },
+  { trigger: "para/", expansion: "Thanks for reaching out about your order today. We will reply soon." },
 ];
+const PARAGRAPH = LIBRARY.find((sh) => sh.trigger === "para/").expansion;
 
 function inspectMenu() {
   const root = this.nodeType === 11 ? this : this.getRootNode();
@@ -407,6 +409,39 @@ async function runCases(t, app) {
     await app.key("Escape");
   });
 
+  await t.test("typing the opening words of a saved paragraph offers to finish it, and Backspace restores the words", async () => {
+    for (const selector of ["#inp", "#ta", "#ce"]) {
+      await reset();
+      await typeInto(selector, "Hi, thanks for");
+      await app.pause(150);
+      assert.equal(await visible(), false, `${selector}: two words are below the default of three`);
+      await app.type(" reaching");
+      await opened();
+      const menu = await app.menu();
+      assert.deepEqual(menu.items.map((item) => [item.trigger, item.expansion]), [["para/", PARAGRAPH]]);
+      await app.key("ArrowDown");
+      await app.key("Enter");
+      // Typed mid-sentence in lower case, so the saved capital T follows suit.
+      await until(async () => (await read(selector)) === "Hi, t" + PARAGRAPH.slice(1), `${selector}: the typed words become the saved paragraph`);
+      await app.key("Backspace");
+      assert.equal(await read(selector), "Hi, thanks for reaching", `${selector}: Backspace puts the typed words back`);
+      await closed();
+    }
+  });
+
+  await t.test("the paragraph setting changes how many words are needed and Off stops it", async () => {
+    await app.settings({ phraseWords: 2 });
+    await reset();
+    await typeInto("#inp", "thanks for");
+    await opened();
+    await app.settings({ phraseWords: 0 });
+    await reset();
+    await typeInto("#inp", "thanks for reaching out");
+    await app.pause(150);
+    assert.equal(await visible(), false);
+    await app.settings({ phraseWords: 3 });
+  });
+
   await t.test("the suggestions setting defaults on without rewriting legacy settings", async () => {
     await app.options();
     await evaluate(async () => {
@@ -417,6 +452,10 @@ async function runCases(t, app) {
     const before = await evaluate(() => chrome.storage[self.ShorthandStorage.AREA].get(null));
     await app.reload();
     await until(() => evaluate(() => !!document.querySelector("#suggestionsEnabled")), "The accessible suggestion setting must exist");
+    // The checkbox starts unchecked in the HTML and takes the stored value once
+    // the page has read its settings; the library rows are drawn in that same
+    // step. Reading it before then measured page-load speed, not the default.
+    await until(() => evaluate(() => !!document.querySelector("#list tbody tr")), "The library page must finish reading its settings");
     assert.equal(await evaluate(() => document.querySelector("#suggestionsEnabled").checked), true);
     assert.equal(await evaluate(() => document.querySelector("#suggestionsLabel").textContent.trim()), "Suggest saved shortcuts");
     assert.equal(await evaluate(() => document.querySelector("#suggestionsMsg").getAttribute("role")), "status");
@@ -429,10 +468,12 @@ async function runCases(t, app) {
     await until(() => evaluate(() => document.querySelector("#suggestionsMsg").textContent === "Suggestions saved: off."), "The preference save must be announced");
     assert.equal(await evaluate(() => document.activeElement.id), "suggestionsEnabled");
     assert.deepEqual(await evaluate(() => chrome.storage[self.ShorthandStorage.AREA].get(null)), {
-      ...before, settings: { ...before.settings, suggestionsEnabled: false },
+      ...before, settings: { ...before.settings, suggestionsEnabled: false, phraseWords: 3 },
     });
     await app.reload();
-    await until(() => evaluate(() => !document.querySelector("#suggestionsEnabled").checked), "The saved preference must survive reload");
+    // Unchecked is also the HTML default, so check only after the settings read.
+    await until(() => evaluate(() => !!document.querySelector("#list tbody tr")), "The library page must finish reading its settings");
+    assert.equal(await evaluate(() => document.querySelector("#suggestionsEnabled").checked), false, "The saved preference must survive reload");
   });
 
   await t.test("a rejected preference save restores its value with a persistent visible error and sensible focus", async () => {
