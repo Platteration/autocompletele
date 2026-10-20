@@ -273,3 +273,73 @@ test("a managed desk over its tier's layer cap applies every layer and warns; th
   for (const ch of "t4/") actions = actions.concat(assistant.keyTyped({ text: ch }));
   assert.equal(actions[0] && actions[0].text, "team 4");
 });
+
+test("a desk receives the collections its groups are in; two desks on the same policy see different content", async () => {
+  const served = {
+    [ORG]: signed({
+      layer: "org", serial: 1, organization: "Example Ltd",
+      library: [{ trigger: "sig/", expansion: "Org sig" }],
+      collections: [
+        { id: "shipping-catalogue", label: "Shipping catalogue", audience: ["shipping"], library: [{ trigger: "eta/", expansion: "ETA" }], documents: { shortcuts: [{ trigger: "/ship", label: "Shipping forms", documents: [{ path: "S:/forms/ship.pdf" }] }] }, lookups: [{ trigger: "/cust", label: "Customer", source: { kind: "csv", path: "S:/c.csv", key: "id" }, template: "[[id]]" }] },
+        { id: "shipping-contacts", label: "Shipping contacts", audience: ["engineering", "shipping"], library: [{ trigger: "shipdesk/", expansion: "shipping@example.com" }], keywordRules: [{ keywords: ["shipping desk"], insert: { kind: "shorthand", trigger: "shipdesk/" } }] },
+      ],
+    }),
+    [TEAM]: signed({ layer: "team", serial: 1, library: [{ trigger: "sld/", expansion: "Shipping desk" }] }),
+  };
+  const groups = (list) => ({ deployment: { policySources: [{ layer: "org", label: "Organisation", url: ORG }, { layer: "team", label: "Shipping", path: TEAM }], publicKeys: [pair.publicKey], groups: list } });
+  const eng = managedDesk(served, groups(["Engineering"])).assistant;
+  const ship = managedDesk(served, groups(["shipping"])).assistant;
+  const nobody = managedDesk(served).assistant;
+  await Promise.all([eng.refreshPolicy(), ship.refreshPolicy(), nobody.refreshPolicy()]);
+
+  assert.deepEqual(eng.policyInfo().groups, ["engineering"]);
+  assert.deepEqual(eng.policyInfo().organizationLibrary.map((s) => s.trigger), ["sig/", "sld/", "shipdesk/"]);
+  assert.deepEqual(eng.policyInfo().collections.map((c) => [c.id, c.counts.shortcuts, c.counts.keywordRules]), [["shipping-contacts", 1, 1]]);
+  assert.deepEqual(eng.policyInfo().hiddenCollections.map((c) => c.label), ["Shipping catalogue"]);
+  assert.deepEqual(eng.policyInfo().collectionOf.library, { "shipdesk/": "shipping-contacts" });
+  assert.equal(eng.policyInfo().lookups.length, 0);
+  assert.equal(eng.policyInfo().documents.length, 0);
+  assert.deepEqual(eng.paletteSearch("ship").map((i) => i.trigger).sort(), ["shipdesk/", "sld/"]);
+
+  assert.deepEqual(ship.policyInfo().organizationLibrary.map((s) => s.trigger), ["sig/", "sld/", "eta/", "shipdesk/"]);
+  assert.deepEqual(ship.policyInfo().hiddenCollections, []);
+  assert.deepEqual(ship.policyInfo().lookups.map((l) => l.trigger), ["/cust"]);
+  assert.deepEqual(ship.policyInfo().collectionOf.documents, { "/ship": "shipping-catalogue" });
+  assert.deepEqual(ship.policyInfo().collectionOf.lookups, { "/cust": "shipping-catalogue" });
+  ship.focusChanged({ process: "notepad" });
+  let actions = [];
+  for (const ch of "eta/") actions = actions.concat(ship.keyTyped({ text: ch }));
+  assert.equal(actions[0] && actions[0].text, "ETA");
+
+  assert.deepEqual(nobody.policyInfo().groups, []);
+  assert.deepEqual(nobody.policyInfo().organizationLibrary.map((s) => s.trigger), ["sig/", "sld/"]);
+  assert.deepEqual(nobody.policyInfo().hiddenCollections.map((c) => c.id), ["shipping-catalogue", "shipping-contacts"]);
+  nobody.focusChanged({ process: "notepad" });
+  actions = [];
+  for (const ch of "eta/") actions = actions.concat(nobody.keyTyped({ text: ch }));
+  assert.deepEqual(actions, [], "a collection not shared with this desk never expands");
+  assert.equal(JSON.stringify(nobody.policyInfo()).includes("shipping@example.com"), false, "hidden content is not exposed to the dashboard");
+});
+
+test("groups apply to an unmanaged desk with a groups-only deployment file, and the tier cap counts only what the desk receives", () => {
+  const library = [];
+  for (let i = 0; i < 20; i++) library.push({ trigger: "s" + i + "/", expansion: "shared " + i });
+  const extra = [];
+  for (let i = 0; i < 10; i++) extra.push({ trigger: "c" + i + "/", expansion: "collection " + i });
+  const policy = { organization: "Example Ltd", library, collections: [{ id: "ops", audience: ["ops"], library: extra }] };
+  const plain = createAssistant({ dataDir: temp(), policy, deployment: { groups: ["ops"] } });
+  assert.equal(plain.managed, false);
+  assert.deepEqual(plain.policyInfo().groups, ["ops"]);
+  assert.equal(plain.policyInfo().organizationLibrary.length, 30, "groups are read from the deployment file even without policy sources");
+  plain.saveSettings({ tierOverride: "free" });
+  assert.equal(plain.policyInfo().organizationLibrary.length, 25);
+  assert.deepEqual(plain.licence().usage, { shortcuts: 30, layers: 1 });
+  assert.ok(plain.warnings().some((w) => /^5 organisation shortcuts ignored/.test(w)));
+  assert.deepEqual(Object.keys(plain.policyInfo().collectionOf.library).sort(), ["c0/", "c1/", "c2/", "c3/", "c4/"], "the collection's last entries are cut first and the index only lists what survived");
+
+  const outsider = createAssistant({ dataDir: temp(), policy });
+  outsider.saveSettings({ tierOverride: "free" });
+  assert.equal(outsider.policyInfo().organizationLibrary.length, 20);
+  assert.deepEqual(outsider.licence().usage, { shortcuts: 20, layers: 1 });
+  assert.equal(outsider.warnings().some((w) => /organisation shortcuts ignored/.test(w)), false, "no cap warning for content the desk does not receive");
+});

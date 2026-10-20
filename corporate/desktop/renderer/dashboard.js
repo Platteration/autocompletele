@@ -115,7 +115,7 @@
         actions.append(edit, " ", remove);
       }
       const trigger = el("td", { class: "mono", text: sh.trigger });
-      if (!own) trigger.append(el("span", { class: "tag", text: "organisation" }));
+      if (!own) trigger.append(el("span", { class: "tag", text: collectionTag("library", sh.trigger) }));
       body.append(el("tr", {}, [trigger, el("td", { text: preview(sh.expansion) }), actions]));
     }
   }
@@ -352,6 +352,13 @@
   $("enabled").addEventListener("change", () => api.setEnabled($("enabled").checked));
 
   // Keywords and documents
+  // "organisation" or "organisation · <collection>" for an item the policy shares through a collection.
+  function collectionTag(kind, key) {
+    const id = policy && policy.collectionOf && policy.collectionOf[kind] ? policy.collectionOf[kind][key] : null;
+    const collection = id && (policy.collections || []).find((c) => c.id === id);
+    return collection ? "organisation · " + collection.label : "organisation";
+  }
+
   async function renderPolicyTabs() {
     policy = await api.getPolicyInfo();
     text($("org"), policy.organization ? policy.organization : "no organisation policy loaded");
@@ -364,7 +371,9 @@
       const does = rule.action === "warn" ? "Warns: " + rule.message + (inserts ? " Fix: " + inserts : "") : inserts;
       const when = rule.keywords.concat((rule.detect || []).map((name) => "[" + name + "]")).join(", ")
         + ((rule.unless || []).length ? " unless: " + rule.unless.join("; ") : "");
-      kw.append(el("tr", {}, [el("td", { text: rule.label }), el("td", { text: when }), el("td", { text: rule.match }), el("td", { text: does })]));
+      const ruleCell = el("td", { text: rule.label });
+      if (policy.collectionOf && policy.collectionOf.keywordRules[rule.id]) ruleCell.append(el("span", { class: "tag", text: collectionTag("keywordRules", rule.id) }));
+      kw.append(el("tr", {}, [ruleCell, el("td", { text: when }), el("td", { text: rule.match }), el("td", { text: does })]));
     }
     if (!policy.keywordRules.length) kw.append(el("tr", {}, [el("td", { colspan: "4", text: "No keyword rules in the policy." })]));
     const docs = $("documents");
@@ -374,7 +383,9 @@
       const body = el("tbody");
       for (const doc of shortcut.documents) body.append(el("tr", {}, [el("td", { text: doc.title }), el("td", { class: "mono", text: doc.path }), el("td", { text: doc.tags.join(", ") })]));
       table.append(body);
-      docs.append(el("h2", {}, [el("span", { class: "mono", text: shortcut.trigger }), document.createTextNode(" " + shortcut.label)]), table, el("br"));
+      const heading = el("h2", {}, [el("span", { class: "mono", text: shortcut.trigger }), document.createTextNode(" " + shortcut.label)]);
+      if (policy.collectionOf && policy.collectionOf.documents[shortcut.trigger]) heading.append(el("span", { class: "tag", text: collectionTag("documents", shortcut.trigger) }));
+      docs.append(heading, table, el("br"));
     }
     if (!policy.documents.length) docs.append(el("p", { class: "hint", text: "No document shortcuts in the policy." }));
   }
@@ -537,6 +548,24 @@
     const on = Object.keys(FEATURE_LABELS).filter((k) => features[k]).map((k) => FEATURE_LABELS[k]);
     const off = Object.keys(FEATURE_LABELS).filter((k) => !features[k]).map((k) => FEATURE_LABELS[k]);
     text($("tier-features"), (on.length ? "On: " + on.join(", ") + ". " : "") + (off.length ? "Off: " + off.join(", ") + ". " : "") + "Always on: your own shortcuts, templates, the palette, statistics, the local report and updates.");
+    // Collections: what this desk's groups share with it.
+    const groups = info.groups || [];
+    text($("groups"), groups.length
+      ? "Groups: " + groups.join(", ") + " (set by IT in this desk's deployment file)."
+      : "Groups: none. This desk receives only what is shared with everyone; IT sets groups in deployment.json.");
+    const collectionsBody = $("collections");
+    collectionsBody.textContent = "";
+    for (const c of info.collections || []) {
+      const parts = [];
+      if (c.counts.shortcuts) parts.push(c.counts.shortcuts + " shortcut" + (c.counts.shortcuts === 1 ? "" : "s"));
+      if (c.counts.keywordRules) parts.push(c.counts.keywordRules + " keyword rule" + (c.counts.keywordRules === 1 ? "" : "s"));
+      if (c.counts.documents) parts.push(c.counts.documents + " document set" + (c.counts.documents === 1 ? "" : "s"));
+      if (c.counts.lookups) parts.push(c.counts.lookups + " lookup" + (c.counts.lookups === 1 ? "" : "s"));
+      collectionsBody.append(el("tr", {}, [el("td", { text: c.label }), el("td", { text: c.audience.length ? c.audience.join(", ") : "everyone" }), el("td", { text: parts.join(", ") || "nothing" })]));
+    }
+    if (!(info.collections || []).length) collectionsBody.append(el("tr", {}, [el("td", { colspan: "3", text: "No collections are shared with this desk." })]));
+    const hidden = info.hiddenCollections || [];
+    text($("hidden-collections"), hidden.length ? hidden.length + " collection" + (hidden.length === 1 ? " is" : "s are") + " not shared with this desk: " + hidden.map((c) => c.label + " (" + c.audience.join(", ") + ")").join(", ") + "." : "");
     const sources = $("policy-sources");
     sources.textContent = "";
     for (const source of info.sources || []) {
@@ -651,9 +680,11 @@
     const body = $("lookups");
     body.textContent = "";
     for (const item of status.lookups) {
+      const what = el("td", { text: item.label + " (by " + item.key + ")" });
+      if (policy && policy.collectionOf && policy.collectionOf.lookups[item.trigger]) what.append(el("span", { class: "tag", text: collectionTag("lookups", item.trigger) }));
       body.append(el("tr", {}, [
         el("td", { class: "mono", text: item.trigger }),
-        el("td", { text: item.label + " (by " + item.key + ")" }),
+        what,
         el("td", { class: "mono", text: item.location }),
         el("td", { class: "num", text: item.rows }),
         el("td", { text: item.status + (item.error ? ": " + item.error : "") }),
