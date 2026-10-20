@@ -1,0 +1,12 @@
+{
+  "name": "actle-corporate",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=22.2.0" },
+  "description": "Business edition of actle: a desktop assistant that expands shorthands in every application, learns recurring phrases in the applications a person opts in, and reports keystrokes and time saved.",
+  "scripts": {
+    "test": "node --test",
+    "check": "for f in core/*.js test/*.js desktop/*.js desktop/adapters/*.js desktop/renderer/*.js; do node --check \"$f\" || exit 1; done",
+    "simulate": "node desktop/simulate.js"
+  }
+}

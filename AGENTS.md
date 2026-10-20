@@ -6,6 +6,39 @@ across this account, and every rule comes from something that actually went wron
 file first, then the repository's own notes (CLAUDE.md, README.md and SECURITY.md where they
 exist). Those add repository-specific conventions; they never relax anything here.
 
+## 0. Two editions: personal and corporate
+
+The repository ships two editions of the same idea:
+
+- **Personal**: `chrome-extension/` (Chrome and Firefox), `windows/` and `android/`, with
+  `shared/` as the contract they all pass (`shared/SPEC.md`, `shared/conformance.json`).
+- **Corporate** (the business edition): `corporate/`. A desktop assistant for every operating
+  system with keystroke and time-saved statistics, per-application learning, keyword offers
+  and document shortcuts. Its core reuses the personal edition's DOM-free modules
+  (`chrome-extension/src/expander.js`, `template.js`) through `corporate/core/personal.js`,
+  and runs the same `shared/conformance.json`.
+
+Which side a task touches is decided by its wording:
+
+- **The task mentions the corporate side** (corporate, business, enterprise, organisation
+  edition, the `corporate/` folder, the organisation policy, the desktop assistant's dashboard):
+  change only the corporate side. That is `corporate/`, the corporate job in
+  `.github/workflows/ci.yml`, and the corporate section of the root `README.md`. Do not touch
+  `chrome-extension/`, `windows/`, `android/` or `shared/`. If the change needs a rule the
+  personal modules own, say so in the PR and stop; do not fork a private copy into
+  `corporate/`.
+- **The task does not mention the corporate side**: it is a change for both editions. Make
+  it in the personal edition as before, then carry it to `corporate/`: a matching or
+  placeholder rule reaches it through the shared modules (run `cd corporate && npm test`
+  and read the result); a feature, setting, default, wording or documentation change gets
+  its corporate counterpart in the same PR. When a change cannot apply to one side (a
+  browser-only DOM behaviour, a desktop-only hook), say which side was left out and why
+  under **What changed**.
+- The PR description names the editions changed, one line each.
+
+A rule change starts as a case in `shared/conformance.json`; it now runs in four suites
+(extension, Windows, Android, corporate), so a change applied to one of them fails on the others.
+
 ## 1. Know the baseline before you change anything
 
 - Run the repository's own checks (tests, typecheck, lint, build, browser suite) before you

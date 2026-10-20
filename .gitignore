@@ -9,6 +9,8 @@ android/app/build/
 android/local.properties
 android/.idea/
 *.iml
+# corporate desktop
+corporate/desktop/dist/
 # misc
 node_modules/
 chrome-extension/dist/

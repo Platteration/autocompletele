@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "organization": "Example Logistics Ltd",
+  "typing": { "charsPerMinute": 200, "secondsPerAttachment": 20 },
+  "capture": {
+    "defaultMode": "triggers",
+    "apps": [
+      { "id": "outlook", "label": "Outlook", "mode": "learn", "match": { "process": ["outlook.exe", "Microsoft Outlook"], "bundleId": "com.microsoft.Outlook" } },
+      { "id": "thunderbird", "label": "Thunderbird", "mode": "learn", "match": { "process": "thunderbird" } },
+      { "id": "webmail", "label": "Web mail", "mode": "learn", "match": { "title": "(Gmail|Outlook|Mail) - " } },
+      { "id": "banking", "label": "Banking portal", "mode": "off", "match": { "title": "Online Banking" } }
+    ]
+  },
+  "library": {
+    "version": 1,
+    "shorthands": [
+      { "trigger": "sig/", "expansion": "Kind regards,\n{cursor}\nExample Logistics Ltd\nwww.example.com" },
+      { "trigger": "hrs/", "expansion": "Our office hours are Monday to Friday, 08:00 to 17:00." },
+      { "trigger": "ack/", "expansion": "Hi [[name]],\n\nThanks for your message about [[subject]]. I will come back to you by [[date]].\n\nKind regards" },
+      { "trigger": "ret/", "expansion": "Returns are accepted within 30 days of delivery. Please quote your order reference and keep the original packaging." }
+    ]
+  },
+  "keywordRules": [
+    { "id": "returns", "label": "Returns policy", "keywords": ["return", "returns", "refund"], "match": "any", "insert": { "kind": "shorthand", "trigger": "ret/" } },
+    { "id": "shipping-docs", "label": "Shipping documents", "keywords": ["customs", "shipment"], "match": "all", "insert": { "kind": "document", "shortcut": "/sld" } },
+    { "id": "office-hours", "label": "Office hours", "keywords": ["opening hours", "office hours"], "insert": { "kind": "text", "text": "Our office hours are Monday to Friday, 08:00 to 17:00." } }
+  ],
+  "documents": {
+    "shortcuts": [
+      {
+        "trigger": "/sld",
+        "label": "Shipping logistics department",
+        "documents": [
+          { "title": "Commercial invoice template", "path": "S:/Shared/Logistics/commercial-invoice.docx", "tags": ["customs", "export"] },
+          { "title": "Packing list", "path": "S:/Shared/Logistics/packing-list.xlsx", "tags": ["warehouse"] },
+          { "title": "Carrier contact sheet", "path": "S:/Shared/Logistics/carriers.pdf", "tags": ["contacts"] }
+        ]
+      },
+      {
+        "trigger": "/hr",
+        "label": "Human resources onboarding",
+        "documents": [
+          { "title": "Employee handbook", "path": "S:/Shared/HR/handbook.pdf" },
+          { "title": "Expense claim form", "path": "S:/Shared/HR/expense-claim.xlsx", "tags": ["finance"] }
+        ]
+      }
+    ]
+  },
+  "learning": { "minCount": 3, "minLength": 20, "minWords": 4 },
+  "retention": { "metricsDays": 365, "corpusDays": 90 }
+}

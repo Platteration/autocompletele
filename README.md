@@ -36,6 +36,23 @@ built on one device can be exported and imported on the others:
 | `windows/`          | Windows  | .NET 8 tray app with a global keyboard hook; works in every program |
 | `android/`          | Android  | Accessibility service; works in other apps' text fields          |
 | `shared/`           | –        | Format specification and an example `shorthands.json`            |
+| `corporate/`        | Windows, macOS, Linux | Business edition: desktop assistant with statistics, learning, keyword offers and document shortcuts (see below) |
+
+## Business edition
+
+`corporate/` holds **actle Corporate**, a separate desktop assistant for
+organisations. It expands the same shortcut library in every application, and
+adds what a business asks for: keystrokes and estimated time saved overall and
+per day, week and month; learning of recurring phrases and paragraphs in the
+applications a person opts in (mail clients, typically), with a diff overlay
+that shows which parts of similar messages change and turns them into
+`[[name]]` fill-in templates; keyword offers that insert predetermined text
+when certain words are written; and document shortcuts such as `/sld` that
+list the files an organisation designates for a job. Everything is driven by
+one organisation policy file (`corporate/shared/ORG-POLICY.md`). See
+[corporate/README.md](corporate/README.md) for the assessment, architecture
+and current status. Rules for which edition a change touches are in
+`AGENTS.md`.
 
 ## How triggers work
 
@@ -69,10 +86,14 @@ Android do not fill them. See the [template guide](chrome-extension/README.md#fi
   (needs the .NET 8 SDK). See [windows/README.md](windows/README.md).
 * **Android:** open `android/` in Android Studio, run on your phone, then
   enable the service under *Accessibility*. See [android/README.md](android/README.md).
+* **Business edition (desktop):** `cd corporate/desktop && npm install && npm start`
+  (needs Node 22; downloads Electron). `cd corporate && npm run simulate` runs
+  the whole pipeline headlessly without Electron. See [corporate/README.md](corporate/README.md).
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs the extension tests, builds the Windows app
+`.github/workflows/ci.yml` runs the extension tests, the business edition's
+core tests and headless simulation, builds the Windows app
 and runs its tests on a Windows runner (uploading a single-file `.exe`), and
 builds the Android APK and runs its unit tests (uploading the debug APK).
 
@@ -82,9 +103,10 @@ builds the Android APK and runs its unit tests (uploading the debug APK).
 cd chrome-extension && npm test                            # extension logic
 cd windows && dotnet run --project ShorthandExpander.Tests # Windows logic + storage
 cd android && ./gradlew testDebugUnitTest                  # Android logic + JSON
+cd corporate && npm test                                   # business edition core
 ```
 
-All three suites also run [`shared/conformance.json`](shared/conformance.json),
+All four suites also run [`shared/conformance.json`](shared/conformance.json),
 one table of matching, placeholder and validation cases. Because the same file
 drives every platform, a rule change applied to only one of them fails on the
-other two. Add a case there before changing the rules.
+others. Add a case there before changing the rules.

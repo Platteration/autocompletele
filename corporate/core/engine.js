@@ -1,0 +1,280 @@
+// The headless assistant. A desktop shell feeds it key presses and focus
+// changes and carries out the actions it returns (delete the trigger, type the
+// expansion, open a template form, list documents, offer a keyword insert).
+// Nothing here touches the keyboard, the screen or the disk.
+"use strict";
+
+const { expander, template } = require("./personal.js");
+const capture = require("./capture-policy.js");
+const keywords = require("./keyword-rules.js");
+const documents = require("./documents.js");
+const metrics = require("./metrics.js");
+const orgPolicy = require("./org-policy.js");
+
+const DEFAULTS = Object.freeze({
+  maxBuffer: 200,
+  minSessionLength: 20,
+  // Whether the input adapter swallows the key that completes a trigger (the
+  // Windows hook does; uiohook-style listeners cannot, so the character
+  // reaches the field and must be deleted too).
+  swallowsTriggerKey: false,
+});
+
+function mergeLibraries(personal, organization) {
+  const own = expander.sanitizeList(personal);
+  const seen = new Set(own.map((sh) => sh.trigger));
+  const shared = expander.sanitizeList(organization).filter((sh) => !seen.has(sh.trigger));
+  return own.map((sh) => Object.assign({ source: "personal" }, sh))
+    .concat(shared.map((sh) => Object.assign({ source: "organization" }, sh)));
+}
+
+function popGrapheme(text) {
+  if (!text) return text;
+  let remove = 1;
+  const last = text.charCodeAt(text.length - 1);
+  if (text.length > 1 && last >= 0xdc00 && last <= 0xdfff) {
+    const prev = text.charCodeAt(text.length - 2);
+    if (prev >= 0xd800 && prev <= 0xdbff) remove = 2;
+  }
+  return text.slice(0, -remove);
+}
+
+function createEngine(options) {
+  const settings = Object.assign({}, DEFAULTS, options || {});
+  const now = typeof settings.now === "function" ? settings.now : () => Date.now();
+  const ledger = settings.ledger || metrics.createLedger({ now });
+  let policy = settings.policy && Array.isArray(settings.policy.keywordRules) ? settings.policy : orgPolicy.parse(settings.policy);
+  let personal = expander.sanitizeList(settings.library);
+  let library = mergeLibraries(personal, policy.library);
+  const keywordState = keywords.createState();
+
+  let buffer = "";
+  let context = {};
+  let decision = { mode: policy.capture.defaultMode, reason: "default", rule: null };
+  let session = null;
+  let undo = null;
+  let pendingRecord = null;
+  let enabled = true;
+
+  function appName() {
+    return capture.baseName(context.process) || String(context.app || "").trim() || "";
+  }
+
+  function commitPending() {
+    if (!pendingRecord) return;
+    const entry = pendingRecord;
+    pendingRecord = null;
+    ledger.record(entry);
+  }
+
+  function clearUndo() {
+    undo = null;
+    commitPending();
+  }
+
+  function startSession() {
+    session = { app: appName(), startedAt: now(), text: "", redactions: 0 };
+  }
+
+  function flushSession() {
+    const ended = session;
+    session = null;
+    if (!ended) return null;
+    const scrubbed = capture.scrub(ended.text);
+    if (scrubbed.text.trim().length < settings.minSessionLength) return null;
+    return { app: ended.app, startedAt: ended.startedAt, endedAt: now(), text: scrubbed.text, redactions: scrubbed.redactions };
+  }
+
+  function sessionAppend(text) {
+    if (session) session.text += text;
+  }
+
+  function sessionReplaceTail(typedChars, inserted) {
+    if (!session) return;
+    if (typedChars > 0) session.text = session.text.slice(0, Math.max(0, session.text.length - typedChars));
+    session.text += inserted;
+  }
+
+  /** Tell the engine which window has the focus. Returns the learning session that just ended, if any. */
+  function focusChanged(nextContext) {
+    clearUndo();
+    buffer = "";
+    keywordState.reset();
+    const ended = flushSession();
+    context = nextContext && typeof nextContext === "object" ? Object.assign({}, nextContext) : {};
+    decision = enabled ? capture.decide(context, policy.capture) : { mode: "off", reason: "paused", rule: null };
+    if (decision.mode === "learn") startSession();
+    return { mode: decision.mode, reason: decision.reason, session: ended };
+  }
+
+  /** End the current field session without a new focus (shutdown, pause). */
+  function endSession() {
+    clearUndo();
+    buffer = "";
+    keywordState.reset();
+    const ended = flushSession();
+    if (decision.mode === "learn") startSession();
+    return ended;
+  }
+
+  function expandAction(match, keyText) {
+    const sh = match.shorthand;
+    const typedInField = settings.swallowsTriggerKey ? sh.trigger.length - keyText.length : sh.trigger.length;
+    const backspaces = Math.max(0, typedInField);
+    buffer = "";
+    if (template.requiresInput(sh.expansion)) {
+      return {
+        type: "template",
+        trigger: sh.trigger,
+        expansion: sh.expansion,
+        fields: template.fields(sh.expansion),
+        variables: template.variables(sh.expansion),
+        backspaces,
+        source: sh.source,
+      };
+    }
+    const rendered = template.render(sh.expansion, null, new Date(now()));
+    undo = { trigger: sh.trigger, text: rendered.text, cursorOffset: rendered.cursorOffset };
+    pendingRecord = { kind: "expansion", trigger: sh.trigger, inserted: rendered.text, typed: sh.trigger, app: appName() };
+    sessionReplaceTail(sh.trigger.length, rendered.text);
+    return {
+      type: "expand",
+      trigger: sh.trigger,
+      text: rendered.text,
+      cursorOffset: rendered.cursorOffset,
+      backspaces,
+      keystrokesSaved: metrics.keystrokesSaved(rendered.text, sh.trigger),
+      source: sh.source,
+    };
+  }
+
+  /**
+   * Feed one key press. `key` is {text, isBackspace, resetsBuffer}; text is the
+   * characters the key produced ("" for non-text keys).
+   * @returns {Array<object>} actions for the shell, possibly empty
+   */
+  function keyTyped(key) {
+    const k = key && typeof key === "object" ? key : { text: String(key == null ? "" : key) };
+    const text = String(k.text == null ? "" : k.text);
+    if (decision.mode === "off") return [];
+
+    if (k.isBackspace && undo) {
+      const reverted = undo;
+      undo = null;
+      pendingRecord = null;
+      buffer = reverted.trigger;
+      sessionReplaceTail(reverted.text.length, reverted.trigger);
+      return [{
+        type: "undo",
+        trigger: reverted.trigger,
+        charsBeforeCaret: reverted.cursorOffset,
+        charsAfterCaret: reverted.text.length - reverted.cursorOffset,
+      }];
+    }
+    // A modifier or dead key on its own keeps the undo window open.
+    if (!k.isBackspace && !k.resetsBuffer && text.length === 0) return [];
+    clearUndo();
+
+    if (k.isBackspace) {
+      buffer = popGrapheme(buffer);
+      if (session) session.text = popGrapheme(session.text);
+      return [];
+    }
+    if (k.resetsBuffer) {
+      buffer = "";
+      if (text === "\n" || text === "\t") sessionAppend(text);
+      return [];
+    }
+    if (context.ownWindow) {
+      buffer = "";
+      return [];
+    }
+
+    buffer += text;
+    if (buffer.length > settings.maxBuffer) buffer = buffer.slice(buffer.length - settings.maxBuffer);
+    sessionAppend(text);
+
+    const actions = [];
+    const match = expander.findMatch(buffer, library);
+    if (match) {
+      actions.push(expandAction(match, text));
+      return actions;
+    }
+    const doc = documents.findShortcut(buffer, policy.documents);
+    if (doc) {
+      const typedInField = settings.swallowsTriggerKey ? doc.shortcut.trigger.length - text.length : doc.shortcut.trigger.length;
+      buffer = "";
+      sessionReplaceTail(doc.shortcut.trigger.length, "");
+      actions.push({
+        type: "documents",
+        trigger: doc.shortcut.trigger,
+        label: doc.shortcut.label,
+        documents: doc.shortcut.documents.slice(),
+        backspaces: Math.max(0, typedInField),
+      });
+      return actions;
+    }
+    // Keywords are checked when a word ends, so "invoices" is not offered on "inv".
+    if (policy.keywordRules.length && !expander.isBoundary(buffer[buffer.length - 2]) && expander.isBoundary(text[text.length - 1])) {
+      const hits = keywords.detect(session ? session.text : buffer, policy.keywordRules, keywordState);
+      if (hits.length) actions.push({ type: "keyword", hits });
+    }
+    return actions;
+  }
+
+  /**
+   * Record something the shell inserted on the person's behalf after a
+   * template form, a keyword offer, a document attachment or a suggestion.
+   */
+  function recordInsert(event) {
+    const data = event && typeof event === "object" ? event : {};
+    const kind = metrics.KINDS.includes(data.kind) ? data.kind : "suggestion";
+    const inserted = String(data.inserted == null ? "" : data.inserted);
+    const typed = String(data.typed == null ? "" : data.typed);
+    if (inserted) sessionReplaceTail(typed.length, inserted);
+    const fixedSeconds = kind === "document"
+      ? Math.max(1, Math.floor(Number(data.count) || 1)) * policy.typing.secondsPerAttachment
+      : Number(data.fixedSeconds) || 0;
+    return ledger.record({ kind, trigger: data.trigger, inserted, typed, fixedSeconds, app: appName() });
+  }
+
+  function setLibrary(next) {
+    personal = expander.sanitizeList(Array.isArray(next) ? next : next && next.personal);
+    library = mergeLibraries(personal, policy.library);
+  }
+
+  function setPolicy(next) {
+    policy = next && Array.isArray(next.keywordRules) ? next : orgPolicy.parse(next);
+    library = mergeLibraries(personal, policy.library);
+    ledger.setCharsPerMinute(policy.typing.charsPerMinute);
+    decision = enabled ? capture.decide(context, policy.capture) : decision;
+    if (decision.mode !== "learn") session = null;
+    else if (!session) startSession();
+  }
+
+  function setEnabled(value) {
+    enabled = value !== false;
+    return focusChanged(context);
+  }
+
+  return {
+    focusChanged,
+    endSession,
+    keyTyped,
+    recordInsert,
+    setLibrary,
+    setPolicy,
+    setEnabled,
+    ledger,
+    get enabled() { return enabled; },
+    get mode() { return decision.mode; },
+    get decision() { return decision; },
+    get context() { return Object.assign({}, context); },
+    get buffer() { return buffer; },
+    get library() { return library.slice(); },
+    get policy() { return policy; },
+    get session() { return session ? Object.assign({}, session) : null; },
+  };
+}
+
+module.exports = { DEFAULTS, mergeLibraries, createEngine };
