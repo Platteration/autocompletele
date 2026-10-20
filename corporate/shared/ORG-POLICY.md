@@ -28,6 +28,7 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `keywordRules[].apps` | Restrict a rule to these applications (process names, as in capture rules, for example `["outlook.exe", "thunderbird"]`). A rule with `apps` stays quiet when the application is unknown. |
 | `keywordRules[].unless` | Phrases that stop the rule when any of them appears in the field (case and spacing ignored), for example the disclaimer itself. What is seen is the text typed in the field, or inserted by actle, since the field last got the focus, up to the last 4,000 characters. Opening actle's search palette or dashboard counts as leaving the field. A mail client's automatic signature, pasted text and text further back are not seen, so the warning can appear although the phrase is there. |
 | `documents.shortcuts[]` | `trigger` (for example `/sld`), `label`, and `documents[]` with `title`, `path` (file path or URL), optional `tags` and `description`. Triggers follow the same boundary rule as text shortcuts and lose to a text shortcut with the same trigger. |
+| `lookups[]` | Data-backed shortcuts: `trigger` (one word, for example `/cust`), `label`, `source` (`kind` `csv` or `json`; `path` on a share or an `https://` `url`; `key`, the column to match; `refreshMinutes`, 5 to 1440, default 60) and `template` with `[[field]]` blanks named after columns. See "Lookups" below. |
 | `learning.minCount` | Distinct messages a text must recur in before it is proposed (default 3, minimum 2). |
 | `learning.minLength`, `learning.minWords` | Smallest text worth proposing (defaults 20 characters, 4 words). |
 | `reporting.team` | Team name written into each desk's usage report. |
@@ -183,6 +184,39 @@ body is also signed with HMAC-SHA256 of the token. Desks hold no private key
 and the token sits in every desk's policy cache, so the signature proves
 only "sent by a desk holding this policy". The collector is yours to run:
 anything that accepts an https POST.
+
+## Lookups
+
+A lookup inserts a block built from one row of a data file the organisation
+keeps: `/cust 1001 ` (trigger, space, key, space) becomes the customer block
+for id 1001, rendered from the lookup's template. The trigger follows the
+same boundary rule as shortcuts; the key is one word of up to 64
+characters; typing the space after it completes the lookup (Enter does
+not, so a chat message is not sent by accident). On a hit the typed text is
+replaced; on a miss a notice says so and nothing is deleted. Keys are
+matched after trimming, ignoring case. `[[field]]` blanks take the row's
+columns of the same name; `{date}` and the other placeholders render as
+usual; a field the row lacks stays visible as `[[field]]`.
+
+The data is fetched at start and then every `refreshMinutes` (CSV or JSON,
+a file path on a share or an https address, up to 5 MB and 50,000 rows;
+https-to-http redirects are refused) and cached as plain JSON under
+`lookup-cache/` in the data folder. It is organisation reference data the
+desk already receives in the clear; sealing it with the learning key would
+stop lookups on desks without a keychain and protect nothing the source
+file does not. A source that cannot be fetched keeps its last good copy
+with a warning on the Documents tab, where "Refresh data now" fetches all
+sources. Lookups appear in the search palette (`/cust 1001` resolves
+directly) and count as organisation inserts in usage reports (trigger and
+count only, never the row).
+
+```json
+"lookups": [
+  { "trigger": "/cust", "label": "Customer block",
+    "source": { "kind": "csv", "path": "S:/Shared/Logistics/customers.csv", "key": "id", "refreshMinutes": 60 },
+    "template": "[[name]] ([[id]])\n[[address]]\nAccount manager: [[manager]]" }
+]
+```
 
 ## Phrase suggestions from desks
 

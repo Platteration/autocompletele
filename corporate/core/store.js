@@ -23,6 +23,7 @@ const FILES = Object.freeze({
   corpusKey: "corpus.key",
   suggestions: "suggestions.json",
   uploadState: "upload-state.json",
+  lookupCacheDir: "lookup-cache",
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -354,6 +355,19 @@ function createStore(dir) {
     writeJson(FILES.suggestions, { queued: Array.isArray(queued) ? queued : [] });
   }
 
+  function lookupCacheName(id) {
+    const safe = String(id).replace(/[^a-z0-9]/gi, "");
+    return path.join(FILES.lookupCacheDir, (safe || "lookup") + ".json");
+  }
+
+  function loadLookupCache(id) {
+    return readJson(lookupCacheName(id), null);
+  }
+
+  function saveLookupCache(id, value) {
+    writeJson(lookupCacheName(id), value);
+  }
+
   function loadUploadState() {
     return readJson(FILES.uploadState, null);
   }
@@ -430,6 +444,8 @@ function createStore(dir) {
     saveSuggestions,
     loadUploadState,
     saveUploadState,
+    loadLookupCache,
+    saveLookupCache,
   };
 }
 

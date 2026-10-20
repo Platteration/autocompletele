@@ -52,6 +52,7 @@ Everything is in Electron's `userData` folder for the app
 | `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
 | `learned.json`    | SHA-256 digests of proposals the person dismissed (no readable text) |
+| `lookup-cache/`   | Last good copy of each lookup's data source, plain JSON (organisation reference data, not typed text) |
 | `upload-state.json` | When the policy sets `reporting.endpoint`: time and outcome of the last usage-report upload and the exact body sent |
 | `suggestions.json` | Proposals the person chose to suggest to the organisation, readable, until exported, removed or deleted with the learned text |
 | `deployment.json` | Managed desks only: signed policy sources and pinned public keys, written by IT |

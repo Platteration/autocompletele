@@ -21,6 +21,9 @@ adds what a business asks for:
 - **Document shortcuts**: typing `/sld` lists the files the organisation marked
   as the standard hand-outs for "shipping logistics department", so they can be
   attached in one step.
+- **Lookups**: `/cust 1001 ` inserts the customer block for id 1001 from a
+  CSV or JSON file the organisation keeps on a share or an https address,
+  rendered from a template; cached per desk, refreshed on a schedule.
 - **Compliance warnings**: a rule can warn instead of offer, for example when
   "contract" is written without the legal disclaimer, a card number, IBAN or
   national identity number is typed into a message, an outside address is
@@ -79,6 +82,7 @@ corporate/
     phrase-miner.js           recurring sentences, paragraphs and phrases across messages
     keyword-rules.js          keyword offers and compliance warnings, once per field
     documents.js              document shortcuts (/sld) and search
+    lookups.js                data-backed lookups (/cust 1001): CSV/JSON sources, cache, argument matching
     palette-search.js         search palette items, scored by the extension's palette module
     org-policy.js             the organisation policy parser and layer merge (skips bad parts, never refuses)
     policy-signing.js         Ed25519 signing and verification of policy files

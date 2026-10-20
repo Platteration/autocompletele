@@ -111,6 +111,13 @@
     <section id="tab-documents" role="tabpanel" hidden>
       <p class="hint">Type a document shortcut in any application to list its files; the paths are copied so they can be pasted into an attachment area.</p>
       <div id="documents"></div>
+      <h2 class="mt">Lookups</h2>
+      <p class="hint">Type a lookup trigger, a space, a key and a space (for example <span class="mono">/cust 1001 </span>) to insert the matching block from your organisation's data. The data is fetched from the organisation and kept in the data folder; nothing you type is sent anywhere.</p>
+      <div class="toolbar">
+        <button class="plain" id="lookups-refresh">Refresh data now</button>
+        <span class="hint" id="lookups-result"></span>
+      </div>
+      <table><thead><tr><th>Trigger</th><th>What</th><th>Source</th><th class="num">Rows</th><th>Status</th><th>Fetched</th></tr></thead><tbody id="lookups"></tbody></table>
     </section>
 
     <section id="tab-policy" role="tabpanel" hidden>

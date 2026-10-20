@@ -500,6 +500,32 @@
     announce($("policy-refresh-result").textContent);
   });
 
+  async function renderLookups() {
+    const status = await api.getLookupStatus();
+    const body = $("lookups");
+    body.textContent = "";
+    for (const item of status.lookups) {
+      body.append(el("tr", {}, [
+        el("td", { class: "mono", text: item.trigger }),
+        el("td", { text: item.label + " (by " + item.key + ")" }),
+        el("td", { class: "mono", text: item.location }),
+        el("td", { class: "num", text: item.rows }),
+        el("td", { text: item.status + (item.error ? ": " + item.error : "") }),
+        el("td", { text: item.fetchedAt ? new Date(item.fetchedAt).toLocaleString() : "never" }),
+      ]));
+    }
+    if (!status.lookups.length) body.append(el("tr", {}, [el("td", { colspan: "6", text: "No lookups in the policy." })]));
+    $("lookups-refresh").hidden = !status.lookups.length;
+  }
+
+  $("lookups-refresh").addEventListener("click", async () => {
+    text($("lookups-result"), "Fetching…");
+    const result = await api.refreshLookups();
+    text($("lookups-result"), result.warnings && result.warnings.length ? result.warnings.join(" ") : "Up to date.");
+    announce($("lookups-result").textContent);
+    await renderLookups();
+  });
+
   async function renderStatus() {
     const status = await api.getStatus();
     const problems = [];
@@ -531,6 +557,7 @@
     if (what.settings || what.policy) {
       await renderPolicy();
       await renderUpload();
+      await renderLookups();
     }
   }
 

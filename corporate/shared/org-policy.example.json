@@ -51,6 +51,14 @@
       }
     ]
   },
+  "lookups": [
+    {
+      "trigger": "/cust",
+      "label": "Customer block",
+      "source": { "kind": "csv", "path": "S:/Shared/Logistics/customers.csv", "key": "id", "refreshMinutes": 60 },
+      "template": "[[name]] ([[id]])\n[[address]]\nAccount manager: [[manager]]"
+    }
+  ],
   "learning": { "minCount": 3, "minLength": 20, "minWords": 4 },
   "retention": { "metricsDays": 365, "corpusDays": 90 }
 }

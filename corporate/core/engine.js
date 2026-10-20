@@ -8,6 +8,7 @@ const { expander, template } = require("./personal.js");
 const capture = require("./capture-policy.js");
 const keywords = require("./keyword-rules.js");
 const documents = require("./documents.js");
+const lookups = require("./lookups.js");
 const metrics = require("./metrics.js");
 const orgPolicy = require("./org-policy.js");
 
@@ -264,6 +265,24 @@ function createEngine(options) {
       });
       return actions;
     }
+    // "/cust 12345 ": the space after the argument completes a lookup. The
+    // shell resolves it; on a miss nothing is deleted, so the field text and
+    // the learning session are only adjusted when the shell records the insert.
+    if (text === " " && policy.lookups && policy.lookups.length) {
+      const hit = lookups.findArgument(buffer, policy.lookups);
+      if (hit) {
+        buffer = "";
+        actions.push({
+          type: "lookup",
+          trigger: hit.lookup.trigger,
+          label: hit.lookup.label,
+          argument: hit.argument,
+          typed: hit.typed,
+          backspaces: Math.max(0, settings.swallowsTriggerKey ? hit.typed.length - 1 : hit.typed.length),
+        });
+        return actions;
+      }
+    }
     // Keywords are checked when a word ends, so "invoices" is not offered on "inv".
     if (policy.keywordRules.length && !expander.isBoundary(buffer[buffer.length - 2]) && expander.isBoundary(text[text.length - 1])) {
       const hits = keywords.detect(fieldText, policy.keywordRules, keywordState, { context: { app: appName(), attachments: attachmentsInField } });
@@ -295,8 +314,8 @@ function createEngine(options) {
     const fixedSeconds = kind === "document"
       ? Math.max(1, Math.floor(Number(data.count) || 1)) * policy.typing.secondsPerAttachment
       : Number(data.fixedSeconds) || 0;
-    // Keyword rules and document sets only exist in the organisation policy.
-    const source = kind === "document" || kind === "keyword" ? "organization" : data.source;
+    // Keyword rules, document sets and lookups only exist in the organisation policy.
+    const source = kind === "document" || kind === "keyword" || kind === "lookup" ? "organization" : data.source;
     const keystrokesSaved = Math.max(0, metrics.keystrokesSaved(inserted, typed) - spent);
     return ledger.record({ kind, trigger: data.trigger, source, keystrokesSaved, fixedSeconds, app: appName() });
   }

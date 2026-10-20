@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld("actle", {
   saveReport: invoke("report:save"),
   uploadReport: invoke("report:upload"),
   getUploadStatus: invoke("report:uploadStatus"),
+  getLookupStatus: invoke("lookups:status"),
+  refreshLookups: invoke("lookups:refresh"),
   getPolicyInfo: invoke("policy:info"),
   refreshPolicy: invoke("policy:refresh"),
   getAudit: invoke("policy:audit"),

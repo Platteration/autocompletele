@@ -37,10 +37,19 @@ const testKeychain = {
 };
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "actle-corporate-sim-"));
+// Stand-in for the organisation's file share: the customers file behind the
+// example policy's "/cust" lookup.
+const CUSTOMERS_CSV = 'id,name,address,manager\n1001,"Acme Widgets Ltd","12 Harbour Road, Hull",Jo Bloggs\n1002,"Nordic Freight AS","Storgata 1, Oslo",Sam Rivera\n';
+const share = new Map([["S:/Shared/Logistics/customers.csv", CUSTOMERS_CSV]]);
+
 const assistant = createAssistant({
   dataDir,
   now,
   keychain: testKeychain,
+  readFile: async (where) => {
+    if (!share.has(where)) throw new Error("not found: " + where);
+    return share.get(where);
+  },
   policyFile: fs.existsSync(POLICY_FILE) ? POLICY_FILE : null,
   policy: FALLBACK_POLICY,
 });
@@ -57,6 +66,14 @@ function describe(action) {
     case "keyword": return `keyword offer: ${action.hits.map((h) => h.rule.label + " [" + h.matched.join(", ") + "]").join("; ")}`;
     case "warning": return `warning: ${action.hits.map((h) => h.rule.message + (h.rule.insert ? " (fix offered)" : "")).join("; ")}`;
     case "undo": return `undo -> put ${action.trigger} back`;
+    case "lookup": {
+      const resolved = assistant.resolveLookup(action);
+      if (resolved.type === "expand") {
+        assistant.lookupInserted(resolved);
+        return `lookup ${action.trigger} ${action.argument} -> ${brief(resolved.text)} (delete ${resolved.backspaces})`;
+      }
+      return `lookup ${action.trigger} ${action.argument} -> ${resolved.message}`;
+    }
     default: return JSON.stringify(action);
   }
 }
@@ -78,6 +95,11 @@ function focus(context) {
 print("actle Corporate simulation");
 print("policy: " + (assistant.policyInfo().organization || "(none)") + "; warnings: " + (assistant.warnings().join("; ") || "none"));
 print("licence: " + assistant.licence().status + (assistant.licence().enforced ? "" : " (no vendor key built in; nothing is switched off)"));
+
+async function main() {
+  const lookups = await assistant.refreshLookups(true);
+  print("lookups: " + lookups.lookups.map((l) => l.trigger + " " + l.status + " (" + l.rows + " rows)").join(", ") + (lookups.warnings.length ? "; " + lookups.warnings.join("; ") : ""));
+
 print("data folder: " + dataDir);
 
 // Three near-identical order confirmations in Outlook (learn mode), then a
@@ -99,6 +121,7 @@ assistant.recordInsert({ kind: "document", trigger: "/sld", count: 2 });
 
 focus({ process: "OUTLOOK.EXE", title: "Contract renewal - Message" });
 type("Hello,\n\nThe renewed contract is attached. ");
+type("Customer: /cust 1002 and /cust 9999 ");
 
 focus({ process: "1Password.exe", title: "1Password" });
 type("hrs/");
@@ -190,7 +213,10 @@ async function managedDesk() {
   fs.rmSync(deskDir, { recursive: true, force: true });
 }
 
-managedDesk().then(() => {
+  await managedDesk();
+}
+
+main().then(() => {
   console.log(out.join("\n"));
   fs.rmSync(dataDir, { recursive: true, force: true });
   process.exit(0);

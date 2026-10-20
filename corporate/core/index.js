@@ -13,6 +13,7 @@ module.exports = {
   keywordRules: require("./keyword-rules.js"),
   documents: require("./documents.js"),
   paletteSearch: require("./palette-search.js"),
+  lookups: require("./lookups.js"),
   orgPolicy: require("./org-policy.js"),
   policySigning: require("./policy-signing.js"),
   policySource: require("./policy-source.js"),

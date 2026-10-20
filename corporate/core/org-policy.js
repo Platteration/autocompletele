@@ -11,6 +11,7 @@ const keywords = require("./keyword-rules.js");
 const documents = require("./documents.js");
 const metrics = require("./metrics.js");
 const miner = require("./phrase-miner.js");
+const lookupsModule = require("./lookups.js");
 
 const VERSION = 1;
 
@@ -27,6 +28,7 @@ function empty() {
     capture: capture.createPolicy({}),
     keywordRules: [],
     documents: { shortcuts: [] },
+    lookups: [],
     library: [],
     learning: { minCount: miner.DEFAULTS.minCount, minLength: miner.DEFAULTS.minLength, minWords: miner.DEFAULTS.minWords },
     retention: { metricsDays: 365, corpusDays: 90 },
@@ -89,6 +91,8 @@ function merge(layers) {
   const docs = list.map((layer) => isObject(layer.documents) && Array.isArray(layer.documents.shortcuts) ? layer.documents.shortcuts : [])
     .filter((l) => l.length);
   if (docs.length) out.documents = { shortcuts: byKey(docs, "trigger") };
+  const lookups = list.map((layer) => Array.isArray(layer.lookups) ? layer.lookups : []).filter((l) => l.length);
+  if (lookups.length) out.lookups = byKey(lookups, "trigger");
   return out;
 }
 
@@ -135,6 +139,10 @@ function parse(input) {
   const catalog = documents.normalizeCatalog(source.documents);
   policy.documents = { shortcuts: catalog.shortcuts };
   policy.warnings.push(...catalog.warnings);
+
+  const lookups = lookupsModule.normalizeLookups(source.lookups);
+  policy.lookups = lookups.lookups;
+  policy.warnings.push(...lookups.warnings);
 
   const library = source.library && typeof source.library === "object" && Array.isArray(source.library.shorthands)
     ? source.library.shorthands : Array.isArray(source.library) ? source.library : [];

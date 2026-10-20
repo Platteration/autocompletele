@@ -130,10 +130,23 @@ function closePopover() {
   popoverState = null;
 }
 
+async function insertLookup(action) {
+  const resolved = assistant.resolveLookup(action);
+  if (resolved.type !== "expand") {
+    notify(resolved.message);
+    return;
+  }
+  await sender.replace(resolved);
+  assistant.lookupInserted(resolved);
+  broadcast({ metrics: true });
+}
+
 function handleAction(action) {
   switch (action.type) {
     case "expand":
       return sender.replace(action);
+    case "lookup":
+      return insertLookup(action).catch((error) => assistant.log("lookup failed: " + error));
     case "undo":
       return sender.undo(action);
     case "template":
@@ -216,6 +229,7 @@ async function refreshPolicy() {
   }
   updateTray();
   broadcast({ settings: true, status: true, policy: true });
+  refreshLookups(false).catch((error) => assistant.log("lookup refresh failed: " + error));
   return result;
 }
 
@@ -233,6 +247,20 @@ async function uploadIfDue() {
   if (!assistant.uploadDue()) return;
   await assistant.uploadReport();
   broadcast({ policy: true });
+}
+
+// Lookup data: refreshed on start and then hourly for the sources that are due.
+let lookupTimer = null;
+async function refreshLookups(all) {
+  const result = await assistant.refreshLookups(all);
+  if (result.warnings.length) assistant.log(result.warnings.join("; "));
+  broadcast({ policy: true, status: true });
+  return result;
+}
+
+function scheduleLookups() {
+  refreshLookups(false).catch((error) => assistant.log("lookup refresh failed: " + error));
+  lookupTimer = setInterval(() => { refreshLookups(false).catch((error) => assistant.log("lookup refresh failed: " + error)); }, 60 * 60 * 1000);
 }
 
 function scheduleUploads() {
@@ -287,6 +315,10 @@ async function choosePalette(choice) {
   await new Promise((resolve) => setTimeout(resolve, 150));
   const action = assistant.paletteChoose(choice);
   if (!action) return { ok: false };
+  if (action.type === "lookup-miss" || action.type === "lookup-needs-argument") {
+    notify(action.message);
+    return { ok: false, error: action.message };
+  }
   if (action.type === "expand") {
     await sender.replace(action);
     assistant.paletteInserted(action);
@@ -324,6 +356,8 @@ function registerIpc() {
   handle("palette:search", (query) => assistant.paletteSearch(String(query == null ? "" : query), 8));
   handle("palette:choose", (choice) => choosePalette(choice || null));
   handle("palette:close", () => { closePalette(); return { ok: true }; });
+  handle("lookups:status", () => assistant.lookupStatus());
+  handle("lookups:refresh", () => refreshLookups(true));
   handle("report:upload", async () => { const r = await assistant.uploadReport(); broadcast({ policy: true }); return r; });
   handle("report:uploadStatus", () => assistant.uploadStatus());
   handle("policy:info", () => assistant.policyInfo());
@@ -404,6 +438,7 @@ function start() {
   for (const warning of assistant.warnings()) notify(warning);
   schedulePolicyRefresh();
   scheduleUploads();
+  scheduleLookups();
   registerPaletteShortcut();
   updateTray();
   openDashboard();
@@ -422,6 +457,7 @@ app.on("will-quit", () => globalShortcut.unregisterAll());
 app.on("before-quit", () => {
   if (refreshTimer) clearInterval(refreshTimer);
   if (uploadTimer) clearInterval(uploadTimer);
+  if (lookupTimer) clearInterval(lookupTimer);
   if (listener) listener.stop();
   if (assistant) assistant.endSession();
 });
