@@ -32,6 +32,7 @@ function empty() {
     retention: { metricsDays: 365, corpusDays: 90 },
     paused: { active: false, message: "" },
     serial: null,
+    reporting: { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 },
     warnings: [],
   };
 }
@@ -163,6 +164,14 @@ function parse(input) {
   // Nothing is expanded, offered or learned while paused; nothing is deleted.
   policy.paused = pausedOf(source.paused);
   if (Number.isSafeInteger(source.serial) && source.serial > 0) policy.serial = source.serial;
+
+  const reporting = isObject(source.reporting) ? source.reporting : {};
+  policy.reporting.team = String(reporting.team == null ? "" : reporting.team).trim();
+  policy.reporting.hourlyRate = positive(reporting.hourlyRate, null);
+  policy.reporting.currency = typeof reporting.currency === "string" && reporting.currency.trim() ? reporting.currency.trim() : null;
+  policy.reporting.includeApps = reporting.includeApps === true;
+  policy.reporting.period = ["day", "week", "month"].includes(reporting.period) ? reporting.period : "week";
+  policy.reporting.periods = Math.min(366, Math.floor(positive(reporting.periods, 12)));
 
   const retention = source.retention && typeof source.retention === "object" ? source.retention : {};
   policy.retention.metricsDays = Math.floor(positive(retention.metricsDays, policy.retention.metricsDays));

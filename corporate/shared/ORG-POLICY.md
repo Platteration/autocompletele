@@ -23,6 +23,10 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `documents.shortcuts[]` | `trigger` (for example `/sld`), `label`, and `documents[]` with `title`, `path` (file path or URL), optional `tags` and `description`. Triggers follow the same boundary rule as text shortcuts and lose to a text shortcut with the same trigger. |
 | `learning.minCount` | Distinct messages a text must recur in before it is proposed (default 3, minimum 2). |
 | `learning.minLength`, `learning.minWords` | Smallest text worth proposing (defaults 20 characters, 4 words). |
+| `reporting.team` | Team name written into each desk's usage report. |
+| `reporting.hourlyRate`, `reporting.currency` | Used to turn hours saved into an estimated value in the roll-up. |
+| `reporting.period`, `reporting.periods` | Buckets in a usage report: `day`, `week` (default) or `month`, and how many (default 12). |
+| `reporting.includeApps` | `true` adds per-application totals to usage reports (default `false`). |
 | `retention.metricsDays` | Days of statistics kept on disk (default 365). |
 | `retention.corpusDays` | Days of learning text kept on disk (default 90). |
 
@@ -69,6 +73,24 @@ node admin/actle-admin.js verify org.signed.json --pub keys/policy-signing.pub
 
 `sign` refuses a policy that has warnings unless `--allow-warnings` is
 given, and `keygen` refuses to overwrite an existing key.
+
+## Usage reports
+
+A person exports a report from the dashboard (Overview, **Usage report…**),
+after a preview of everything in it, and hands it to the administrator. A
+report holds totals per period, the use of shortcuts, keyword rules and
+document sets the organisation defined, and one total for the person's own
+shortcuts. It never contains typed or inserted text, the names of a person's
+own shortcuts, or individual timestamps. A random desk id lets the roll-up
+count a desk once.
+
+```
+node admin/actle-admin.js report reports/*.json --policy org.json --rate 38 --currency EUR --csv team.csv
+```
+
+prints desks, hours saved, estimated value, totals per team, organisation
+shortcuts by use and the ones nobody used, and writes the same as CSV. An
+unreadable report is skipped with a warning.
 
 ## Capture modes
 

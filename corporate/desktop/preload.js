@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld("actle", {
   deleteShorthand: invoke("library:delete"),
   importLibrary: invoke("library:import"),
   exportLibrary: invoke("library:export"),
+  previewReport: invoke("report:preview"),
+  saveReport: invoke("report:save"),
   getPolicyInfo: invoke("policy:info"),
   refreshPolicy: invoke("policy:refresh"),
   getAudit: invoke("policy:audit"),

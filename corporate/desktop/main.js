@@ -146,7 +146,7 @@ async function submitPopover(payload) {
   if (state.kind === "template") {
     const rendered = personal.template.render(state.expansion, payload.values || {}, new Date(), payload.pronouns || null);
     await sender.replace({ backspaces: state.backspaces, text: rendered.text, cursorOffset: rendered.cursorOffset });
-    assistant.recordInsert({ kind: "template", trigger: state.trigger, inserted: rendered.text, typed: state.trigger });
+    assistant.recordInsert({ kind: "template", trigger: state.trigger, source: state.source, inserted: rendered.text, typed: state.trigger });
   } else if (state.kind === "documents") {
     const chosen = state.documents.filter((doc, index) => (payload.selected || []).includes(index));
     if (payload.action === "reveal") {
@@ -169,11 +169,11 @@ async function submitPopover(payload) {
       const sh = assistant.library().find((item) => item.trigger === insert.trigger);
       if (sh) {
         if (personal.template.requiresInput(sh.expansion)) {
-          handleAction({ type: "template", trigger: sh.trigger, expansion: sh.expansion, fields: personal.template.fields(sh.expansion), variables: personal.template.variables(sh.expansion), backspaces: 0 });
+          handleAction({ type: "template", trigger: sh.trigger, expansion: sh.expansion, fields: personal.template.fields(sh.expansion), variables: personal.template.variables(sh.expansion), backspaces: 0, source: sh.source });
         } else {
           const rendered = personal.template.render(sh.expansion, null, new Date());
           await sender.replace({ backspaces: 0, text: rendered.text, cursorOffset: rendered.cursorOffset });
-          assistant.recordInsert({ kind: "keyword", trigger: sh.trigger, inserted: rendered.text, typed: "" });
+          assistant.recordInsert({ kind: "keyword", trigger: hit.rule.id, inserted: rendered.text, typed: "" });
         }
       }
     } else if (insert.kind === "document") {
@@ -226,6 +226,15 @@ function registerIpc() {
     const result = await dialog.showSaveDialog({ defaultPath: "shorthands.json", filters: [{ name: "JSON", extensions: ["json"] }] });
     if (result.canceled || !result.filePath) return { ok: false, canceled: true };
     require("node:fs").writeFileSync(result.filePath, assistant.exportLibrary(), "utf8");
+    return { ok: true, path: result.filePath };
+  });
+  handle("report:preview", () => assistant.usageReport());
+  handle("report:save", async () => {
+    const report = assistant.usageReport();
+    const name = "actle-usage-" + new Date(report.generatedAt).toISOString().slice(0, 10) + ".json";
+    const result = await dialog.showSaveDialog({ defaultPath: name, filters: [{ name: "JSON", extensions: ["json"] }] });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    require("node:fs").writeFileSync(result.filePath, JSON.stringify(report, null, 2) + "\n", "utf8");
     return { ok: true, path: result.filePath };
   });
   handle("policy:info", () => assistant.policyInfo());

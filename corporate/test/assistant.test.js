@@ -131,3 +131,24 @@ test("changing one's own capture rules is recorded in the audit log", () => {
   assert.equal(changes[0].by, "person");
   assert.deepEqual(changes[0].rules, [{ label: "Slack", mode: "learn", match: { process: "slack" } }]);
 });
+
+test("the usage report uses the policy's reporting settings and a stable desk id", () => {
+  const dataDir = temp();
+  fs.writeFileSync(path.join(dataDir, "policy.json"), JSON.stringify({
+    organization: "Example", library: [{ trigger: "sig/", expansion: "Kind regards" }],
+    reporting: { team: "Shipping", hourlyRate: 42, currency: "EUR", period: "month", periods: 3 },
+  }), "utf8");
+  const assistant = createAssistant({ dataDir, now: () => new Date(2026, 9, 20, 12).getTime() });
+  assistant.saveShorthand({ trigger: "secret/", expansion: "my private text" });
+  assistant.focusChanged({ process: "notepad" });
+  for (const ch of "sig/ secret/ ") assistant.keyTyped({ text: ch });
+  const first = assistant.usageReport();
+  assert.equal(first.team, "Shipping");
+  assert.equal(first.period, "month");
+  assert.equal(first.series.length, 3);
+  assert.match(first.installId, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(first.byShortcut.map((s) => s.trigger), ["sig/"]);
+  assert.equal(first.personal.inserts, 1);
+  assert.equal(JSON.stringify(first).includes("secret"), false);
+  assert.equal(assistant.usageReport().installId, first.installId, "the desk id is kept");
+});

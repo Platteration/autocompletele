@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   captureApps: [],            // the person's own learn/off rules, same shape as policy.capture.apps
   shiftEnterForNewlines: false,
   startWithSystem: false,
+  installId: null,            // random id that lets an administrator count a desk's reports once
 });
 
 function createStore(dir) {
@@ -146,6 +147,7 @@ function createStore(dir) {
     const cpm = Number(out.charsPerMinute);
     out.charsPerMinute = Number.isFinite(cpm) && cpm > 0 ? cpm : null;
     out.captureApps = Array.isArray(out.captureApps) ? out.captureApps : [];
+    out.installId = typeof out.installId === "string" && out.installId ? out.installId : null;
     return out;
   }
 

@@ -93,3 +93,29 @@ test("usage and argument errors exit non-zero", () => {
   assert.equal(cli(["sign", "x.json", "--key"]).code, 2);
   assert.equal(cli(["verify", "x.json"]).code, 1);
 });
+
+test("report rolls up desk files, skips unreadable ones and writes CSV", () => {
+  const dir = temp();
+  const reportModule = require("../core/report.js");
+  const metrics = require("../core/metrics.js");
+  const now = new Date(2026, 9, 20, 12).getTime();
+  const make = (id, team, saved) => reportModule.buildReport([metrics.normalizeEntry({ at: now, kind: "expansion", trigger: "sig/", source: "organization", keystrokesSaved: saved }, now)],
+    { now, installId: id, team, hourlyRate: 36, currency: "EUR" });
+  fs.writeFileSync(path.join(dir, "a.json"), JSON.stringify(make("a", "Shipping", 7200)));
+  fs.writeFileSync(path.join(dir, "b.json"), JSON.stringify(make("b", "Sales", 3600)));
+  fs.writeFileSync(path.join(dir, "broken.json"), "{");
+  fs.writeFileSync(path.join(dir, "policy.json"), JSON.stringify({ library: [{ trigger: "sig/", expansion: "x" }, { trigger: "hrs/", expansion: "y" }] }));
+  const csv = path.join(dir, "out.csv");
+  const result = cli(["report", path.join(dir, "a.json"), path.join(dir, "b.json"), path.join(dir, "broken.json"), "--policy", path.join(dir, "policy.json"), "--csv", csv]);
+  assert.equal(result.code, 0, result.err);
+  assert.match(result.out, /desks:\s+2/);
+  assert.match(result.out, /time saved:\s+0\.9 h/);
+  assert.match(result.out, /estimated value:\s+32\.40 EUR at 36 per hour/);
+  assert.match(result.out, /Shipping\s+1 desks/);
+  assert.match(result.out, /never used: hrs\//);
+  assert.match(result.err, /broken\.json/);
+  assert.match(result.err, /report 3 skipped/);
+  assert.match(fs.readFileSync(csv, "utf8"), /^section,name,desks/);
+  assert.equal(cli(["report", path.join(dir, "a.json"), "--rate", "-1"]).code, 1);
+  assert.equal(cli(["report", path.join(dir, "broken.json")]).code, 1, "no readable report is a failure");
+});

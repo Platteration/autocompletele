@@ -125,6 +125,12 @@ for (const c of candidates) {
   }
 }
 
+const usage = assistant.usageReport();
+print("\nUsage report (what this desk would send)");
+print(`  ${usage.totals.inserts} inserts, ${usage.totals.keystrokesSaved} keystrokes, ${usage.totals.secondsSaved} s over ${usage.series.length} ${usage.period}s`);
+print("  organisation shortcuts: " + usage.byShortcut.map((s) => s.kind + " " + s.trigger + " x" + s.inserts).join(", "));
+print(`  own shortcuts: ${usage.personal.inserts} inserts, not named; typed text included: ${JSON.stringify(usage).includes("Thanks for reaching out") ? "YES" : "no"}`);
+
 const sessions = assistant.store.loadSessions();
 print(`\nCorpus on disk: ${sessions.length} session(s); secrets scrubbed: ${sessions.some((s) => s.text.includes("[card]") && s.text.includes("[redacted]")) ? "yes" : "NO"}`);
 print("Store warnings: " + (assistant.store.warnings().join("; ") || "none"));

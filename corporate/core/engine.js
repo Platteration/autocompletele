@@ -141,7 +141,7 @@ function createEngine(options) {
     }
     const rendered = template.render(sh.expansion, null, new Date(now()));
     undo = { trigger: sh.trigger, text: rendered.text, cursorOffset: rendered.cursorOffset };
-    pendingRecord = { kind: "expansion", trigger: sh.trigger, inserted: rendered.text, typed: sh.trigger, app: appName() };
+    pendingRecord = { kind: "expansion", trigger: sh.trigger, source: sh.source, inserted: rendered.text, typed: sh.trigger, app: appName() };
     sessionReplaceTail(sh.trigger.length, rendered.text);
     return {
       type: "expand",
@@ -241,7 +241,9 @@ function createEngine(options) {
     const fixedSeconds = kind === "document"
       ? Math.max(1, Math.floor(Number(data.count) || 1)) * policy.typing.secondsPerAttachment
       : Number(data.fixedSeconds) || 0;
-    return ledger.record({ kind, trigger: data.trigger, inserted, typed, fixedSeconds, app: appName() });
+    // Keyword rules and document sets only exist in the organisation policy.
+    const source = kind === "document" || kind === "keyword" ? "organization" : data.source;
+    return ledger.record({ kind, trigger: data.trigger, source, inserted, typed, fixedSeconds, app: appName() });
   }
 
   function setLibrary(next) {

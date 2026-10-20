@@ -6,12 +6,14 @@
 //   node admin/actle-admin.js verify <signed.json> --pub <public.pem> [--pub <other.pem>]
 //   node admin/actle-admin.js validate <policy.json | signed.json>
 //   node admin/actle-admin.js layers <org.json> [<team.json> ...]
+//   node admin/actle-admin.js report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
 "use strict";
 
 const fs = require("node:fs");
 const path = require("node:path");
 const signing = require("../core/policy-signing.js");
 const orgPolicy = require("../core/org-policy.js");
+const report = require("../core/report.js");
 
 const USAGE = `actle Corporate admin tool
 
@@ -21,7 +23,9 @@ const USAGE = `actle Corporate admin tool
   verify <signed.json> --pub <file> [--pub <file>]
                                   check a signed policy against public keys
   validate <file>                 parse a plain or signed policy and list problems
-  layers <file> [<file> ...]      show the result of layering policies, most general first`;
+  layers <file> [<file> ...]      show the result of layering policies, most general first
+  report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
+                                  roll desks' usage reports up into a team view`;
 
 function parseArgs(argv) {
   const positional = [];
@@ -172,6 +176,50 @@ function run(argv, io) {
         out("layered " + rest.length + " file(s), most general first\n" + summary(parsed));
         for (const warning of parsed.warnings) err("warning: " + warning);
         return parsed.warnings.length ? 1 : 0;
+      }
+      case "report": {
+        if (!rest.length) throw new Error("report needs at least one usage report file");
+        const reports = [];
+        const unreadable = [];
+        for (const file of rest) {
+          try {
+            reports.push(JSON.parse(fs.readFileSync(file, "utf8")));
+          } catch (error) {
+            // One unreadable file must not stop the roll-up of the others.
+            unreadable.push(file + ": " + error.message);
+            reports.push(null);
+          }
+        }
+        const policyFile = one(args.flags, "policy");
+        const policy = policyFile ? orgPolicy.parse(policyFrom(policyFile).policy) : null;
+        const rate = one(args.flags, "rate");
+        if (rate !== undefined && !(Number(rate) > 0)) throw new Error("--rate must be a positive number");
+        const merged = report.mergeReports(reports, {
+          hourlyRate: rate === undefined ? undefined : Number(rate),
+          currency: one(args.flags, "currency"),
+          organizationShortcuts: report.organizationShortcuts(policy),
+        });
+        for (const line of unreadable) err("warning: " + line);
+        for (const warning of merged.warnings) err("warning: " + warning);
+        const hours = (s) => (s / 3600).toFixed(1) + " h";
+        out("desks:            " + merged.desks);
+        if (merged.range) out("period:           " + new Date(merged.range.from).toISOString().slice(0, 10) + " to " + new Date(merged.range.to - 1).toISOString().slice(0, 10));
+        out("inserts:          " + merged.totals.inserts);
+        out("keystrokes saved: " + merged.totals.keystrokesSaved);
+        out("time saved:       " + hours(merged.totals.secondsSaved));
+        if (merged.value) out("estimated value:  " + merged.value.amount.toFixed(2) + (merged.value.currency ? " " + merged.value.currency : "") + " at " + merged.value.hourlyRate + " per hour");
+        out("personal shortcuts (not itemised): " + merged.personal.inserts + " inserts");
+        if (merged.byTeam.length) out("\nby team");
+        for (const t of merged.byTeam) out("  " + t.team.padEnd(20) + String(t.desks).padStart(4) + " desks " + hours(t.secondsSaved).padStart(10));
+        if (merged.byShortcut.length) out("\norganisation shortcuts by use");
+        for (const s of merged.byShortcut) out("  " + (s.kind + " " + s.trigger).padEnd(30) + String(s.inserts).padStart(6) + " inserts on " + s.desks + " desk(s)");
+        if (merged.unused.length) out("\nnever used: " + merged.unused.map((s) => (s.kind ? s.kind + " " : "") + s.trigger).join(", "));
+        const csvFile = one(args.flags, "csv");
+        if (csvFile) {
+          fs.writeFileSync(csvFile, report.toCsv(merged), "utf8");
+          out("\nCSV written to " + csvFile);
+        }
+        return merged.desks ? 0 : 1;
       }
       case undefined:
       case "help":

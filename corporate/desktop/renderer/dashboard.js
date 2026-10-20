@@ -286,6 +286,36 @@
     if (!policy.documents.length) docs.append(el("p", { class: "hint", text: "No document shortcuts in the policy." }));
   }
 
+  // Usage report preview and export
+  async function openReport() {
+    const report = await api.previewReport();
+    const rows = [
+      ["Organisation", report.organization || "(not named)"],
+      ["Team", report.team || "(not set)"],
+      ["Period", new Date(report.range.from).toLocaleDateString() + " to " + new Date(report.range.to - 1).toLocaleDateString() + " (" + report.series.length + " " + report.period + "s)"],
+      ["Inserts", report.totals.inserts],
+      ["Keystrokes saved", report.totals.keystrokesSaved],
+      ["Estimated time saved", seconds(report.totals.secondsSaved)],
+      ["Organisation shortcuts used", report.byShortcut.map((s) => s.trigger + " (" + s.inserts + ")").join(", ") || "none"],
+      ["Your own shortcuts", report.personal.inserts + " inserts, not named"],
+      ["Applications", report.byApp ? report.byApp.map((a) => a.app).join(", ") || "none" : "not included"],
+      ["Desk id", report.installId],
+    ];
+    const body = $("report-summary");
+    body.textContent = "";
+    for (const [label, value] of rows) body.append(el("tr", {}, [el("th", { scope: "row", text: label }), el("td", { text: value })]));
+    $("report").showModal();
+  }
+  $("report-open").addEventListener("click", () => { openReport().catch(console.error); });
+  $("report-cancel").addEventListener("click", () => $("report").close());
+  $("report-save").addEventListener("click", async () => {
+    const result = await api.saveReport();
+    if (result && result.ok) {
+      $("report").close();
+      announce("Report saved to " + result.path);
+    }
+  });
+
   // Policy sources and the change log
   function auditDetail(entry) {
     switch (entry.event) {

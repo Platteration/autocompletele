@@ -100,3 +100,11 @@ test("the kill switch pauses from any layer and carries a message", () => {
   assert.equal(orgPolicy.parse({ serial: 12 }).serial, 12);
   assert.equal(orgPolicy.parse({ serial: -1 }).serial, null);
 });
+
+test("reporting settings are validated with safe defaults", () => {
+  assert.deepEqual(orgPolicy.parse({}).reporting, { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 });
+  assert.deepEqual(orgPolicy.parse({ reporting: { team: " Ops ", hourlyRate: "45", currency: "USD", includeApps: true, period: "month", periods: 999 } }).reporting,
+    { team: "Ops", hourlyRate: 45, currency: "USD", includeApps: true, period: "month", periods: 366 });
+  assert.deepEqual(orgPolicy.parse({ reporting: { hourlyRate: -3, includeApps: "yes", period: "year" } }).reporting,
+    { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12 });
+});

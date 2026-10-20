@@ -5,6 +5,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const core = require("../core/index.js");
 const learning = require("./learning.js");
 
@@ -247,6 +248,26 @@ function createAssistant(options) {
     return saveSettings({ enabled: value !== false });
   }
 
+  /** The counts-only report this desk would send to its organisation. */
+  function usageReport() {
+    if (!userSettings.installId) {
+      store.saveSettings(Object.assign({}, userSettings, { installId: crypto.randomUUID() }));
+      userSettings = store.loadSettings();
+    }
+    return core.report.buildReport(ledger.entries(), {
+      now: settings.now(),
+      period: policy.reporting.period,
+      count: policy.reporting.periods,
+      charsPerMinute: policy.typing.charsPerMinute,
+      installId: userSettings.installId,
+      team: policy.reporting.team,
+      organization: policy.organization,
+      includeApps: policy.reporting.includeApps,
+      hourlyRate: policy.reporting.hourlyRate,
+      currency: policy.reporting.currency,
+    });
+  }
+
   function policyInfo() {
     return {
       organization: policy.organization,
@@ -259,6 +280,7 @@ function createAssistant(options) {
       learning: Object.assign({}, policy.learning),
       retention: Object.assign({}, policy.retention),
       paused: Object.assign({}, policy.paused),
+      reporting: Object.assign({}, policy.reporting),
       managed,
       refreshMinutes: managed ? policySource.deployment.refreshMinutes : null,
       sources: sourceReport.sources.map((source) => Object.assign({}, source)),
@@ -297,6 +319,7 @@ function createAssistant(options) {
     byApp: (query) => ledger.byApp(query),
     warnings: () => warnings.concat(sourceReport.warnings, policy.warnings, store.warnings()),
     refreshPolicy,
+    usageReport,
     audit: (limit) => store.loadAudit(limit),
     get managed() { return managed; },
     get paused() { return policy.paused.active; },

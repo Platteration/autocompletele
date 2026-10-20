@@ -16,5 +16,6 @@ module.exports = {
   policySigning: require("./policy-signing.js"),
   policySource: require("./policy-source.js"),
   engine: require("./engine.js"),
+  report: require("./report.js"),
   store: require("./store.js"),
 };

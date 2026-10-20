@@ -189,3 +189,15 @@ test("an organisation pause turns everything off until the policy lifts it", () 
   assert.equal(engine.mode, "triggers");
   assert.equal(engine.type("x/")[0].text, "X");
 });
+
+test("statistics remember whether a shortcut came from the organisation or the person", () => {
+  const engine = make();
+  engine.focusChanged({ process: "notepad" });
+  engine.type("cool/ sig/ ");
+  engine.recordInsert({ kind: "document", trigger: "/sld", count: 1 });
+  engine.recordInsert({ kind: "keyword", trigger: "refund", inserted: "x", source: "personal" });
+  engine.recordInsert({ kind: "template", trigger: "ack/", inserted: "Hi Sam", typed: "ack/", source: "organization" });
+  assert.deepEqual(engine.ledger.entries().map((e) => [e.trigger, e.source]), [
+    ["cool/", "personal"], ["sig/", "organization"], ["/sld", "organization"], ["refund", "organization"], ["ack/", "organization"],
+  ]);
+});
