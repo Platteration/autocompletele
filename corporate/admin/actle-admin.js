@@ -8,7 +8,7 @@
 //   node admin/actle-admin.js layers <org.json> [<team.json> ...]
 //   node admin/actle-admin.js report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
 //   node admin/actle-admin.js suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
-//   node admin/actle-admin.js license issue --key <vendor.key> --org <name> --seats N --expires YYYY-MM-DD [--grace DAYS] [--id ID] [--out <file>]
+//   node admin/actle-admin.js license issue --key <vendor.key> --org <name> --seats N --expires YYYY-MM-DD [--tier team|business|enterprise] [--grace DAYS] [--id ID] [--out <file>]
 //   node admin/actle-admin.js license show <token|file|policy.json> [--pub <vendor.pub>]
 "use strict";
 
@@ -24,18 +24,19 @@ const { normalizeDeployment } = require("../core/policy-source.js");
 const USAGE = `actle Corporate admin tool
 
   keygen <dir>                    create policy-signing.key (keep secret) and policy-signing.pub
-  sign <policy.json> --key <file> [--serial N] [--layer NAME] [--out <file>] [--allow-warnings]
-                                  sign a policy for distribution
+  sign <policy.json> --key <file> [--serial N] [--layer NAME] [--tier NAME] [--out <file>] [--allow-warnings]
+                                  sign a policy for distribution; refuses over the tier's caps unless --allow-warnings
   verify <signed.json> --pub <file> [--pub <file>]
                                   check a signed policy against public keys
-  validate <file>                 parse a plain or signed policy and list problems
-  layers <file> [<file> ...]      show the result of layering policies, most general first
+  validate <file> [--tier NAME]   parse a plain or signed policy and list problems, including the tier's caps
+  layers <file> [<file> ...] [--tier NAME]
+                                  show the result of layering policies, most general first
   report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
                                   roll desks' usage reports up into a team view
   suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
                                   rank phrases people suggested; write a library to review
-  license issue --key <vendor.key> --org <name> --seats N --expires YYYY-MM-DD [--grace DAYS] [--id ID] [--out <file>]
-                                  issue a business licence token (vendor only)
+  license issue --key <vendor.key> --org <name> --seats N --expires YYYY-MM-DD [--tier team|business|enterprise] [--grace DAYS] [--id ID] [--out <file>]
+                                  issue a business licence token (vendor only); the tier defaults to business
   license show <token | file with the token | policy.json> [--pub <vendor.pub>]
                                   print what a licence token says and, with --pub, whether it verifies
   deployment --pub <file> [--pub <file>] --source layer=NAME,label=TEXT,url=https://… [--source …] [--refresh MINUTES] --out <deployment.json>
@@ -112,6 +113,43 @@ function policyFrom(file) {
   return { signed: false, policy: value, text };
 }
 
+/** The payload of a licence token, decoded but not verified (the desk verifies; here it only names the tier). */
+function decodeLicence(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 3 || parts[0] !== license.PREFIX) return null;
+    return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Which tier a policy's caps are checked against: --tier, else the licence
+ * token found in the raw policies (unverified). Returns { tier, how } or null.
+ */
+function tierFor(flags, rawPolicies) {
+  const flag = one(flags, "tier");
+  if (flag !== undefined) {
+    if (!license.TIERS[flag]) throw new Error("--tier must be one of " + license.TIER_IDS.join(", "));
+    return { tier: flag, how: "from --tier" };
+  }
+  for (const raw of rawPolicies) {
+    const payload = raw && typeof raw === "object" ? decodeLicence(raw.licence) : null;
+    if (payload) return { tier: license.tierOfLicence(payload), how: "from the licence in the policy, not verified" };
+  }
+  return null;
+}
+
+/** The tier line for a command's output and the cap warnings to add to the policy's own. */
+function tierCheck(parsed, found, layers) {
+  if (!found) return { line: "tier:             not known (no licence in these files; pass --tier); caps not checked", warnings: [] };
+  return {
+    line: "tier:             " + license.TIERS[found.tier].name + " (" + found.how + ")",
+    warnings: license.tierWarnings(parsed, found.tier, { layers }),
+  };
+}
+
 function summary(policy) {
   const lines = [];
   lines.push("organisation:     " + (policy.organization || "(not named)"));
@@ -163,8 +201,10 @@ function run(argv, io) {
         const layerFlag = one(args.flags, "layer");
         if (layerFlag !== undefined) value.layer = layerFlag;
         const parsed = orgPolicy.parse(value);
-        for (const warning of parsed.warnings) err("warning: " + warning);
-        if (parsed.warnings.length && !args.flags["allow-warnings"]) {
+        const tier = tierCheck(parsed, tierFor(args.flags, [value]), 1);
+        const warnings = parsed.warnings.concat(tier.warnings);
+        for (const warning of warnings) err("warning: " + warning);
+        if (warnings.length && !args.flags["allow-warnings"]) {
           throw new Error("not signed: fix the warnings above or pass --allow-warnings");
         }
         const envelope = signing.signPolicy(value, fs.readFileSync(keyFile, "utf8"));
@@ -202,21 +242,26 @@ function run(argv, io) {
         if (!file) throw new Error("validate needs a file");
         const source = policyFrom(file);
         const parsed = orgPolicy.parse(source.policy);
-        out((source.signed ? "signed policy (key " + source.keyId + ", signature not checked; use verify)" : "plain policy") + "\n" + summary(parsed));
-        for (const warning of parsed.warnings) err("warning: " + warning);
-        return parsed.warnings.length ? 1 : 0;
+        const tier = tierCheck(parsed, tierFor(args.flags, [source.policy]), 1);
+        out((source.signed ? "signed policy (key " + source.keyId + ", signature not checked; use verify)" : "plain policy") + "\n" + summary(parsed) + "\n" + tier.line);
+        const warnings = parsed.warnings.concat(tier.warnings);
+        for (const warning of warnings) err("warning: " + warning);
+        return warnings.length ? 1 : 0;
       }
       case "layers": {
         if (!rest.length) throw new Error("layers needs at least one file");
-        const merged = orgPolicy.merge(rest.map((file) => policyFrom(file).policy));
+        const raw = rest.map((file) => policyFrom(file).policy);
+        const merged = orgPolicy.merge(raw);
         if (args.flags.json) {
           out(JSON.stringify(merged, null, 2));
           return 0;
         }
         const parsed = orgPolicy.parse(merged);
-        out("layered " + rest.length + " file(s), most general first\n" + summary(parsed));
-        for (const warning of parsed.warnings) err("warning: " + warning);
-        return parsed.warnings.length ? 1 : 0;
+        const tier = tierCheck(parsed, tierFor(args.flags, [merged]), rest.length);
+        out("layered " + rest.length + " file(s), most general first\n" + summary(parsed) + "\n" + tier.line);
+        const warnings = parsed.warnings.concat(tier.warnings);
+        for (const warning of warnings) err("warning: " + warning);
+        return warnings.length ? 1 : 0;
       }
       case "report": {
         if (!rest.length) throw new Error("report needs at least one usage report file");
@@ -257,16 +302,17 @@ function run(argv, io) {
         if (merged.unused.length) out("\nnever used: " + merged.unused.map((s) => (s.kind ? s.kind + " " : "") + s.trigger).join(", "));
         for (const row of merged.licences) {
           let seats = null;
-          if (policy && policy.licence) {
-            try {
-              const payload = JSON.parse(Buffer.from(policy.licence.split(".")[1], "base64url").toString("utf8"));
-              if (payload.id === row.id) seats = payload.seats;
-            } catch (error) {
-              seats = null;
-            }
+          let tier = null;
+          const payload = policy && policy.licence ? decodeLicence(policy.licence) : null;
+          if (payload && payload.id === row.id) {
+            seats = payload.seats;
+            tier = license.tierOfLicence(payload);
           }
-          out("licence " + row.id + ": " + row.desks + " desk(s)" + (seats != null ? " of " + seats + " seats" : ""));
+          out("licence " + row.id + ": " + row.desks + " desk(s)" + (seats != null ? " of " + seats + " seats" : "") + (tier ? ", " + license.TIERS[tier].name + " tier" : ""));
           if (seats != null && row.desks > seats) err("warning: licence " + row.id + " is over its " + seats + " seats by " + (row.desks - seats));
+          for (const t of row.tiers || []) {
+            if (tier && t.tier !== tier) err("warning: licence " + row.id + ": " + t.desks + " desk(s) report the " + (license.TIERS[t.tier] ? license.TIERS[t.tier].name : t.tier) + " tier, not the licence's " + license.TIERS[tier].name + " (a testing override, or an older version)");
+          }
         }
         if (merged.complianceWarnings.shown) {
           out("\ncompliance warnings shown: " + merged.complianceWarnings.shown);
@@ -316,9 +362,12 @@ function run(argv, io) {
           const expires = one(args.flags, "expires");
           if (!keyFile || !org || !expires || !(seats >= 1)) throw new Error("license issue needs --key, --org, --seats and --expires");
           const graceFlag = one(args.flags, "grace");
+          const tierFlag = one(args.flags, "tier");
+          if (tierFlag !== undefined && !license.LICENSED_TIERS.includes(tierFlag)) throw new Error("--tier must be one of " + license.LICENSED_TIERS.join(", "));
           const token = license.issueLicence({
             id: one(args.flags, "id") || "LIC-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
             organization: org,
+            tier: tierFlag === undefined ? "business" : tierFlag,
             seats: Math.floor(seats),
             issuedAt: new Date().toISOString().slice(0, 10),
             expiresAt: expires,
@@ -349,6 +398,11 @@ function run(argv, io) {
           const parts = String(token || "").split(".");
           if (parts.length !== 3 || parts[0] !== license.PREFIX) throw new Error("no business licence token found");
           const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+          const tier = license.tierOfLicence(payload);
+          const caps = license.TIERS[tier].limits;
+          const cap = (v) => (v == null ? "no limit" : String(v));
+          out("tier:".padEnd(14) + license.TIERS[tier].name + (payload.version === 2 ? "" : " (version 1 licence: no tier field, counts as Business)"));
+          out("caps:".padEnd(14) + cap(caps.seats) + " seats, " + cap(caps.shortcuts) + " organisation shortcuts, " + cap(caps.layers) + " policy layers");
           for (const key of ["id", "organization", "seats", "issuedAt", "expiresAt", "graceDays"]) out((key + ":").padEnd(14) + payload[key]);
           const pubs = (args.flags.pub || []).map((file) => fs.readFileSync(file, "utf8"));
           if (pubs.length) {

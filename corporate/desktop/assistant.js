@@ -79,8 +79,10 @@ function createAssistant(options) {
   }
   if (!managed && rawPolicy == null && settings.policy) rawPolicy = settings.policy;
 
-  // Licence state of this desk, recomputed with every policy.
+  // Licence state and tier of this desk, recomputed with every policy.
   let licence = { status: "unenforced", reason: "", licence: null, keyId: null, daysLeft: null };
+  let entitlement = core.license.entitlements(licence);
+  let untrimmed = { shortcuts: 0, layers: 0 };
 
   function buildPolicy() {
     let policy = core.orgPolicy.parse(rawPolicy == null ? {} : rawPolicy);
@@ -89,12 +91,17 @@ function createAssistant(options) {
       publicKeys: settings.vendorPublicKeys,
       organization: policy.organization,
     });
+    // The person's testing override: any tier while licensing is unenforced, otherwise only
+    // when the policy allows it and only downwards (see core/license.js).
+    entitlement = core.license.entitlements(licence, { override: userSettings.tierOverride, allowOverride: policy.licensing.allowTierOverride });
+    const layers = managed ? sourceReport.layers.length : rawPolicy == null ? 0 : 1;
+    untrimmed = core.license.usage(policy, layers);
     // The person's own capture rules take precedence over the organisation's.
     const own = core.capturePolicy.createPolicy({ defaultMode: policy.capture.defaultMode, apps: userSettings.captureApps });
     policy.capture = { defaultMode: policy.capture.defaultMode, apps: own.apps.concat(policy.capture.apps), warnings: policy.capture.warnings.concat(own.warnings) };
     if (userSettings.charsPerMinute) policy.typing.charsPerMinute = userSettings.charsPerMinute;
     // The tier is applied last so that a person's own learn rule cannot restore learning on an unlicensed desk.
-    return core.license.applyTier(policy, core.license.entitlements(licence));
+    return core.license.applyTier(policy, entitlement, { layers });
   }
 
   let policy = buildPolicy();
@@ -144,9 +151,9 @@ function createAssistant(options) {
         audit({ event: key === "ok" ? "policy-source-recovered" : "policy-source-problem", source: source.label, location: source.location, status: source.status, error: source.error || null });
       }
     }
-    const licenceKey = licence.status + ":" + (licence.licence ? licence.licence.id : "");
+    const licenceKey = licence.status + ":" + (licence.licence ? licence.licence.id : "") + ":" + entitlement.licensedTier;
     if (state.licence !== licenceKey && licence.status !== "unenforced") {
-      audit({ event: "licence-changed", status: licence.status, id: licence.licence ? licence.licence.id : null, seats: licence.licence ? licence.licence.seats : null, expiresAt: licence.licence ? licence.licence.expiresAt : null });
+      audit({ event: "licence-changed", status: licence.status, tier: entitlement.licensedTier, id: licence.licence ? licence.licence.id : null, seats: licence.licence ? licence.licence.seats : null, expiresAt: licence.licence ? licence.licence.expiresAt : null });
     }
     if (state.hash !== hash) {
       audit({
@@ -304,12 +311,16 @@ function createAssistant(options) {
   function saveSettings(next) {
     const merged = Object.assign({}, userSettings, next || {});
     const before = JSON.stringify(userSettings.captureApps || []);
+    const overrideBefore = userSettings.tierOverride;
     store.saveSettings(merged);
     userSettings = store.loadSettings();
     if (JSON.stringify(userSettings.captureApps || []) !== before) {
       audit({ event: "capture-rules-changed", by: "person", rules: userSettings.captureApps.map((rule) => ({ label: rule.label || null, mode: rule.mode || null, match: rule.match || { process: rule.process, title: rule.title, bundleId: rule.bundleId } })) });
     }
     policy = buildPolicy();
+    if (userSettings.tierOverride !== overrideBefore) {
+      audit({ event: "tier-override-changed", by: "person", from: overrideBefore, to: userSettings.tierOverride, honoured: entitlement.override.honoured, note: entitlement.override.note || null });
+    }
     applyEngineSettings();
     buildLookupStore();
     cachedCandidates = null;
@@ -419,6 +430,7 @@ function createAssistant(options) {
       hourlyRate: policy.reporting.hourlyRate,
       currency: policy.reporting.currency,
       licenceId: licence.licence ? licence.licence.id : "",
+      tier: entitlement.tier,
     });
   }
 
@@ -473,12 +485,21 @@ function createAssistant(options) {
   });
 
   function licenceInfo() {
-    const ent = core.license.entitlements(licence);
+    const ent = entitlement;
     return {
       status: licence.status,
       reason: licence.reason,
       enforced: ent.enforced,
-      entitled: ent.learning,
+      entitled: ent.tier !== "free",
+      tier: ent.tier,
+      tierName: ent.name,
+      tierSource: ent.source,
+      licensedTier: ent.licensedTier,
+      limits: Object.assign({}, ent.limits),
+      features: Object.assign({}, ent.features),
+      usage: Object.assign({}, untrimmed),
+      override: Object.assign({}, ent.override),
+      tierNote: core.license.tierNote(ent.tier),
       id: licence.licence ? licence.licence.id : null,
       organization: licence.licence ? licence.licence.organization : null,
       seats: licence.licence ? licence.licence.seats : null,

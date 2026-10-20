@@ -115,17 +115,18 @@ test("warnings are reported per rule id, never as inserts, and the licence id tr
     { at: T(2026, 10, 20, 11), kind: "warning", trigger: "card-numbers", source: "organization", keystrokesSaved: 0, app: "outlook" },
     { at: T(2026, 10, 20, 12), kind: "warning", trigger: "contract-disclaimer", source: "organization", keystrokesSaved: 0, app: "outlook" },
   ].map((e) => metrics.normalizeEntry(e, NOW)));
-  const r = report.buildReport(withWarnings, { now: NOW, period: "week", count: 2, installId: "a", licenceId: "LIC-42" });
+  const r = report.buildReport(withWarnings, { now: NOW, period: "week", count: 2, installId: "a", licenceId: "LIC-42", tier: "team" });
   assert.equal(r.licenceId, "LIC-42");
+  assert.equal(r.tier, "team");
   assert.deepEqual(r.warnings, { shown: 3, byRule: [{ id: "card-numbers", count: 2 }, { id: "contract-disclaimer", count: 1 }] });
   assert.equal(r.totals.inserts, 6, "warnings are not inserts");
   assert.equal(r.byShortcut.some((s) => s.kind === "warning"), false);
   assert.equal(r.byKind.warning, 3);
   assert.equal(JSON.stringify(r).includes("Card numbers must not"), false, "a rule's message text never appears");
-  const b = report.buildReport(withWarnings, { now: NOW, period: "week", count: 2, installId: "b", licenceId: "LIC-42" });
+  const b = report.buildReport(withWarnings, { now: NOW, period: "week", count: 2, installId: "b", licenceId: "LIC-42", tier: "free" });
   const merged = report.mergeReports([r, b, report.buildReport([], { now: NOW, installId: "c" })]);
   assert.deepEqual(merged.complianceWarnings, { shown: 6, byRule: [{ id: "card-numbers", count: 4 }, { id: "contract-disclaimer", count: 2 }] });
-  assert.deepEqual(merged.licences, [{ id: "LIC-42", desks: 2 }]);
+  assert.deepEqual(merged.licences, [{ id: "LIC-42", desks: 2, tiers: [{ tier: "free", desks: 1 }, { tier: "team", desks: 1 }] }], "desks per tier show who runs a testing override");
   assert.equal(merged.totals.inserts, 12);
   const csv = report.toCsv(merged);
   assert.ok(csv.includes("warning,card-numbers,,4,,"), csv);

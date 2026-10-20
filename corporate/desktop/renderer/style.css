@@ -18,6 +18,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 syst
 header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
 header h1 { margin: 0; font-size: 18px; color: var(--accent); }
 header .org { color: var(--muted); }
+header .badge-testing { background: var(--slot); color: var(--slot-text); padding: 1px 10px; border-radius: 999px; font-size: 12px; }
 header .spacer { flex: 1; }
 nav { display: flex; gap: 4px; padding: 8px 20px 0; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 nav button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 12px; color: var(--muted); font: inherit; cursor: pointer; }

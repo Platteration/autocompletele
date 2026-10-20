@@ -42,10 +42,13 @@ adds what a business asks for:
 - **Phrase suggestions**: a person can suggest learned proposals to the
   organisation; the administrator ranks suggestions across desks and turns
   the best into shared shortcuts.
-- **Per-seat licensing**: a vendor-signed licence inside the policy; an
-  unlicensed or expired desk keeps shortcuts and statistics and loses the
-  organisation features, never the ability to type. Seats are counted in the
-  administrator's roll-up.
+- **Tiered licensing**: Free, Team, Business and Enterprise, carried as a
+  vendor-signed licence inside the policy and capped by seats, organisation
+  shortcuts and policy layers. A desk over a cap keeps the first entries and
+  warns; an unlicensed or expired desk keeps shortcuts and statistics and
+  loses the organisation features, never the ability to type. Seats are
+  counted in the administrator's roll-up. For internal testing a desk can be
+  switched to any tier on the Policy tab.
 - **Usage reports**: a counts-only report a person previews and exports, and
   an administrator roll-up with hours saved per team, estimated value,
   shortcuts by use and shortcuts nobody uses.
@@ -95,7 +98,7 @@ corporate/
     org-policy.js             the organisation policy parser and layer merge (skips bad parts, never refuses)
     policy-signing.js         Ed25519 signing and verification of policy files
     policy-source.js          fetch signed layers, verify, refuse replays, keep the last good copy
-    license.js                vendor-signed per-seat licences, licence state, free tier
+    license.js                vendor-signed licences, the tier table, licence state, caps and the testing override
     report.js                 counts-only usage reports, team roll-up, CSV
     report-upload.js          opt-in https upload of the report, HMAC-signed with the policy's token
     suggestions.js            phrase suggestions a person shares, ranked across desks
@@ -195,7 +198,8 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
   notarisation credentials) is the organisation's to add. Linux `.deb`
   installs do not self-update.
 - Licensing is built but not enforced until the vendor's public key is pasted
-  into `core/license.js` (see ORG-POLICY.md, Licensing).
+  into `core/license.js` (see ORG-POLICY.md, Licensing); until then every desk
+  runs as Enterprise unless its testing override says otherwise.
 - Keyboard layouts beyond the ten built in, and input methods (IME).
 - Attaching files is done through Outlook COM, Thunderbird or pasted file
   references; a client that accepts none of these gets the paths as text.

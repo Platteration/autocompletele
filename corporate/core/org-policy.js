@@ -35,6 +35,7 @@ function empty() {
     paused: { active: false, message: "" },
     serial: null,
     licence: null,
+    licensing: { allowTierOverride: false },
     updates: { url: null, channel: "latest" },
     reporting: { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12, endpoint: null, uploadEvery: "week", uploadToken: null },
     warnings: [],
@@ -75,7 +76,7 @@ function merge(layers) {
     if (typeof layer.organization === "string") out.organization = layer.organization;
     if (typeof layer.licence === "string" && layer.licence.trim()) out.licence = layer.licence;
     if (isObject(layer.updates) && typeof layer.updates.url === "string" && layer.updates.url.trim()) out.updates = Object.assign({}, layer.updates);
-    for (const section of ["typing", "learning", "retention", "reporting"]) {
+    for (const section of ["typing", "learning", "retention", "reporting", "licensing"]) {
       if (isObject(layer[section])) out[section] = Object.assign({}, out[section], layer[section]);
     }
     if (layer.paused && !(out.paused && pausedOf(out.paused).active)) out.paused = layer.paused;
@@ -96,6 +97,29 @@ function merge(layers) {
   const lookups = list.map((layer) => Array.isArray(layer.lookups) ? layer.lookups : []).filter((l) => l.length);
   if (lookups.length) out.lookups = byKey(lookups, "trigger");
   return out;
+}
+
+/**
+ * Keyword rules may only point at shortcuts and document sets that exist. Runs
+ * at parse time and again when a tier trims the library. Filters in place and
+ * adds a warning per dropped rule.
+ */
+function dropDanglingRules(policy) {
+  const triggers = new Set(policy.library.map((sh) => sh.trigger));
+  const shortcuts = new Set(policy.documents.shortcuts.map((s) => s.trigger));
+  policy.keywordRules = policy.keywordRules.filter((rule) => {
+    if (!rule.insert) return true;
+    if (rule.insert.kind === "shorthand" && !triggers.has(rule.insert.trigger)) {
+      policy.warnings.push("keyword rule " + rule.id + " ignored: shortcut " + rule.insert.trigger + " is not in the policy library");
+      return false;
+    }
+    if (rule.insert.kind === "document" && !shortcuts.has(rule.insert.shortcut)) {
+      policy.warnings.push("keyword rule " + rule.id + " ignored: document shortcut " + rule.insert.shortcut + " is not in the policy");
+      return false;
+    }
+    return true;
+  });
+  return policy;
 }
 
 function pausedOf(value) {
@@ -152,21 +176,12 @@ function parse(input) {
   if (Array.isArray(library) && policy.library.length !== library.length) {
     policy.warnings.push((library.length - policy.library.length) + " library entries ignored (empty or duplicate trigger)");
   }
-  // Keyword rules may only point at shortcuts and document sets that exist.
-  const triggers = new Set(policy.library.map((sh) => sh.trigger));
-  const shortcuts = new Set(policy.documents.shortcuts.map((s) => s.trigger));
-  policy.keywordRules = policy.keywordRules.filter((rule) => {
-    if (!rule.insert) return true;
-    if (rule.insert.kind === "shorthand" && !triggers.has(rule.insert.trigger)) {
-      policy.warnings.push("keyword rule " + rule.id + " ignored: shortcut " + rule.insert.trigger + " is not in the policy library");
-      return false;
-    }
-    if (rule.insert.kind === "document" && !shortcuts.has(rule.insert.shortcut)) {
-      policy.warnings.push("keyword rule " + rule.id + " ignored: document shortcut " + rule.insert.shortcut + " is not in the policy");
-      return false;
-    }
-    return true;
-  });
+  dropDanglingRules(policy);
+
+  // Whether a person may try another tier on the Policy tab while licensing is enforced (see core/license.js).
+  const licensing = isObject(source.licensing) ? source.licensing : {};
+  if (licensing.allowTierOverride !== undefined && typeof licensing.allowTierOverride !== "boolean") policy.warnings.push("licensing.allowTierOverride ignored: use true or false");
+  policy.licensing.allowTierOverride = licensing.allowTierOverride === true;
 
   const learning = source.learning && typeof source.learning === "object" ? source.learning : {};
   policy.learning.minCount = Math.max(2, Math.floor(positive(learning.minCount, policy.learning.minCount)));
@@ -209,4 +224,4 @@ function parse(input) {
   return policy;
 }
 
-module.exports = { VERSION, empty, parse, merge };
+module.exports = { VERSION, empty, parse, merge, dropDanglingRules };

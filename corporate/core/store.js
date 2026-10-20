@@ -8,6 +8,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { expander } = require("./personal.js");
 const metricsModule = require("./metrics.js");
+const { TIER_IDS } = require("./license.js");
 
 const FILES = Object.freeze({
   library: "library.json",
@@ -36,6 +37,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   paletteShortcut: "CommandOrControl+Shift+Space", // global hotkey for the search palette; "" turns it off
   keyboardLayout: "auto",     // a layout id from desktop/adapters/layouts.js, or "auto" to follow the system
   deferUpdates: false,        // true: an available update is only downloaded when the person asks
+  tierOverride: null,         // internal testing: run this desk as a tier id from core/license.js; null follows the licence
 });
 
 function createStore(dir) {
@@ -160,6 +162,7 @@ function createStore(dir) {
     out.paletteShortcut = typeof out.paletteShortcut === "string" ? out.paletteShortcut.trim() : DEFAULT_SETTINGS.paletteShortcut;
     out.keyboardLayout = typeof out.keyboardLayout === "string" && out.keyboardLayout.trim() ? out.keyboardLayout.trim() : "auto";
     out.deferUpdates = out.deferUpdates === true;
+    out.tierOverride = TIER_IDS.includes(out.tierOverride) ? out.tierOverride : null;
     return out;
   }
 

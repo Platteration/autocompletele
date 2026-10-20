@@ -73,6 +73,7 @@ function buildReport(entries, options) {
     team: String(settings.team || ""),
     organization: String(settings.organization || ""),
     licenceId: String(settings.licenceId || ""),
+    tier: String(settings.tier || ""),
     period,
     range: { from, to },
     assumptions: {
@@ -174,7 +175,13 @@ function mergeReports(reports, options) {
       }
     }
     const licenceId = name(report.licenceId);
-    if (licenceId) licences.set(licenceId, (licences.get(licenceId) || 0) + 1);
+    if (licenceId) {
+      const row = licences.get(licenceId) || { desks: 0, tiers: new Map() };
+      row.desks += 1;
+      const tier = name(report.tier) || "unknown";
+      row.tiers.set(tier, (row.tiers.get(tier) || 0) + 1);
+      licences.set(licenceId, row);
+    }
     personal.inserts += Number(report.personal && report.personal.inserts) || 0;
     personal.keystrokesSaved += Number(report.personal && report.personal.keystrokesSaved) || 0;
     if (report.range) {
@@ -232,7 +239,8 @@ function mergeReports(reports, options) {
       shown: warnings.shown,
       byRule: [...warnings.byRule].map(([id, count]) => ({ id, count })).sort((a, b) => b.count - a.count || a.id.localeCompare(b.id)),
     },
-    licences: [...licences].map(([id, desks]) => ({ id, desks })).sort((a, b) => b.desks - a.desks || a.id.localeCompare(b.id)),
+    licences: [...licences].map(([id, row]) => ({ id, desks: row.desks, tiers: [...row.tiers].map(([tier, desks]) => ({ tier, desks })).sort((a, b) => b.desks - a.desks || a.tier.localeCompare(b.tier)) }))
+      .sort((a, b) => b.desks - a.desks || a.id.localeCompare(b.id)),
     warnings: problems,
   };
 }

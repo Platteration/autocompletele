@@ -410,6 +410,10 @@
   });
 
   // Policy sources and the change log
+  const TIER_NAMES = { free: "Free", team: "Team", business: "Business", enterprise: "Enterprise" };
+  const TIER_RANK = { free: 0, team: 1, business: 2, enterprise: 3 };
+  const FEATURE_LABELS = { learning: "learning", keywordRules: "keyword rules and warnings", documents: "document shortcuts", lookups: "lookups", upload: "report upload" };
+
   const EVENT_LABELS = {
     "policy-applied": "Policy applied",
     "policy-source-problem": "Policy source failing",
@@ -422,6 +426,7 @@
     "report-uploaded": "Usage report sent",
     "report-upload-failed": "Usage report not sent",
     "licence-changed": "Licence changed",
+    "tier-override-changed": "Testing tier changed",
     "update-available": "Update available",
     "update-downloaded": "Update downloaded",
     "update-failed": "Update failed",
@@ -452,7 +457,9 @@
       case "update-failed":
         return entry.error || "";
       case "licence-changed":
-        return (entry.id || "no licence") + ": " + entry.status + (entry.seats ? ", " + entry.seats + " seats" : "") + (entry.expiresAt ? ", expires " + String(entry.expiresAt).slice(0, 10) : "");
+        return (entry.id || "no licence") + ": " + entry.status + (entry.tier ? ", " + entry.tier + " tier" : "") + (entry.seats ? ", " + entry.seats + " seats" : "") + (entry.expiresAt ? ", expires " + String(entry.expiresAt).slice(0, 10) : "");
+      case "tier-override-changed":
+        return (entry.from || "the licence") + " → " + (entry.to || "the licence") + (entry.to ? (entry.honoured ? " (honoured)" : " (ignored: " + (entry.note || "not allowed") + ")") : "");
       case "policy-source-problem":
         return entry.source + ": " + (entry.error || entry.status);
       case "policy-source-recovered":
@@ -471,22 +478,65 @@
       : "This desk is not centrally managed; it uses a local policy file if one is installed.");
     $("policy-refresh").hidden = !info.managed;
     const lic = info.licence || {};
+    const tierName = (id) => (TIER_NAMES[id] || id || "");
+    const override = lic.override || {};
+    const tierRow = override.honoured
+      ? tierName(lic.tier) + " (testing override; the licence gives " + tierName(lic.licensedTier) + ")"
+      : !lic.enforced ? tierName(lic.tier) + ": every feature, no limits (licensing not enforced)"
+        : tierName(lic.tier) + (lic.id && lic.tier !== "free" ? " (licence " + lic.id + ")" : "");
     const licenceRows = !lic.enforced
-      ? [["Status", "Not enforced in this version"], ["Why", lic.reason || ""]]
+      ? [["Status", "Not enforced in this version"], ["Tier", tierRow], ["Why", lic.reason || ""]]
       : [
         ["Status", { valid: "Valid", grace: "Expired, in grace period", expired: "Expired", missing: "No licence", invalid: "Invalid licence", mismatch: "Issued to another organisation" }[lic.status] || lic.status],
+        ["Tier", tierRow],
         ["Licence", lic.id || "none"],
         ["Issued to", lic.organization || ""],
         ["Seats", lic.seats == null ? "" : lic.seats + " (a contract term; seats are counted in the organisation's roll-up, never on this desk)"],
         ["Expires", lic.expiresAt ? new Date(lic.expiresAt).toLocaleDateString() + (lic.graceDays ? ", then " + lic.graceDays + " days of grace" : "") : ""],
-        ["Note", lic.entitled ? (lic.reason || "All features are on.") : lic.reason + " " + lic.freeTierNote],
+        ["Note", lic.entitled ? (lic.reason || "All features are on.") : lic.reason + " " + (lic.tierNote || "")],
       ];
     const licenceBody = $("licence");
     licenceBody.textContent = "";
     for (const [label, value] of licenceRows) {
       if (value) licenceBody.append(el("tr", {}, [el("th", { scope: "row", text: label }), el("td", { text: value })]));
     }
-    text($("licence-badge"), !lic.enforced ? "" : lic.entitled ? (lic.status === "grace" ? "licence in grace period" : "licensed") : "free tier");
+    const badge = $("licence-badge");
+    badge.classList.toggle("badge-testing", !!override.honoured);
+    text(badge, override.honoured ? "testing: " + tierName(lic.tier) + " tier"
+      : !lic.enforced ? "" : lic.tier === "free" ? "free tier" : tierName(lic.tier) + " tier" + (lic.status === "grace" ? ", licence in grace period" : ""));
+
+    // The testing override and the tier's limits.
+    const select = $("tier-override");
+    while (select.options.length > 1) select.remove(1);
+    for (const id of Object.keys(TIER_NAMES)) {
+      const option = el("option", { value: id, text: TIER_NAMES[id] });
+      // Once licensing is enforced, a person may only try tiers at or below the licensed one.
+      if (lic.enforced && TIER_RANK[id] > TIER_RANK[lic.licensedTier]) option.disabled = true;
+      select.append(option);
+    }
+    select.value = override.requested || "";
+    select.disabled = override.allowed === false;
+    text($("tier-override-note"), override.allowed === false
+      ? "Your organisation's licence decides the tier" + (override.note ? " (" + override.note + ")" : "") + "."
+      : override.requested && !override.honoured ? "Not applied: " + override.note + "."
+        : override.honoured ? "This desk runs the " + tierName(lic.tier) + " tier for testing; typing is never blocked." : "Internal testing only: try how a lower tier behaves on this desk.");
+    const limits = lic.limits || {};
+    const use = lic.usage || {};
+    const n = (v) => (v == null ? "no limit" : Number(v).toLocaleString());
+    const limitRows = [
+      ["Organisation shortcuts", use.shortcuts, limits.shortcuts, limits.shortcuts != null && use.shortcuts > limits.shortcuts ? (use.shortcuts - limits.shortcuts).toLocaleString() + " not loaded (the first " + n(limits.shortcuts) + " in policy order are)" : ""],
+      ["Policy layers", use.layers, limits.layers, limits.layers != null && use.layers > limits.layers ? "over the cap; warning only, every layer still applies" : ""],
+      ["Seats", lic.seats == null ? "" : lic.seats, limits.seats, "counted in the organisation's roll-up, never on this desk"],
+    ];
+    const limitsBody = $("tier-limits");
+    limitsBody.textContent = "";
+    for (const [label, inUse, allowed, note] of limitRows) {
+      limitsBody.append(el("tr", {}, [el("td", { text: label }), el("td", { class: "num", text: inUse === "" || inUse == null ? "" : Number(inUse).toLocaleString() }), el("td", { class: "num", text: n(allowed) }), el("td", { class: "hint", text: note })]));
+    }
+    const features = lic.features || {};
+    const on = Object.keys(FEATURE_LABELS).filter((k) => features[k]).map((k) => FEATURE_LABELS[k]);
+    const off = Object.keys(FEATURE_LABELS).filter((k) => !features[k]).map((k) => FEATURE_LABELS[k]);
+    text($("tier-features"), (on.length ? "On: " + on.join(", ") + ". " : "") + (off.length ? "Off: " + off.join(", ") + ". " : "") + "Always on: your own shortcuts, templates, the palette, statistics, the local report and updates.");
     const sources = $("policy-sources");
     sources.textContent = "";
     for (const source of info.sources || []) {
@@ -573,6 +623,12 @@
     await api.saveSettings({ deferUpdates: $("updates-defer").checked });
     announce($("updates-defer").checked ? "Updates are deferred" : "Updates download automatically");
     await renderUpdates();
+  });
+
+  $("tier-override").addEventListener("change", async () => {
+    const value = $("tier-override").value;
+    await api.saveSettings({ tierOverride: value || null });
+    announce(value ? "Testing tier: " + (TIER_NAMES[value] || value) : "Tier override removed");
   });
 
   $("upload-now").addEventListener("click", async () => {

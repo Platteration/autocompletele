@@ -19,7 +19,7 @@ test("a licence round-trips and is refused when tampered, forged or malformed", 
   assert.match(token, /^actlebiz1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
   const ok = license.verifyLicence(token, [other.publicKey, vendor.publicKey]);
   assert.equal(ok.ok, true);
-  assert.deepEqual(ok.licence, Object.assign({ version: 1 }, fields));
+  assert.deepEqual(ok.licence, Object.assign({ version: 2, tier: "business" }, fields), "issued tokens are version 2 and default to the Business tier");
   assert.equal(ok.keyId, vendor.keyId);
   const [prefix, body, sig] = token.split(".");
   const tampered = JSON.parse(Buffer.from(body, "base64url").toString());
@@ -40,6 +40,8 @@ test("a licence round-trips and is refused when tampered, forged or malformed", 
   assert.match(license.verifyLicence("actlebiz1." + extra + "." + forgedSig, [vendor.publicKey]).error, /unexpected or missing fields/);
 });
 
+const ok = (token) => license.verifyLicence(token, [vendor.publicKey]).licence;
+
 test("licence state follows the clock, the organisation and the pinned keys", () => {
   const token = license.issueLicence(fields, vendor.privateKey);
   const at = (date, extra) => license.licenceState(token, Object.assign({ now: date, publicKeys: [vendor.publicKey], organization: "example ltd " }, extra));
@@ -53,8 +55,9 @@ test("licence state follows the clock, the organisation and the pinned keys", ()
   assert.equal(license.licenceState("junk", { publicKeys: [vendor.publicKey] }).status, "invalid");
   assert.equal(license.licenceState(token, { now: T(2026, 6, 1), publicKeys: [] }).status, "unenforced");
   assert.equal(license.licenceState(token, { now: T(2026, 6, 1) }).status, "unenforced", "nothing pinned in this version yet");
-  for (const status of ["valid", "grace", "unenforced"]) assert.equal(license.entitlements({ status }).learning, true, status);
-  for (const status of ["expired", "missing", "invalid", "mismatch"]) assert.equal(license.entitlements({ status }).learning, false, status);
+  for (const status of ["valid", "grace"]) assert.equal(license.entitlements({ status, licence: ok(token) }).features.learning, true, status);
+  assert.equal(license.entitlements({ status: "unenforced" }).features.learning, true);
+  for (const status of ["expired", "missing", "invalid", "mismatch"]) assert.equal(license.entitlements({ status }).features.learning, false, status);
   assert.equal(license.entitlements({ status: "unenforced" }).enforced, false);
   assert.equal(license.entitlements({ status: "valid" }).enforced, true);
 });
@@ -68,6 +71,7 @@ test("the free tier keeps shortcuts and statistics and switches organisation fea
     reporting: { endpoint: "https://collect.example/x" },
   });
   const free = license.applyTier(policy, license.entitlements({ status: "expired" }));
+  assert.equal(license.entitlements({ status: "expired" }).tier, "free");
   assert.equal(free.library.length, 1);
   assert.equal(free.capture.defaultMode, "triggers");
   assert.deepEqual(free.capture.apps.map((r) => r.mode), ["triggers", "off"]);
@@ -76,7 +80,122 @@ test("the free tier keeps shortcuts and statistics and switches organisation fea
   assert.equal(free.reporting.endpoint, null);
   assert.match(free.warnings[free.warnings.length - 1], /^Free tier/);
   assert.equal(policy.keywordRules.length, 1, "the original policy is untouched");
-  assert.equal(license.applyTier(policy, license.entitlements({ status: "valid" })), policy);
+  assert.equal(license.applyTier(policy, license.entitlements({ status: "valid", licence: ok(license.issueLicence(fields, vendor.privateKey)) })), policy);
+});
+
+test("the tier table is ordered, monotonic and complete", () => {
+  assert.deepEqual(license.TIER_IDS, ["free", "team", "business", "enterprise"]);
+  const keys = (t) => JSON.stringify([Object.keys(t.limits).sort(), Object.keys(t.features).sort()]);
+  for (const [i, id] of license.TIER_IDS.entries()) {
+    const t = license.TIERS[id];
+    assert.equal(t.rank, i, id);
+    assert.equal(keys(t), keys(license.TIERS.free), id + " has the same limit and feature keys");
+    if (i) {
+      const below = license.TIERS[license.TIER_IDS[i - 1]];
+      for (const limit of Object.keys(t.limits)) {
+        assert.ok(t.limits[limit] === null || (below.limits[limit] !== null && t.limits[limit] >= below.limits[limit]), id + " " + limit + " is at least " + below.name + "'s");
+      }
+      for (const feature of Object.keys(t.features)) assert.ok(t.features[feature] || !below.features[feature], id + " keeps " + feature);
+    }
+  }
+  for (const limit of Object.values(license.TIERS.enterprise.limits)) assert.equal(limit, null);
+  assert.equal(Object.values(license.TIERS.enterprise.features).every(Boolean), true);
+  assert.equal(license.tierOf("platinum"), "free");
+  assert.match(license.FREE_TIER_NOTE, /learning, keyword rules and warnings, document shortcuts, lookups, report upload are off/);
+  assert.equal(license.tierNote("enterprise"), "");
+  assert.match(license.tierNote("team"), /^lookups, report upload are off/);
+});
+
+test("version 2 tokens carry a tier; version 1 tokens count as Business; bad tiers and over-cap seats are refused", () => {
+  const team = license.issueLicence(Object.assign({}, fields, { tier: "team" }), vendor.privateKey);
+  assert.equal(ok(team).tier, "team");
+  assert.equal(license.tierOfLicence(ok(team)), "team");
+  assert.equal(license.entitlements({ status: "valid", licence: ok(team) }).tier, "team");
+  assert.equal(license.entitlements({ status: "grace", licence: ok(team) }).tier, "team");
+  assert.throws(() => license.issueLicence(Object.assign({}, fields, { tier: "team", seats: 26 }), vendor.privateKey), /Team tier allows at most 25 seats/);
+  assert.throws(() => license.issueLicence(Object.assign({}, fields, { tier: "free" }), vendor.privateKey), /tier must be one of team, business, enterprise/);
+  assert.throws(() => license.issueLicence(Object.assign({}, fields, { tier: "platinum" }), vendor.privateKey), /tier must be/);
+  assert.equal(license.issueLicence(Object.assign({}, fields, { tier: "enterprise", seats: 100000 }), vendor.privateKey).startsWith("actlebiz1."), true);
+  // Hand-signed payloads: version 1 without a tier is accepted and is Business; version 1 with a tier or version 2 without one is not.
+  const crypto = require("node:crypto");
+  const signed = (payload) => {
+    const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    return "actlebiz1." + body + "." + crypto.sign(null, Buffer.from("actlebiz1." + body), crypto.createPrivateKey(vendor.privateKey)).toString("base64url");
+  };
+  const v1 = signed(Object.assign({ version: 1 }, fields));
+  assert.equal(license.verifyLicence(v1, [vendor.publicKey]).ok, true);
+  assert.equal(license.tierOfLicence(ok(v1)), "business");
+  assert.equal(license.entitlements({ status: "valid", licence: ok(v1) }).tier, "business");
+  assert.match(license.verifyLicence(signed(Object.assign({ version: 1, tier: "team" }, fields)), [vendor.publicKey]).error, /unexpected or missing fields/);
+  assert.match(license.verifyLicence(signed(Object.assign({ version: 2 }, fields)), [vendor.publicKey]).error, /unexpected or missing fields/);
+  assert.match(license.verifyLicence(signed(Object.assign({ version: 2, tier: "free" }, fields)), [vendor.publicKey]).error, /tier must be/);
+  assert.match(license.verifyLicence(signed(Object.assign({ version: 3, tier: "team" }, fields)), [vendor.publicKey]).error, /unsupported licence version 3/);
+  // The desk does not re-check the seat cap: a table change must not invalidate a token already issued.
+  assert.equal(license.verifyLicence(signed(Object.assign({ version: 2, tier: "team" }, fields, { seats: 400 })), [vendor.publicKey]).ok, true);
+});
+
+test("a testing override can lower the tier, and raise it only while licensing is unenforced", () => {
+  const business = { status: "valid", licence: ok(license.issueLicence(fields, vendor.privateKey)) };
+  const none = license.entitlements(business);
+  assert.deepEqual([none.tier, none.source, none.override.requested, none.override.honoured], ["business", "licence", null, false]);
+  const unenforced = license.entitlements({ status: "unenforced" }, { override: "free" });
+  assert.deepEqual([unenforced.tier, unenforced.source, unenforced.licensedTier, unenforced.override.honoured, unenforced.override.allowed], ["free", "override", "enterprise", true, true]);
+  assert.equal(license.entitlements({ status: "unenforced" }, { override: "team" }).tier, "team");
+  const ignored = license.entitlements(business, { override: "free" });
+  assert.deepEqual([ignored.tier, ignored.override.honoured, ignored.override.allowed], ["business", false, false]);
+  assert.match(ignored.override.note, /does not allow trying other tiers/);
+  const lowered = license.entitlements(business, { override: "team", allowOverride: true });
+  assert.deepEqual([lowered.tier, lowered.source, lowered.override.honoured], ["team", "override", true]);
+  const raised = license.entitlements(business, { override: "enterprise", allowOverride: true });
+  assert.deepEqual([raised.tier, raised.override.honoured, raised.override.allowed], ["business", false, true]);
+  assert.match(raised.override.note, /Enterprise is above this desk's Business tier/);
+  const expired = license.entitlements({ status: "expired", licence: business.licence }, { override: "enterprise", allowOverride: true });
+  assert.equal(expired.tier, "free", "a hand-edited override cannot lift an expired desk");
+  assert.equal(license.entitlements(business, { override: "platinum", allowOverride: true }).override.requested, null, "unknown tiers are ignored");
+  assert.equal(license.entitlements(business, { override: "business", allowOverride: true }).source, "override");
+});
+
+test("caps degrade: shortcuts beyond the cap are dropped from the end in policy order, layers only warn, nothing refuses", () => {
+  const library = [];
+  for (let i = 0; i < 30; i++) library.push({ trigger: "z" + (29 - i) + "/", expansion: "entry " + i });
+  const policy = orgPolicy.parse({
+    library,
+    keywordRules: [{ id: "early", keywords: ["a"], insert: { kind: "shorthand", trigger: "z29/" } }, { id: "late", keywords: ["b"], insert: { kind: "shorthand", trigger: "z0/" } }, { id: "warn", keywords: ["card"], action: "warn", message: "no" }],
+    lookups: [{ trigger: "/cust", label: "Customer", source: { kind: "csv", path: "x.csv", key: "id" }, template: "[[id]]" }],
+    updates: { url: "https://updates.example" },
+  });
+  assert.equal(policy.library.length, 30);
+  const team = license.applyTier(policy, license.entitlements({ status: "unenforced" }, { override: "team" }), { layers: 3 });
+  assert.equal(team.library.length, 30, "the Team cap is 1,000; nothing trimmed");
+  assert.deepEqual(team.lookups, [], "lookups are a Business feature");
+  assert.equal(team.keywordRules.length, 3, "keyword rules stay on Team");
+  assert.equal(team.updates.url, "https://updates.example", "the update server is never gated");
+  assert.ok(team.warnings.some((w) => w === "policy layers: 3 applied, the Team tier allows 2; nothing was dropped"));
+  assert.ok(team.warnings.some((w) => /^Testing override: this desk runs the Team tier/.test(w)));
+  assert.match(team.warnings[team.warnings.length - 1], /^Team tier: lookups, report upload are off/);
+  assert.equal(policy.lookups.length, 1, "the original policy is untouched");
+
+  const free = license.applyTier(policy, license.entitlements({ status: "missing" }), { layers: 1 });
+  assert.equal(free.library.length, 25);
+  assert.deepEqual(free.library.map((s) => s.trigger).slice(0, 3), ["z29/", "z28/", "z27/"], "policy order, never sorted");
+  assert.equal(free.library.some((s) => s.trigger === "z0/"), false, "the last entries are the ones cut");
+  assert.ok(free.warnings.some((w) => w === "5 organisation shortcuts ignored: the Free tier allows 25 (the first 25 in policy order are kept)"));
+  assert.deepEqual(free.keywordRules, [], "no rules on Free");
+  assert.equal(free.updates.url, "https://updates.example");
+  assert.match(free.warnings[free.warnings.length - 1], /^Free tier/);
+  assert.equal(policy.library.length, 30);
+
+  // With rules kept (Team cap lowered by hand to prove the reference check), a rule pointing past the cap is dropped.
+  const capped = license.applyTier(policy, Object.assign(license.entitlements({ status: "unenforced" }, { override: "team" }), { limits: { seats: 25, shortcuts: 10, layers: 2 } }), { layers: 1 });
+  assert.equal(capped.library.length, 10);
+  assert.deepEqual(capped.keywordRules.map((r) => r.id), ["early", "warn"], "the rule pointing at a trimmed shortcut is gone, the warning rule stays");
+  assert.ok(capped.warnings.some((w) => /keyword rule late ignored: shortcut z0\/ is not in the policy library/.test(w)));
+  assert.deepEqual(license.usage(policy, 2), { shortcuts: 30, layers: 2 });
+  assert.deepEqual(license.tierWarnings(policy, "enterprise", { layers: 99 }), []);
+  assert.equal(license.applyTier(policy, license.entitlements({ status: "unenforced" }), { layers: 99 }), policy, "Enterprise returns the same object");
+  const chosen = license.applyTier(policy, license.entitlements({ status: "unenforced" }, { override: "enterprise" }), { layers: 1 });
+  assert.notEqual(chosen, policy);
+  assert.deepEqual(chosen.warnings.filter((w) => /^Testing override/.test(w)), ["Testing override: this desk runs the Enterprise tier chosen on the Policy tab, not the tier its licence gives"], "an override is always announced, even when it changes nothing else");
 });
 
 function desk(policyExtra, options) {
@@ -97,6 +216,8 @@ test("an expired licence puts the desk on the free tier: shortcuts work, nothing
   expired.saveSettings({ captureApps: [{ label: "Notepad", mode: "learn", match: { process: "notepad" } }] });
   assert.equal(expired.licence().status, "expired");
   assert.equal(expired.licence().entitled, false);
+  assert.equal(expired.licence().tier, "free");
+  assert.equal(expired.licence().tier, "free");
   assert.equal(expired.focusChanged({ process: "notepad" }).mode, "triggers", "the person's own learn rule cannot restore learning");
   let actions = [];
   for (const ch of "about the refund sig/") actions = actions.concat(expired.keyTyped({ text: ch }));
@@ -152,4 +273,70 @@ test("the admin tool issues and shows licences and counts desks against seats", 
   assert.equal(rolled.code, 0, rolled.errors);
   assert.match(rolled.text, /licence LIC-9: 4 desk\(s\) of 3 seats/);
   assert.match(rolled.errors, /over its 3 seats by 1/);
+});
+
+test("the admin tool checks a policy against its tier's caps before signing, and names tiers in issue, show and report", () => {
+  const dir = fs.mkdtempSync(path.join(process.env.ACTLE_TEST_TMP || os.tmpdir(), "actle-tieradmin-"));
+  fs.writeFileSync(path.join(dir, "vendor.key"), vendor.privateKey);
+  fs.writeFileSync(path.join(dir, "vendor.pub"), vendor.publicKey);
+  const keys = signing.generateKeyPair();
+  fs.writeFileSync(path.join(dir, "signing.key"), keys.privateKey);
+  const out = [];
+  const err = [];
+  const cli = (argv) => ({ code: run(argv, { stdout: (l) => out.push(l), stderr: (l) => err.push(l) }), text: out.splice(0).join("\n"), errors: err.splice(0).join("\n") });
+  const issue = (extra) => cli(["license", "issue", "--key", path.join(dir, "vendor.key"), "--org", "Example Ltd", "--seats", "3", "--expires", "2030-01-01", "--id", "LIC-T"].concat(extra || []));
+  const team = issue(["--tier", "team"]);
+  assert.equal(team.code, 0, team.errors);
+  const token = team.text.trim();
+  assert.equal(license.verifyLicence(token, [vendor.publicKey]).licence.tier, "team");
+  assert.equal(issue(["--tier", "free"]).code, 1, "free is not a licence");
+  assert.equal(issue(["--tier", "team", "--seats", "26"]).code, 1, "over the Team seat cap");
+  assert.match(cli(["license", "issue", "--key", path.join(dir, "vendor.key"), "--org", "Example Ltd", "--seats", "26", "--expires", "2030-01-01", "--tier", "team"]).errors, /Team tier allows at most 25 seats/);
+  const shown = cli(["license", "show", token]);
+  assert.match(shown.text, /tier:\s+Team\n/);
+  assert.match(shown.text, /caps:\s+25 seats, 1000 organisation shortcuts, 2 policy layers/);
+  const business = issue([]);
+  assert.match(cli(["license", "show", business.text.trim()]).text, /tier:\s+Business\n/);
+
+  // Thirty shortcuts: fine for Team, five over the Free cap.
+  const library = [];
+  for (let i = 0; i < 30; i++) library.push({ trigger: "s" + i + "/", expansion: "entry " + i });
+  const policyFile = path.join(dir, "policy.json");
+  fs.writeFileSync(policyFile, JSON.stringify({ organization: "Example Ltd", licence: token, library }));
+  const ok = cli(["validate", policyFile]);
+  assert.equal(ok.code, 0, ok.errors);
+  assert.match(ok.text, /tier:\s+Team \(from the licence in the policy, not verified\)/);
+  const over = cli(["validate", policyFile, "--tier", "free"]);
+  assert.equal(over.code, 1);
+  assert.match(over.errors, /warning: 5 organisation shortcuts ignored: the Free tier allows 25/);
+  assert.equal(cli(["validate", policyFile, "--tier", "platinum"]).code, 1);
+  fs.writeFileSync(path.join(dir, "nolicence.json"), JSON.stringify({ organization: "Example Ltd", library }));
+  const unknown = cli(["validate", path.join(dir, "nolicence.json")]);
+  assert.equal(unknown.code, 0, "no tier known: caps are not checked and nothing fails");
+  assert.match(unknown.text, /tier:\s+not known \(no licence in these files; pass --tier\); caps not checked/);
+
+  const refused = cli(["sign", policyFile, "--key", path.join(dir, "signing.key"), "--serial", "1", "--layer", "org", "--tier", "free", "--out", path.join(dir, "org.signed.json")]);
+  assert.equal(refused.code, 1);
+  assert.match(refused.errors, /5 organisation shortcuts ignored[\s\S]*not signed/);
+  assert.equal(fs.existsSync(path.join(dir, "org.signed.json")), false);
+  const signedOk = cli(["sign", policyFile, "--key", path.join(dir, "signing.key"), "--serial", "1", "--layer", "org", "--out", path.join(dir, "org.signed.json")]);
+  assert.equal(signedOk.code, 0, signedOk.errors + signedOk.text);
+  const forced = cli(["sign", policyFile, "--key", path.join(dir, "signing.key"), "--serial", "2", "--layer", "org", "--tier", "free", "--allow-warnings", "--out", path.join(dir, "org2.signed.json")]);
+  assert.equal(forced.code, 0, forced.errors);
+
+  for (const name of ["dept", "team"]) fs.writeFileSync(path.join(dir, name + ".json"), JSON.stringify({ library: [{ trigger: name + "/", expansion: name }] }));
+  const layered = cli(["layers", policyFile, path.join(dir, "dept.json"), path.join(dir, "team.json")]);
+  assert.equal(layered.code, 1, "three layers on a Team licence");
+  assert.match(layered.errors, /warning: policy layers: 3 applied, the Team tier allows 2; nothing was dropped/);
+  assert.equal(cli(["layers", policyFile, path.join(dir, "dept.json")]).code, 0, "two layers are within the Team cap");
+  assert.equal(cli(["layers", policyFile, path.join(dir, "dept.json"), path.join(dir, "team.json"), "--tier", "enterprise"]).code, 0);
+
+  const reportModule = require("../core/report.js");
+  for (const [id, tier] of [["a", "team"], ["b", "team"], ["c", "free"]]) {
+    fs.writeFileSync(path.join(dir, id + ".json"), JSON.stringify(reportModule.buildReport([], { now: Date.now(), installId: id, licenceId: "LIC-T", tier })));
+  }
+  const rolled = cli(["report", path.join(dir, "a.json"), path.join(dir, "b.json"), path.join(dir, "c.json"), "--policy", policyFile]);
+  assert.equal(rolled.code, 0, rolled.errors);
+  assert.match(rolled.text, /licence LIC-T: 3 desk\(s\) of 3 seats, Team tier/);
+  assert.match(rolled.errors, /licence LIC-T: 1 desk\(s\) report the Free tier, not the licence's Team \(a testing override, or an older version\)/);
 });
