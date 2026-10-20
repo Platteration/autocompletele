@@ -64,6 +64,20 @@ grant/consumeEdit input-trust model. Fixed areas:
    change starts as a case in `shared/conformance.json`, then is implemented
    per platform (see `shared/SPEC.md`).
 
+## Corporate edition (added 2026-10-20)
+
+`corporate/` is the business edition: a dependency-free core (`core/`, 107
+tests green on Linux with Node 22, including the shared conformance suite run
+through the engine) and an Electron desktop shell (`desktop/`) that has **not**
+been run anywhere yet. `AGENTS.md` section 0 says which edition a task touches.
+Next for that side, in order:
+
+1. On a real Windows or macOS desk: `cd corporate/desktop && npm install &&
+   npm start`, then the checklist in `corporate/desktop/README.md`. Fix what
+   breaks in the adapters, not in the core, unless a core test is wrong.
+2. Decide licensing for organisations before any purchase flow is built;
+   nothing from the personal premium preview is wired in.
+
 ## Local run notes (Windows sandbox quirks, not repo requirements)
 
 - Some tests create temp dirs; point `TEMP`/`TMP` at a workspace folder or

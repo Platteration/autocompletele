@@ -1,0 +1,35 @@
+// The only bridge between the dashboard pages and the main process. Every
+// call is an ipcRenderer.invoke with plain data; no Node objects cross over.
+"use strict";
+
+const { contextBridge, ipcRenderer } = require("electron");
+
+const invoke = (channel) => (payload) => ipcRenderer.invoke(channel, payload);
+
+contextBridge.exposeInMainWorld("actle", {
+  getSummary: invoke("metrics:summary"),
+  getSeries: invoke("metrics:series"),
+  getByApp: invoke("metrics:byApp"),
+  getLibrary: invoke("library:get"),
+  saveShorthand: invoke("library:save"),
+  deleteShorthand: invoke("library:delete"),
+  importLibrary: invoke("library:import"),
+  exportLibrary: invoke("library:export"),
+  getPolicyInfo: invoke("policy:info"),
+  getSettings: invoke("settings:get"),
+  saveSettings: invoke("settings:save"),
+  setEnabled: invoke("settings:enabled"),
+  getCandidates: invoke("learning:candidates"),
+  acceptCandidate: invoke("learning:accept"),
+  dismissCandidate: invoke("learning:dismiss"),
+  getStatus: invoke("app:status"),
+  // Popover windows (template form, documents, keyword offer).
+  getPopover: invoke("popover:get"),
+  submitPopover: invoke("popover:submit"),
+  closePopover: invoke("popover:close"),
+  onChange: (listener) => {
+    const handler = (event, payload) => listener(payload);
+    ipcRenderer.on("app:changed", handler);
+    return () => ipcRenderer.removeListener("app:changed", handler);
+  },
+});
