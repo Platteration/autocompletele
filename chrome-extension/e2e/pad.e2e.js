@@ -41,6 +41,16 @@ async function storedDrafts(app) {
   return Object.entries(items).filter(([key]) => key.startsWith("pad-draft:")).map(([, value]) => value);
 }
 
+// Waits until fn, run in the page, resolves to true. page.waitForFunction
+// does not await a promise, so an async fn would count as true at once.
+async function waitInPage(page, fn, arg, timeout = 5000) {
+  const deadline = Date.now() + timeout;
+  while (!(await page.evaluate(fn, arg))) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for: " + fn);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 async function typeInBody(page, text, delay) {
   await page.click("#padBody");
   await page.keyboard.press("Control+End");
@@ -182,7 +192,7 @@ test("the suggestions switch", async (t) => {
     await typeInBody(page, ". As you can see");
     await page.waitForTimeout(2200);
     assert.equal((await calls()).length, before, "nothing is analyzed while suggestions are off");
-    await page.waitForFunction(async () => (await chrome.storage.local.get("pad-prefs"))["pad-prefs"].suggestions === false);
+    await waitInPage(page, async () => (await chrome.storage.local.get("pad-prefs"))["pad-prefs"]?.suggestions === false);
 
     await page.reload();
     await waitReady(page);
@@ -197,7 +207,7 @@ test("the suggestions switch", async (t) => {
   });
 
   await t.test("the switch keeps keyboard focus while its setting saves", async () => {
-    const saved = (on) => page.waitForFunction(async (on) => (await chrome.storage.local.get("pad-prefs"))["pad-prefs"].suggestions === on, on);
+    const saved = (on) => waitInPage(page, async (on) => (await chrome.storage.local.get("pad-prefs"))["pad-prefs"]?.suggestions === on, on);
     await page.focus("#suggestToggle");
     await page.keyboard.press("Space");
     assert.equal(await page.isChecked("#suggestToggle"), true);
@@ -470,7 +480,7 @@ test("text typed just before the tab closes or reloads is not lost", async (t) =
     await page.close({ runBeforeUnload: true });
     await waitSaved(page);
     assert.equal(page.isClosed(), false);
-    await page.waitForFunction(async () => !Object.keys(await chrome.storage.local.get(null)).some((key) => key.startsWith("pad-rescue:")));
+    await waitInPage(page, async () => !Object.keys(await chrome.storage.local.get(null)).some((key) => key.startsWith("pad-rescue:")));
     assert.match((await storedDrafts(app)).map((draft) => draft.body).join("|"), /Brand new Stay\./);
     await page.close();
   });
@@ -1183,7 +1193,7 @@ test("switching suggestions off removes the cards and stays off", async (t) => {
   await page.click("#suggestToggle");
   assert.equal(await page.locator("#padSuggestions").evaluate((el) => el.hidden), true);
   assert.equal(await page.locator("#padSuggestions").evaluate((el) => el.childElementCount), 0);
-  await page.waitForFunction(async () => (await chrome.storage.local.get("pad-prefs"))["pad-prefs"].suggestions === false);
+  await waitInPage(page, async () => (await chrome.storage.local.get("pad-prefs"))["pad-prefs"]?.suggestions === false);
 
   await page.reload();
   await waitReady(page);
