@@ -13,7 +13,7 @@
 //     it while suggestions are off, and shows it (without emptying it) when
 //     they are turned on.
 //   self.ActlePad.onSuggest(fn)
-//     Registers fn(currentDraft, allDraftTexts); a later call replaces it and
+//     Registers fn(currentDraft, otherDraftTexts); a later call replaces it and
 //     onSuggest(null) removes it. fn is called only while suggestions are on:
 //     1.5 s after the last edit (so at most once per 1.5 s of idle typing),
 //     right after it is registered, when suggestions are turned on, when
@@ -21,8 +21,8 @@
 //     input event or loads a newer save from another tab. currentDraft is
 //     { id, title, body }, with the editor's current text; id is null for a
 //     new draft not saved yet.
-//     allDraftTexts is a string[] of the bodies of every draft in the pad,
-//     with the editor's text in place of the open draft's saved copy. Its
+//     otherDraftTexts is a string[] of the bodies of every other draft in the
+//     pad, newest edit first; the open draft is only in currentDraft. Its
 //     return value is ignored; an error it throws or rejects with is logged
 //     as a warning and does not affect the pad.
 //   self.ActlePad.requestSuggestions()
@@ -63,12 +63,20 @@
   const toggleEl = $("suggestToggle");
   const toggleHint = $("suggestToggleHint");
   const panelEl = $("padSuggestions");
+  const dismissedEl = $("padDismissed");
+  const dismissedText = $("padDismissedText");
+  const clearDismissedBtn = $("padClearDismissed");
 
   const SAVE_DELAY = 400;
+  // Steady typing with no 400 ms pause still saves at least this often.
+  const MAX_SAVE_WAIT = 2000;
   const CHECK_INTERVAL = 2000;
   const SUGGEST_DELAY = 1500;
   const DRAFT_LOCK = "actle-pad-draft:";
+  // Held for as long as this tab is open, so other pad tabs know when it is gone.
+  const TAB_LOCK = "actle-pad-tab:";
   const COPY_SUFFIX = " (copy from another tab)";
+  const RECOVERED_SUFFIX = " (recovered)";
   const LOCKED_TEXT = "This draft is open in another tab. Editing here is paused.";
   const NOT_SAVED_TAIL = " Your text is still here — copy it or download it.";
 
@@ -83,7 +91,10 @@
   let readOnly = false;
   let lock = null; // { id, release } for the draft lock this tab holds
   let saveTimer = 0;
+  let pendingSince = 0; // when the first edit not yet being saved was made
   let saving = null;
+  let inflight = null; // the text the running saveDraft or createDraft writes
+  let newId = null; // the id a new draft gets when it is first saved
   let saveAgain = false;
   let saveError = "";
   let failedText = null; // the editor text when the last save failed
@@ -93,6 +104,8 @@
   let refreshTimer = 0;
   let lastSeenBody = "";
   let navigation = Promise.resolve();
+  const tab = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  let rescued = false; // this tab wrote pad-rescue:<tab> and has not cleared it
   const trashButtons = new Map();
   const busy = new Set();
 
@@ -210,6 +223,8 @@
   function renderList() {
     const focusedId = document.activeElement && document.activeElement.dataset
       ? document.activeElement.dataset.draftId : undefined;
+    // A draft name someone is stepping to in the list box stays shown.
+    const browsing = document.activeElement === selectEl ? selectEl.value : null;
     const list = summaries();
     listEl.replaceChildren();
     selectEl.replaceChildren();
@@ -245,6 +260,7 @@
       selectEl.appendChild(option);
     }
     selectEl.value = current ? current.id : "";
+    if (browsing && list.some((draft) => draft.id === browsing)) selectEl.value = browsing;
     countEl.textContent = String(list.length);
     emptyEl.hidden = list.length > 0;
     if (focusedId) {
@@ -315,7 +331,9 @@
   // ---- one editor per draft -------------------------------------------------
 
   // Resolves true when this tab may edit the draft: it holds the draft's lock,
-  // or the browser has no lock manager (the rev check still protects).
+  // or the browser has no lock manager. Then two tabs can edit one draft; a
+  // save over a version saved since is still kept as a copy, except that two
+  // saves at the same moment can overwrite each other (see pad-store.js).
   function claimLock(id, steal = false) {
     const locks = navigator.locks;
     if (!locks || typeof locks.request !== "function") return Promise.resolve(true);
@@ -392,10 +410,12 @@
 
   function scheduleSave() {
     clearTimeout(saveTimer);
+    if (!pendingSince) pendingSince = Date.now();
+    const wait = Math.min(SAVE_DELAY, Math.max(0, pendingSince + MAX_SAVE_WAIT - Date.now()));
     saveTimer = setTimeout(() => {
       saveTimer = 0;
       saveNow();
-    }, SAVE_DELAY);
+    }, wait);
     renderSaveState();
   }
 
@@ -404,6 +424,7 @@
   function saveNow() {
     clearTimeout(saveTimer);
     saveTimer = 0;
+    pendingSince = 0;
     if (saving) {
       saveAgain = true;
       return saving;
@@ -419,6 +440,10 @@
         saving = null;
         renderSaveState();
         renderList();
+      }
+      if (rescued && !hasUnsaved()) {
+        rescued = false;
+        store.clearRescue(tab).catch(() => {});
       }
       return !hasUnsaved();
     })();
@@ -441,7 +466,10 @@
     const text = editorText();
     if (!current) {
       try {
-        const draft = await store.createDraft(text);
+        if (!newId) newId = store.newDraftId();
+        inflight = text;
+        const draft = await store.createDraft({ ...text, id: newId });
+        newId = null;
         adopt(draft, text);
         upsertDraft(draft);
         cleared();
@@ -450,20 +478,32 @@
         renderButtons();
       } catch (error) {
         failed(error, text);
+      } finally {
+        inflight = null;
       }
       return;
     }
     try {
+      inflight = text;
       const result = await store.saveDraft(current.id, text, current.rev);
+      inflight = null;
       if (result.ok) {
         adopt(result.draft, text);
         upsertDraft(result.draft);
+        cleared();
+      } else if (result.current && sameText(result.current, text)) {
+        // Another tab stored this very text (such as text recovered from
+        // this tab's pad-rescue): there is nothing to keep twice.
+        adopt(result.current, text);
+        upsertDraft(result.current);
         cleared();
       } else {
         await keepBoth(result.current, text);
       }
     } catch (error) {
       failed(error, text);
+    } finally {
+      inflight = null;
     }
   }
 
@@ -488,6 +528,64 @@
       : `This draft was deleted in another tab, so your text was saved as a new draft: “${displayTitle(draft)}”.`);
   }
 
+  // As the tab goes away an ordinary save cannot finish, so the unsaved text
+  // also goes into one write that needs no lock and no read (see
+  // pad-store.js). The next pad tab stores it once this one is gone.
+  function rescue() {
+    if (!ready || !hasUnsaved()) return;
+    rescued = true;
+    const text = editorText();
+    if (!current && !newId) newId = store.newDraftId();
+    store.writeRescue(tab, { draftId: current ? current.id : newId, baseRev: current ? current.rev : 0,
+      title: text.title, body: text.body, saving: inflight });
+  }
+
+  // Runs fn once the pad tab that wrote pad-rescue:<id> is gone, or at once
+  // where the browser has no lock manager. Resolves fn's result, or null when
+  // `now` is set and that tab is still open (fn then runs when it goes).
+  function afterTabCloses(id, fn, now = false) {
+    const locks = navigator.locks;
+    if (!locks || typeof locks.request !== "function") return Promise.resolve().then(fn);
+    let later = false;
+    const run = (lock) => {
+      if (lock) return fn();
+      later = true;
+      return null;
+    };
+    try {
+      return locks.request(TAB_LOCK + id, now ? { ifAvailable: true } : {}, run).then((result) => {
+        if (later) afterTabCloses(id, fn).catch(() => {});
+        return result;
+      });
+    } catch (_) {
+      return Promise.resolve().then(fn);
+    }
+  }
+
+  function recoverFrom(id) {
+    return store.recoverRescue(id, (text) => (text.title.trim() || displayTitle(text)) + RECOVERED_SUFFIX);
+  }
+
+  // Text that pad tabs could not save as they closed. Resolves what was
+  // stored at once; text from a tab still open is stored when it closes.
+  async function recoverClosedTabs() {
+    let ids = [];
+    try {
+      ids = await store.rescuedTabs();
+    } catch (_) {
+      return [];
+    }
+    const found = [];
+    for (const id of ids) {
+      if (id === tab) continue;
+      try {
+        const result = await afterTabCloses(id, () => recoverFrom(id), true);
+        if (result) found.push(result);
+      } catch (_) { /* kept for the next pad tab to try */ }
+    }
+    return found;
+  }
+
   // Before switching away from the editor's text: save it, and say no when
   // it could not be saved.
   async function settle() {
@@ -508,6 +606,7 @@
 
   function showBlank() {
     current = null;
+    newId = null;
     base = { title: "", body: "" };
     setEditorText(base);
   }
@@ -593,8 +692,25 @@
       try {
         result = await store.deleteDraft(id);
       } catch (error) {
-        tell(`Could not delete “${name}”. ${errorText(error)}`, true);
-        return;
+        if (!error || error.code !== "NOT_KEPT") {
+          tell(`Could not delete “${name}”. ${errorText(error)}`, true);
+          return;
+        }
+        // Storage too full for the copy: the only way to make room is to
+        // delete without one, so a downloaded file takes its place.
+        if (!window.confirm(`“${name}” could not be kept in Recently deleted drafts (${error.reason}), so deleting it cannot be undone. `
+          + "Download it as a text file and delete it anyway?")) {
+          tell(`“${name}” was not deleted: it could not be kept in Recently deleted drafts (${error.reason}).`, true);
+          return;
+        }
+        const file = saveFile(editorText());
+        try {
+          result = await store.deleteDraft(id, { withoutCopy: true });
+        } catch (failure) {
+          tell(`Could not delete “${name}”. ${errorText(failure)}`, true);
+          return;
+        }
+        if (result.deleted) result.file = file;
       }
       drafts = drafts.filter((draft) => draft.id !== id);
       current = null;
@@ -603,13 +719,19 @@
         tell(`“${name}” was already deleted.`);
         return;
       }
+      if (!result.kept) {
+        tell(`Deleted “${name}”. It was not kept in Recently deleted drafts; its text was downloaded as ${result.file}.`);
+        return;
+      }
       tell(`Deleted “${name}”.`, false, result.entry.id);
       await loadTrash();
       undoBtn.focus();
     });
   }
 
-  function restore(id, fromUndo) {
+  // Focus goes to the restored draft's text, as after Undo, so that keyboard
+  // and screen-reader users land where the draft opened.
+  function restore(id) {
     if (busy.has(id)) return Promise.resolve();
     busy.add(id);
     return navigate(async () => {
@@ -631,10 +753,14 @@
       if (await settle()) {
         await show(result.draft);
         tell(result.alreadyThere ? `“${name}” is already back.` : `Restored “${name}”.`);
-        if (fromUndo) bodyEl.focus();
+        bodyEl.focus();
       } else {
         renderList();
         tell(`Restored “${name}”. It is in your drafts; this one stays open because its text is not saved yet.`, true);
+        // Its Restore button is gone with it.
+        if (!document.activeElement || document.activeElement === document.body) {
+          if (!focusTrash()) trashSummary.focus();
+        }
       }
     }).finally(() => busy.delete(id));
   }
@@ -698,7 +824,7 @@
       const actions = document.createElement("span");
       actions.className = "trash-actions";
       actions.append(
-        trashButton("Restore", "secondary small", "restore:" + entry.id, `Restore ${name}`, () => restore(entry.id, false)),
+        trashButton("Restore", "secondary small", "restore:" + entry.id, `Restore ${name}`, () => restore(entry.id)),
         // The accessible name starts with the visible label, for speech input.
         trashButton("Delete for good", "danger small", "forget:" + entry.id, `Delete for good: ${name}`, () => forget(entry)));
       li.append(title, preview, when, actions);
@@ -749,6 +875,11 @@
   function download() {
     const text = editorText();
     if (!hasText(text)) return tell("There is no text to download yet.");
+    tell("Downloaded " + saveFile(text) + ".");
+  }
+
+  // Starts the download of a draft's title and text; returns the file name.
+  function saveFile(text) {
     const title = text.title.trim();
     const name = store.fileNameFor(displayTitle(text));
     const blob = new Blob([title ? title + "\n\n" + text.body : text.body], { type: "text/plain;charset=utf-8" });
@@ -760,15 +891,13 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    tell("Downloaded " + name + ".");
+    return name;
   }
 
   // ---- suggestions --------------------------------------------------------------
 
-  function allDraftTexts() {
-    const texts = drafts.map((draft) => current && draft.id === current.id ? bodyEl.value : draft.body);
-    if (!current && bodyEl.value.trim()) texts.push(bodyEl.value);
-    return texts;
+  function otherDraftTexts() {
+    return drafts.filter((draft) => !current || draft.id !== current.id).map((draft) => draft.body);
   }
 
   // Only scheduleSuggest starts this, and turning suggestions off or removing
@@ -777,7 +906,7 @@
     suggestTimer = 0;
     const fn = provider;
     const draft = { id: current ? current.id : null, title: titleEl.value, body: bodyEl.value };
-    const texts = allDraftTexts();
+    const texts = otherDraftTexts();
     Promise.resolve().then(() => fn(draft, texts)).catch((error) => {
       console.warn("actle writing pad: suggestions failed", error);
     });
@@ -795,7 +924,7 @@
     toggleEl.checked = on;
     toggleHint.textContent = on
       ? "Ideas come only from your drafts in this pad, never from text you type on websites."
-      : "Off. Nothing you write is analyzed.";
+      : "Off. The pad does not look through your drafts for shortcut ideas or templates.";
     panelEl.hidden = !on;
     if (!on) {
       clearTimeout(suggestTimer);
@@ -804,18 +933,71 @@
     } else scheduleSuggest(0);
   }
 
-  async function toggleSuggestions() {
-    const on = toggleEl.checked;
-    showSuggestions(on);
-    toggleEl.disabled = true;
+  // Phrases the person chose not to see again are kept as written, so they
+  // can be cleared here whether suggestions are on or off.
+  let dismissedCleared = false;
+
+  function renderDismissed(count) {
+    if (count > 0) dismissedCleared = false;
+    dismissedEl.hidden = count === 0 && !dismissedCleared;
+    clearDismissedBtn.hidden = count === 0;
+    dismissedText.textContent = count > 0
+      ? `${count === 1 ? "1 phrase" : count + " phrases"} you chose not to see again ${count === 1 ? "is" : "are"} kept on this device.`
+      : dismissedCleared ? "Cleared. Those phrases can be suggested again." : "";
+  }
+
+  async function loadDismissed() {
     try {
-      prefs = { ...prefs, ...(await store.savePrefs({ suggestions: on })) };
+      renderDismissed((await store.getDismissed()).length);
+    } catch (_) { /* the note stays as it was */ }
+  }
+
+  async function clearDismissed() {
+    try {
+      await store.clearDismissed();
     } catch (error) {
-      showSuggestions(!on);
-      tell("Could not save the suggestions setting: " + errorText(error), true);
-    } finally {
-      toggleEl.disabled = false;
+      dismissedText.textContent = "Could not clear them: " + errorText(error);
+      return;
     }
+    dismissedCleared = true;
+    toggleEl.focus();
+    renderDismissed(0);
+  }
+
+  // The switch changed in another tab, or this tab's own save arrives. The
+  // events of quick toggles can arrive after the last save, so the stored
+  // setting is read again rather than taken from the event.
+  function syncSwitch() {
+    if (savingSwitch) return;
+    store.getPrefs().then((stored) => {
+      if (!savingSwitch && stored.suggestions !== prefs.suggestions) showSuggestions(stored.suggestions);
+    }).catch(() => {});
+  }
+
+  // The switch stays enabled while its setting saves: disabling the focused
+  // control would drop keyboard focus to the page. A change made meanwhile
+  // is saved when the running save ends.
+  let savingSwitch = null;
+
+  function toggleSuggestions() {
+    showSuggestions(toggleEl.checked);
+    if (savingSwitch) return savingSwitch;
+    savingSwitch = (async () => {
+      let saved = !toggleEl.checked;
+      try {
+        while (saved !== toggleEl.checked) {
+          const on = toggleEl.checked;
+          prefs = { ...prefs, ...(await store.savePrefs({ suggestions: on })) };
+          saved = on;
+        }
+      } catch (error) {
+        showSuggestions(saved);
+        tell("Could not save the suggestions setting: " + errorText(error), true);
+      } finally {
+        savingSwitch = null;
+      }
+    })();
+    return savingSwitch;
   }
 
   // ---- events --------------------------------------------------------------------
@@ -854,14 +1036,16 @@
     if (area !== "local") return;
     let draftsChanged = false;
     for (const [key, change] of Object.entries(changes)) {
-      if (key.startsWith(store.DRAFT_PREFIX)) {
+      if (key.startsWith(store.RESCUE_PREFIX)) {
+        // Another pad tab is going away with unsaved text: store it once it is gone.
+        const id = key.slice(store.RESCUE_PREFIX.length);
+        if (change.newValue !== undefined && id !== tab && navigator.locks) afterTabCloses(id, () => recoverFrom(id)).catch(() => {});
+      } else if (key.startsWith(store.DRAFT_PREFIX)) {
         draftsChanged = true;
         if (ready) changedElsewhere(key, change);
       } else if (key === store.TRASH_KEY) loadTrash();
-      else if (key === store.PREFS_KEY && ready) {
-        const next = change.newValue;
-        if (next && typeof next.suggestions === "boolean" && next.suggestions !== prefs.suggestions) showSuggestions(next.suggestions);
-      }
+      else if (key === store.DISMISSED_KEY) loadDismissed();
+      else if (key === store.PREFS_KEY && ready) syncSwitch();
     }
     if (draftsChanged) refreshDraftsSoon();
   });
@@ -872,12 +1056,16 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden" && ready && hasUnsaved()) saveNow();
   });
-  // The browser releases this page's draft lock when it goes away.
+  // The browser releases this page's locks when it goes away.
   window.addEventListener("pagehide", () => {
-    if (ready && hasUnsaved()) saveNow();
+    if (!ready || !hasUnsaved()) return;
+    rescue();
+    saveNow();
   });
   window.addEventListener("beforeunload", (event) => {
     if (!ready || (!saving && !saveTimer && !hasUnsaved())) return;
+    // Written before the browser asks, so it lands even if the person leaves.
+    rescue();
     saveNow();
     event.preventDefault();
     event.returnValue = "";
@@ -905,18 +1093,42 @@
   }, CHECK_INTERVAL);
 
   newBtn.addEventListener("click", newDraft);
-  selectEl.addEventListener("change", async () => {
-    if (!selectEl.value) return;
+  // On Windows and Linux the arrow and letter keys change a closed list box's
+  // value, firing "change" at every step. Stepping through it with the keyboard
+  // therefore only shows each draft's name; Enter opens the one shown, and
+  // leaving the list box shows the open draft again. A choice made with the
+  // mouse or in the opened list opens at once.
+  let keyStep = false;
+  async function openSelected() {
+    if (!selectEl.value || (current && selectEl.value === current.id)) return;
     if (!(await openDraft(selectEl.value))) selectEl.value = current ? current.id : "";
+  }
+  selectEl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      openSelected();
+      return;
+    }
+    keyStep = !event.altKey && !event.ctrlKey && !event.metaKey;
+    setTimeout(() => { keyStep = false; }, 0);
+  });
+  selectEl.addEventListener("change", () => {
+    if (!keyStep) openSelected();
+  });
+  selectEl.addEventListener("blur", () => {
+    keyStep = false;
+    const id = current ? current.id : "";
+    if (selectEl.value !== id) selectEl.value = id;
   });
   copyBtn.addEventListener("click", copyText);
   downloadBtn.addEventListener("click", download);
   deleteBtn.addEventListener("click", deleteCurrent);
   undoBtn.addEventListener("click", () => {
-    if (undoId) restore(undoId, true);
+    if (undoId) restore(undoId);
   });
   takeOverBtn.addEventListener("click", takeOver);
   emptyTrashBtn.addEventListener("click", emptyTrash);
+  clearDismissedBtn.addEventListener("click", clearDismissed);
   toggleEl.addEventListener("change", toggleSuggestions);
 
   self.ActlePad = Object.freeze({
@@ -935,18 +1147,30 @@
   // ---- start ---------------------------------------------------------------------
 
   (async function start() {
+    try {
+      // Held until this page goes away; see afterTabCloses.
+      navigator.locks.request(TAB_LOCK + tab, () => new Promise(() => {})).catch(() => {});
+    } catch (_) { /* no lock manager: text left by closed tabs is stored at start */ }
+    const recovered = await recoverClosedTabs();
     let readFailure = "";
     try {
       [drafts, prefs] = await Promise.all([store.listDrafts(), store.getPrefs()]);
     } catch (error) {
       readFailure = errorText(error);
     }
-    await loadTrash();
+    await Promise.all([loadTrash(), loadDismissed()]);
     ready = true;
     showSuggestions(prefs.suggestions);
     toggleEl.disabled = false;
-    const first = drafts.find((draft) => draft.id === prefs.lastDraftId) || drafts[0] || null;
+    // The text recovered last is what was being written last.
+    const back = recovered.length ? recovered[recovered.length - 1].draft : null;
+    const first = (back && drafts.find((draft) => draft.id === back.id))
+      || drafts.find((draft) => draft.id === prefs.lastDraftId) || drafts[0] || null;
     await show(first);
+    const copies = recovered.filter((item) => !item.inPlace).map((item) => `“${displayTitle(item.draft)}”`);
+    if (copies.length) {
+      tell(`Text that was not saved when the pad last closed is kept as ${copies.length === 1 ? "a new draft" : "new drafts"}: ${copies.join(", ")}.`);
+    }
     if (readFailure) tell("Your drafts could not be read: " + readFailure + ". What you write now is still saved.", true);
     if (!readOnly && !first) bodyEl.focus();
   })();

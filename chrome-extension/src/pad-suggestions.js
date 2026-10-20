@@ -16,12 +16,18 @@
   const storage = self.ShorthandStorage;
   const miner = self.ShorthandPhraseMiner;
   const maker = self.ShorthandTemplateMaker;
+  const conflicts = self.ShorthandConflicts;
 
   const PHRASE_CARDS = 3;
   // Phrases are looked for in the open draft and then the newest drafts, up
   // to this many characters in all, so a large pad does not hold up typing.
   const TEXT_BUDGET = 100000;
   const TEMPLATE_MIN_WORDS = 20;
+  // Said beside the buttons that copy pad text into the library: the pad's
+  // header promises that drafts are never synced, and the library is.
+  const LIBRARY_NOTE = storage.AREA === "sync"
+    ? " to your library, which Chrome syncs to your other devices when Chrome sync is on."
+    : " to your library in this browser.";
   const WORD = /[\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*/gu;
 
   let uid = 0;
@@ -56,6 +62,12 @@
     msg.classList.toggle("error", !!isError);
   }
 
+  function libraryNote(id, what) {
+    const note = el("p", "suggest-note", what + LIBRARY_NOTE);
+    note.id = id;
+    return note;
+  }
+
   function triggerInput(id) {
     const input = el("input", "suggest-trigger");
     input.type = "text";
@@ -74,14 +86,25 @@
     return "";
   }
 
-  async function triggerUsed(trigger) {
+  // Checks a trigger against the library as it is now. A trigger already
+  // used, or one that could never fire because a shorter trigger expands
+  // first, is refused with the reason. The library's other warnings that
+  // concern it (it fires inside words, or it makes an older trigger
+  // impossible to type) are returned to show after saving, as the library
+  // shows them next to the row.
+  async function checkTrigger(trigger) {
     const { shorthands } = await storage.getAll();
-    return shorthands.some((item) => item.trigger === trigger);
+    if (shorthands.some((item) => item.trigger === trigger)) return { problem: "That trigger is already used.", warnings: [] };
+    const found = conflicts.find([...shorthands, { trigger }]);
+    const never = found.find((item) => item.trigger === trigger && item.kind === "unreachable");
+    if (never) return { problem: never.message + " Choose another trigger.", warnings: [] };
+    const warnings = found.filter((item) => (item.trigger === trigger && item.kind === "fires-mid-word")
+      || (item.kind === "unreachable" && item.other === trigger)).map((item) => item.message);
+    return { problem: "", warnings };
   }
 
-  // The open draft first, then the others newest first, up to TEXT_BUDGET
-  // characters. The open draft's copy among the others counts once: the miner
-  // counts identical texts once.
+  // The open draft first, then the other drafts newest first (pad.js passes
+  // them without the open one), up to TEXT_BUDGET characters in all.
   function within(body, texts) {
     const out = [];
     let left = TEXT_BUDGET;
@@ -167,6 +190,8 @@
     input.setAttribute("aria-describedby", text.id + " " + msg.id);
     const make = el("button", "small", "Make shortcut");
     make.type = "submit";
+    const note = libraryNote(id + "-note", "Make shortcut copies this phrase");
+    make.setAttribute("aria-describedby", note.id);
     const row = el("div", "suggest-row");
     row.append(input, make);
     const later = el("button", "secondary small", "Not now");
@@ -175,7 +200,7 @@
     never.type = "button";
     const more = el("div", "suggest-more");
     more.append(later, never);
-    form.append(el("p", "suggest-eyebrow", "Shortcut idea"), text, label, row, more, msg);
+    form.append(el("p", "suggest-eyebrow", "Shortcut idea"), text, label, row, note, more, msg);
     li.append(form);
     li.dataset.phrase = item.phrase;
 
@@ -249,9 +274,11 @@
     const { display } = card.item;
     card.busy = true;
     say(card.msg, "Saving…");
+    let check;
     try {
-      if (await triggerUsed(trigger)) {
-        say(card.msg, "That trigger is already used.", true);
+      check = await checkTrigger(trigger);
+      if (check.problem) {
+        say(card.msg, check.problem, true);
         return card.input.focus();
       }
       await storage.saveShorthand({ trigger, expansion: display });
@@ -260,7 +287,8 @@
     } finally {
       card.busy = false;
     }
-    tell(`Saved ${trigger}. Type it anywhere to insert “${display}”.`, { library: true });
+    tell(check.warnings.length ? `Saved ${trigger}. ${check.warnings.join(" ")}`
+      : `Saved ${trigger}. Type it anywhere to insert “${display}”.`, { library: true });
     removePhraseCard(card);
     pad.requestSuggestions();
   }
@@ -341,6 +369,8 @@
     input.setAttribute("aria-describedby", msg.id);
     const save = el("button", "small", "Save as template");
     save.type = "submit";
+    const note = libraryNote(id + "-note", "Save as template copies this draft's text");
+    save.setAttribute("aria-describedby", note.id);
     const row = el("div", "suggest-row");
     row.append(input, save);
     const later = el("button", "secondary small", "Not now");
@@ -348,7 +378,7 @@
     later.setAttribute("aria-label", "Not now: fill-in template");
     const more = el("div", "suggest-more");
     more.append(later);
-    form.append(label, row, more, msg);
+    form.append(label, row, note, more, msg);
     section.append(el("p", "suggest-eyebrow", "Fill-in template"), title, hint, preview, names, form);
 
     input.addEventListener("input", () => {
@@ -547,9 +577,11 @@
     }
     state.busy = true;
     say(card.msg, "Saving…");
+    let check;
     try {
-      if (await triggerUsed(trigger)) {
-        say(card.msg, "That trigger is already used.", true);
+      check = await checkTrigger(trigger);
+      if (check.problem) {
+        say(card.msg, check.problem, true);
         return card.input.focus();
       }
       await storage.saveShorthand({ trigger, expansion });
@@ -560,8 +592,9 @@
     }
     state.savedBody = body;
     state.dirtyTrigger = false;
-    tell(spans.length ? `Saved ${trigger}. Typing it opens the fill-in form.`
-      : `Saved ${trigger}. Type it anywhere to insert this draft.`, { library: true });
+    tell(check.warnings.length ? `Saved ${trigger}. ${check.warnings.join(" ")}`
+      : spans.length ? `Saved ${trigger}. Typing it opens the fill-in form.`
+        : `Saved ${trigger}. Type it anywhere to insert this draft.`, { library: true });
     // Hidden until the draft changes: the template is in the library now.
     if (template === state) removeTemplateCard();
     pad.requestSuggestions();

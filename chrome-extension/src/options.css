@@ -22,8 +22,9 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/22px 
 a { color: var(--accent); text-underline-offset: 4px; }
 a:hover { text-decoration-thickness: 2px; }
 .app-shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 100vh; }
+/* The sidebar scrolls on its own when the window is too short for its items. */
 .sidebar {
-  position: sticky; top: 0; align-self: start; height: 100vh; display: flex; flex-direction: column;
+  position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--control) var(--surface); display: flex; flex-direction: column;
   padding: 32px 16px 24px; background: var(--surface); color: var(--ink); border-right: 1px solid var(--line);
 }
 .brand { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; color: var(--ink); font-size: 14px; font-weight: 700; line-height: 22px; text-decoration: none; --actle-font-size: 15px; --actle-completion: var(--accent); }

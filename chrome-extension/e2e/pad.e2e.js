@@ -41,10 +41,10 @@ async function storedDrafts(app) {
   return Object.entries(items).filter(([key]) => key.startsWith("pad-draft:")).map(([, value]) => value);
 }
 
-async function typeInBody(page, text) {
+async function typeInBody(page, text, delay) {
   await page.click("#padBody");
   await page.keyboard.press("Control+End");
-  await page.keyboard.type(text);
+  await page.keyboard.type(text, delay ? { delay } : undefined);
 }
 
 test("the toolbar popup opens the Writing pad in a new tab", async (t) => {
@@ -58,6 +58,8 @@ test("the toolbar popup opens the Writing pad in a new tab", async (t) => {
   await pad.waitForLoadState();
   assert.equal(pad.url(), padUrl(app));
   assert.equal(await pad.title(), "Writing pad · actle");
+  assert.equal(await pad.textContent(".pad-tagline"), "Drafts are saved on this device as you type. They are never sent or synced.",
+    "the promise is about drafts: shortcuts made from them go to the library");
   assert.deepEqual(app.errors, []);
 });
 
@@ -163,7 +165,7 @@ test("the suggestions switch", async (t) => {
     await page.waitForFunction(() => window.calls.length === 2);
     const last = (await calls())[1];
     assert.equal(last.draft.body, "as you can see");
-    assert.deepEqual(last.texts, ["as you can see"]);
+    assert.deepEqual(last.texts, [], "the open draft is passed once, as the draft");
   });
 
   await t.test("off empties the panel, analyzes nothing and stays off after a reload", async () => {
@@ -175,7 +177,7 @@ test("the suggestions switch", async (t) => {
     await page.click("#suggestToggle");
     assert.equal(await page.locator("#padSuggestions").evaluate((el) => el.hidden), true);
     assert.equal(await page.evaluate(() => self.ActlePad.panel.childElementCount), 0);
-    assert.equal(await page.textContent("#suggestToggleHint"), "Off. Nothing you write is analyzed.");
+    assert.equal(await page.textContent("#suggestToggleHint"), "Off. The pad does not look through your drafts for shortcut ideas or templates.");
     const before = (await calls()).length;
     await typeInBody(page, ". As you can see");
     await page.waitForTimeout(2200);
@@ -194,18 +196,51 @@ test("the suggestions switch", async (t) => {
     assert.deepEqual(await calls(), []);
   });
 
-  await t.test("on again calls the hook with every draft's text", async () => {
+  await t.test("the switch keeps keyboard focus while its setting saves", async () => {
+    const saved = (on) => page.waitForFunction(async (on) => (await chrome.storage.local.get("pad-prefs"))["pad-prefs"].suggestions === on, on);
+    await page.focus("#suggestToggle");
+    await page.keyboard.press("Space");
+    assert.equal(await page.isChecked("#suggestToggle"), true);
+    assert.equal(await page.evaluate(() => document.activeElement.id), "suggestToggle");
+    await saved(true);
+    // Quicker than a save: on, off, on, off.
+    for (let i = 0; i < 3; i++) await page.keyboard.press("Space");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "suggestToggle", "focus stays on the switch");
+    assert.equal(await page.isChecked("#suggestToggle"), false);
+    await saved(false);
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(async () => (await chrome.storage.local.get("pad-prefs"))["pad-prefs"].suggestions), false,
+      "the last state chosen is the one saved");
+    assert.equal(await page.locator("#padSuggestions").evaluate((el) => el.hidden), true);
+    await page.evaluate(() => { window.calls = []; });
+  });
+
+  await t.test("on again calls the hook with the open draft and every other draft's text", async () => {
+    await page.evaluate(() => self.ActlePadStore.createDraft({ title: "Other", body: "Another draft" }));
+    await page.waitForFunction(() => document.getElementById("draftCount").textContent === "2");
     await page.click("#suggestToggle");
     await page.waitForFunction(() => window.calls.length === 1);
     const [call] = await calls();
     assert.equal(call.draft.body, "as you can see. As you can see");
     assert.match(call.draft.id, /^[a-z0-9]+$/);
-    assert.deepEqual(call.texts, ["as you can see. As you can see"]);
+    assert.deepEqual(call.texts, ["Another draft"]);
   });
 
   await t.test("reports no page errors", () => {
     assert.deepEqual(app.errors, []);
   });
+});
+
+test("the suggestions switch follows a change made in another pad tab", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const first = await openPad(app);
+  const second = await openPad(app);
+  await second.click("#suggestToggle");
+  await first.waitForFunction(() => !document.getElementById("suggestToggle").checked && document.getElementById("padSuggestions").hidden);
+  await second.click("#suggestToggle");
+  await first.waitForFunction(() => document.getElementById("suggestToggle").checked && !document.getElementById("padSuggestions").hidden);
+  assert.deepEqual(app.errors, []);
 });
 
 test("one tab edits a draft at a time", async (t) => {
@@ -251,6 +286,40 @@ test("one tab edits a draft at a time", async (t) => {
   await t.test("reports no page errors", () => {
     assert.deepEqual(app.errors, []);
   });
+});
+
+test("on narrow windows the drafts list box opens a draft only when chosen", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const seed = await openPad(app);
+  await seed.evaluate(async () => {
+    for (const title of ["Alpha", "Bravo", "Charlie", "Delta"]) await self.ActlePadStore.createDraft({ title, body: title + " text" });
+  });
+  await seed.close();
+  const page = await app.context.newPage();
+  await page.setViewportSize({ width: 980, height: 800 });
+  await openPad(app, page);
+  assert.equal(await page.inputValue("#padTitle"), "Delta");
+  const select = page.locator("#draftSelect");
+  await select.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await select.inputValue(), await page.evaluate(() => document.getElementById("draftSelect").options[2].value), "the list box shows the second draft down");
+  await page.waitForTimeout(300);
+  assert.equal(await page.inputValue("#padTitle"), "Delta", "stepping through the list opens nothing");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.getElementById("padTitle").value === "Bravo");
+  assert.equal(await page.evaluate(() => document.activeElement.id), "draftSelect");
+
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Tab");
+  assert.equal(await page.inputValue("#padTitle"), "Bravo");
+  assert.equal(await page.locator("#draftSelect option:checked").textContent().then((text) => text.startsWith("Bravo")), true,
+    "leaving the list box shows the open draft again");
+
+  await select.selectOption({ label: await page.locator("#draftSelect option", { hasText: "Alpha" }).textContent() });
+  await page.waitForFunction(() => document.getElementById("padTitle").value === "Alpha", null, { timeout: 5000 });
+  assert.deepEqual(app.errors, []);
 });
 
 test("Copy text and Download .txt", async (t) => {
@@ -340,6 +409,135 @@ test("a failing save shows the error and keeps the text", async (t) => {
   assert.deepEqual(app.errors, []);
 });
 
+function rescueKeys(items) {
+  return Object.keys(items).filter((key) => key.startsWith("pad-rescue:"));
+}
+
+test("text typed just before the tab closes or reloads is not lost", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+
+  await t.test("closing within 400 ms and choosing Leave keeps the last words", async () => {
+    const page = await openPad(app);
+    await typeInBody(page, "First line saved.");
+    await waitSaved(page);
+    await typeInBody(page, " LAST WORDS");
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.close({ runBeforeUnload: true });
+    await page.waitForEvent("close");
+    const again = await openPad(app);
+    assert.equal(await again.inputValue("#padBody"), "First line saved. LAST WORDS");
+    const drafts = await storedDrafts(app);
+    assert.deepEqual(drafts.map((draft) => [draft.body, draft.rev]), [["First line saved. LAST WORDS", 2]], "stored over the same draft, not as a copy");
+    assert.deepEqual(rescueKeys(await stored(app)), [], "the rescued text is not kept twice");
+    assert.equal(await again.textContent("#padMsg"), "");
+    await again.close();
+  });
+
+  await t.test("reloading within 400 ms and choosing Leave keeps the last words", async () => {
+    const page = await openPad(app);
+    await typeInBody(page, " Then a reload.");
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.reload();
+    await waitReady(page);
+    assert.equal(await page.inputValue("#padBody"), "First line saved. LAST WORDS Then a reload.");
+    assert.equal((await storedDrafts(app)).length, 1);
+    await page.close();
+  });
+
+  await t.test("a new draft closed before its first save is kept", async () => {
+    const page = await openPad(app);
+    await page.click("#newDraftBtn");
+    await page.keyboard.type("Brand new");
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.close({ runBeforeUnload: true });
+    await page.waitForEvent("close");
+    const again = await openPad(app);
+    assert.equal(await again.inputValue("#padBody"), "Brand new", "the recovered draft opens");
+    assert.deepEqual((await storedDrafts(app)).map((draft) => draft.body).sort(), ["Brand new", "First line saved. LAST WORDS Then a reload."]);
+    await again.close();
+  });
+
+  await t.test("choosing Stay keeps editing, saves, and leaves nothing to recover", async () => {
+    const page = await openPad(app);
+    await typeInBody(page, " Stay.");
+    page.once("dialog", (dialog) => dialog.dismiss());
+    await page.close({ runBeforeUnload: true });
+    await waitSaved(page);
+    assert.equal(page.isClosed(), false);
+    await page.waitForFunction(async () => !Object.keys(await chrome.storage.local.get(null)).some((key) => key.startsWith("pad-rescue:")));
+    assert.match((await storedDrafts(app)).map((draft) => draft.body).join("|"), /Brand new Stay\./);
+    await page.close();
+  });
+
+  await t.test("reports no page errors", () => {
+    assert.deepEqual(app.errors, []);
+  });
+});
+
+test("a pad tab that stays open stores the text of one that closed", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const writer = await openPad(app);
+  await typeInBody(writer, "Saved part.");
+  await waitSaved(writer);
+  const other = await openPad(app);
+  await other.click("#newDraftBtn");
+  // A save held back, as when the tab closes before the lock and read finish.
+  await writer.evaluate(() => {
+    const setBefore = chrome.storage.local.set.bind(chrome.storage.local);
+    chrome.storage.local.set = (items) => Object.keys(items).some((key) => key.startsWith("pad-draft:"))
+      ? new Promise(() => {}) : setBefore(items);
+  });
+  await typeInBody(writer, " Unsaved part.");
+  writer.once("dialog", (dialog) => dialog.accept());
+  await writer.close({ runBeforeUnload: true });
+  await writer.waitForEvent("close");
+  await other.waitForFunction(() => [...document.querySelectorAll("#draftList .draft-title")].some((el) => el.textContent === "Saved part. Unsaved part."));
+  assert.deepEqual((await storedDrafts(app)).map((draft) => draft.body), ["Saved part. Unsaved part."]);
+  assert.deepEqual(rescueKeys(await stored(app)), []);
+  assert.deepEqual(app.errors, []);
+});
+
+test("steady typing with no pause still saves every 2 seconds", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openPad(app);
+  await typeInBody(page, "Dear Sam,");
+  await waitSaved(page);
+  const sentence = " the venue is confirmed for Friday and the catering order went in.";
+  const typing = typeInBody(page, sentence, 150); // about 10 s, never pausing 400 ms
+  await page.waitForTimeout(2600);
+  const midway = (await storedDrafts(app))[0].body;
+  assert.ok(midway.length > "Dear Sam,".length, `saved while typing: ${JSON.stringify(midway)}`);
+  assert.ok(sentence.startsWith(midway.slice("Dear Sam,".length)), midway);
+  await typing;
+  await waitSaved(page);
+  assert.equal((await storedDrafts(app))[0].body, "Dear Sam," + sentence);
+  assert.deepEqual(app.errors, []);
+});
+
+test("a save that finds its own text already stored makes no copy", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openPad(app);
+  await page.fill("#padTitle", "Venue");
+  await typeInBody(page, "Mine");
+  await waitSaved(page);
+  await page.evaluate(async () => {
+    const body = document.getElementById("padBody");
+    body.value = "Mine, edited";
+    body.dispatchEvent(new Event("input", { bubbles: true }));
+    const [draft] = await self.ActlePadStore.listDrafts();
+    await self.ActlePadStore.saveDraft(draft.id, { title: "Venue", body: "Mine, edited" }, draft.rev);
+  });
+  await waitSaved(page);
+  await page.waitForTimeout(500);
+  assert.deepEqual((await storedDrafts(app)).map((draft) => [draft.title, draft.body]), [["Venue", "Mine, edited"]]);
+  assert.equal(await page.textContent("#padMsg"), "");
+  assert.deepEqual(app.errors, []);
+});
+
 test("deleting a draft, Undo and Recently deleted drafts", async (t) => {
   const app = await launch();
   t.after(() => app.close());
@@ -381,9 +579,11 @@ test("deleting a draft, Undo and Recently deleted drafts", async (t) => {
     await page.waitForFunction(() => document.getElementById("padMsg").textContent === "Deleted “Letter”.");
     await page.click("#padTrashSummary");
     assert.deepEqual(await page.locator("#padTrashList .trash-title").allTextContents(), ["Letter"]);
-    await page.getByRole("button", { name: "Restore Letter" }).click();
+    await page.getByRole("button", { name: "Restore Letter" }).focus();
+    await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.getElementById("padTitle").value === "Letter");
     assert.equal(await page.isVisible("#padTrashEmpty"), true);
+    assert.equal(await page.evaluate(() => document.activeElement.id), "padBody", "keyboard focus lands in the restored draft");
 
     accept("Delete “Letter”? It goes to Recently deleted drafts.");
     await page.click("#deleteBtn");
@@ -406,6 +606,57 @@ test("deleting a draft, Undo and Recently deleted drafts", async (t) => {
     await page.waitForFunction(() => document.getElementById("padTrashCount").textContent === "0");
     assert.equal((await stored(app))["pad-trash"], undefined);
     assert.deepEqual(await storedDrafts(app), []);
+  });
+
+  await t.test("reports no page errors", () => {
+    assert.deepEqual(app.errors, []);
+  });
+});
+
+test("a draft too big to keep a copy of can still be deleted, after a download", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openPad(app);
+  await page.fill("#padTitle", "Transcript");
+  await typeInBody(page, "A very long transcript");
+  await waitSaved(page);
+  // Storage is too full for the copy in Recently deleted drafts.
+  await page.evaluate(() => {
+    const set = chrome.storage.local.set.bind(chrome.storage.local);
+    chrome.storage.local.set = (items) => "pad-trash" in items
+      ? Promise.reject(new Error("Resource::kQuotaBytes quota exceeded")) : set(items);
+  });
+  const answers = [];
+  const answer = (...replies) => {
+    page.on("dialog", function reply(dialog) {
+      answers.push(dialog.message());
+      const accept = replies.shift();
+      if (!replies.length) page.off("dialog", reply);
+      return accept ? dialog.accept() : dialog.dismiss();
+    });
+  };
+  const notKept = "“Transcript” could not be kept in Recently deleted drafts (Resource::kQuotaBytes quota exceeded), "
+    + "so deleting it cannot be undone. Download it as a text file and delete it anyway?";
+
+  await t.test("saying no keeps the draft and says why", async () => {
+    answer(true, false);
+    await page.click("#deleteBtn");
+    await page.waitForFunction(() => /was not deleted/.test(document.getElementById("padMsg").textContent));
+    assert.deepEqual(answers.splice(0), ["Delete “Transcript”? It goes to Recently deleted drafts.", notKept]);
+    assert.equal(await page.textContent("#padMsg"), "“Transcript” was not deleted: it could not be kept in Recently deleted drafts (Resource::kQuotaBytes quota exceeded).");
+    assert.equal((await storedDrafts(app)).length, 1);
+  });
+
+  await t.test("saying yes downloads it, then deletes it without a copy", async () => {
+    answer(true, true);
+    const [download] = await Promise.all([page.waitForEvent("download"), page.click("#deleteBtn")]);
+    assert.equal(download.suggestedFilename(), "Transcript.txt");
+    assert.equal(fs.readFileSync(await download.path(), "utf8"), "Transcript\n\nA very long transcript");
+    await page.waitForFunction(() => /^Deleted/.test(document.getElementById("padMsg").textContent));
+    assert.equal(await page.textContent("#padMsg"), "Deleted “Transcript”. It was not kept in Recently deleted drafts; its text was downloaded as Transcript.txt.");
+    assert.equal(await page.isVisible("#padUndo"), false, "there is nothing to undo from");
+    assert.deepEqual(await storedDrafts(app), []);
+    assert.equal((await stored(app))["pad-trash"], undefined);
   });
 
   await t.test("reports no page errors", () => {
@@ -466,6 +717,10 @@ test("a phrase written three times becomes a shortcut that works everywhere", as
     await card.waitFor();
     assert.equal(await card.locator(".suggest-text").textContent(), "You've written “As you can see” 3 times.");
     assert.equal(await card.locator(".suggest-trigger").inputValue(), "aycs/");
+    const note = "Make shortcut copies this phrase to your library, which Chrome syncs to your other devices when Chrome sync is on.";
+    assert.equal(await card.locator(".suggest-note").textContent(), note, "the card says where the phrase goes");
+    assert.equal(await card.getByRole("button", { name: /^Make shortcut/ }).getAttribute("aria-describedby"),
+      await card.locator(".suggest-note").getAttribute("id"));
     assert.equal(await page.isVisible(".suggest-empty"), false);
     assert.equal(await page.locator(".suggest-root > .sr-only[role=status]").textContent(), "New shortcut idea: “As you can see”.",
       "a new idea is announced in a status line of its own");
@@ -571,6 +826,33 @@ test("Make shortcut checks the trigger like the library", async (t) => {
   });
 });
 
+test("Make shortcut refuses a trigger that could never fire, and passes on the library's warnings", async (t) => {
+  // "ty" has no symbol, so it fires inside words: inside "tyfyp/" too.
+  const app = await launch({ shorthands: [{ trigger: "ty", expansion: "thank you" }, { trigger: "cool/", expansion: "That is really cool!" }] });
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await fillBody(page, "Thank you for your patience. Thank you for your patience! Thank you for your patience, Sam.");
+  const card = phraseCard(page, "thank you for your patience");
+  await card.waitFor();
+  const input = card.locator(".suggest-trigger");
+  assert.equal(await input.inputValue(), "tyfyp/");
+  await card.getByRole("button", { name: /^Make shortcut/ }).click();
+  await card.locator(".suggest-msg.error").waitFor();
+  assert.equal(await card.locator(".suggest-msg").textContent(),
+    "\"tyfyp/\" can never fire, because \"ty\" expands as soon as you type it. Choose another trigger.");
+  assert.equal(await input.evaluate((el) => el === document.activeElement), true);
+  assert.equal((await library(app)).some((item) => item.trigger === "tyfyp/"), false, "nothing is saved");
+
+  // A trigger of letters only is saved, with the library's warning instead of "Type it anywhere".
+  await input.fill("patience");
+  await card.getByRole("button", { name: /^Make shortcut/ }).click();
+  await page.waitForFunction(() => document.querySelector(".suggest-notice").textContent.startsWith("Saved patience."));
+  assert.equal(await notice(page), "Saved patience. \"patience\" is only letters and digits, so it fires inside ordinary words. "
+    + "Ending it with a symbol, like \"patience/\", avoids that. Open library");
+  assert.deepEqual((await library(app)).filter((item) => item.trigger === "patience").map((item) => item.expansion), ["Thank you for your patience"]);
+  assert.deepEqual(app.errors, []);
+});
+
 test("Not now and Don't suggest this", async (t) => {
   const app = await launch();
   t.after(() => app.close());
@@ -598,6 +880,8 @@ test("Not now and Don't suggest this", async (t) => {
     await phraseCard(page, "thanks for your patience").getByRole("button", { name: /^Don't suggest this/ }).click();
     await page.waitForFunction(() => document.querySelector(".suggest-notice").textContent === "“Thanks for your patience” will not be suggested again.");
     assert.deepEqual((await stored(app))["pad-dismissed"], ["thanks for your patience"]);
+    await page.waitForFunction(() => document.getElementById("padDismissedText").textContent === "1 phrase you chose not to see again is kept on this device.");
+    assert.equal(await page.isVisible("#padClearDismissed"), true);
     const sync = await app.worker.evaluate(() => chrome.storage.sync.get(null));
     assert.equal(Object.keys(sync).some((key) => key.startsWith("pad-")), false);
     await page.close();
@@ -639,9 +923,75 @@ test("Not now and Don't suggest this", async (t) => {
     assert.equal(await page.isVisible(".suggest-empty"), true);
   });
 
+  await t.test("Clear forgets the phrases not to suggest, and they come back", async () => {
+    await page.click("#suggestToggle"); // the list can be cleared with suggestions off, too
+    await page.waitForFunction(() => document.getElementById("padSuggestions").hidden);
+    assert.equal(await page.isVisible("#padClearDismissed"), true);
+    await page.focus("#padClearDismissed");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.getElementById("padDismissedText").textContent === "Cleared. Those phrases can be suggested again.");
+    assert.equal((await stored(app))["pad-dismissed"], undefined);
+    assert.equal(await page.isVisible("#padClearDismissed"), false);
+    assert.equal(await page.evaluate(() => document.activeElement.id), "suggestToggle", "focus moves on, not to the page");
+    await page.click("#suggestToggle");
+    await phraseCard(page, "thanks for your patience").waitFor();
+    await page.reload();
+    await waitReady(page);
+    assert.equal(await page.isVisible("#padDismissed"), false, "nothing to clear, nothing shown");
+  });
+
   await t.test("reports no page errors", () => {
     assert.deepEqual(app.errors, []);
   });
+});
+
+test("a phrase dismissed in another pad tab leaves this one without typing", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await fillBody(page, PHRASES);
+  await phraseCard(page, "as you can see").waitFor();
+  // Another tab's "Don't suggest this" reaches this one through storage.
+  const other = await openSuggestPad(app);
+  await other.evaluate(() => self.ActlePadStore.dismissPhrase("As you can see"));
+  await phraseCard(page, "as you can see").waitFor({ state: "detached" });
+  assert.equal(await phraseCard(page, "thanks for your patience").count(), 1);
+  assert.deepEqual(app.errors, []);
+});
+
+test("Don't suggest this that cannot be saved says so and keeps the idea", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await fillBody(page, PHRASES);
+  const card = phraseCard(page, "as you can see");
+  await card.waitFor();
+  await page.evaluate(() => {
+    self.ActlePadStore.dismissPhrase = () => Promise.reject(new Error("QUOTA_BYTES quota exceeded"));
+  });
+  await card.getByRole("button", { name: /^Don't suggest this/ }).click();
+  await card.locator(".suggest-msg.error").waitFor();
+  assert.equal(await card.locator(".suggest-msg").textContent(), "Could not save that choice: QUOTA_BYTES quota exceeded");
+  assert.equal(await card.count(), 1);
+  assert.equal(await notice(page), "");
+  assert.deepEqual(app.errors, []);
+});
+
+test("a library read that fails after suggestions are turned off shows nothing", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openSuggestPad(app);
+  await fillBody(page, PHRASES);
+  await phraseCard(page, "as you can see").waitFor();
+  await page.evaluate(() => {
+    self.ShorthandStorage.getAll = () => new Promise((resolve, reject) => setTimeout(() => reject(new Error("Sync is unavailable")), 1000));
+  });
+  await fillBody(page, PHRASES + " Again.");
+  await page.waitForTimeout(1700); // the run has started and waits for the library
+  await page.click("#suggestToggle");
+  await page.waitForTimeout(1200);
+  assert.equal(await page.locator("#padSuggestions").evaluate((el) => el.childElementCount), 0, "no paused notice in a panel that is off");
+  assert.deepEqual(app.errors, []);
 });
 
 test("an email draft becomes a fill-in template", async (t) => {
@@ -669,6 +1019,10 @@ test("an email draft becomes a fill-in template", async (t) => {
     assert.equal(await card.locator(".template-preview").textContent(), EMAIL.replace("Sam", "name").replace("October 20, 2026", "date"));
     assert.deepEqual(await card.locator(".blank-name").evaluateAll((all) => all.map((input) => input.value)), ["name", "date"]);
     assert.equal(await card.locator(".suggest-trigger").inputValue(), "fuw/", "initials of the first three title words");
+    assert.equal(await card.locator(".suggest-note").textContent(),
+      "Save as template copies this draft's text to your library, which Chrome syncs to your other devices when Chrome sync is on.");
+    assert.equal(await card.getByRole("button", { name: "Save as template" }).getAttribute("aria-describedby"),
+      await card.locator(".suggest-note").getAttribute("id"));
     assert.equal(await page.locator(".template-preview").evaluate((el) => !el.closest("[aria-live], [role=status]")), true,
       "the draft's text is not in a live region, so it is not read out on every change");
   });
@@ -741,6 +1095,23 @@ test("template chips, blank names and Not now", async (t) => {
     assert.equal(await chips.first().getAttribute("aria-pressed"), "true");
     await page.keyboard.press("Space");
     assert.equal(await chips.first().evaluate((el) => el === document.activeElement), true, "focus stays on the chip");
+  });
+
+  await t.test("a blank name typed in the list does not expand as a trigger", async () => {
+    const name = card.locator(".blank-name").first();
+    await name.click();
+    await name.press("Control+a");
+    await page.keyboard.type("cool/");
+    await page.waitForTimeout(300);
+    assert.equal(await name.inputValue(), "cool/");
+  });
+
+  await t.test("the preview is drawn again only when the draft's text changes", async () => {
+    await page.evaluate(() => { document.querySelector(".template-card .blank-chip").dataset.mark = "kept"; });
+    // A library change elsewhere runs the suggestions again with the same text.
+    await app.worker.evaluate(() => self.ShorthandStorage.saveShorthand({ trigger: "elsewhere/", expansion: "Added elsewhere" }));
+    await page.waitForTimeout(800);
+    assert.equal(await page.locator(".template-card .blank-chip[data-mark=kept]").count(), 1, "the same chip, not a new one");
   });
 
   await t.test("a blank name is edited in the list and checked", async () => {
@@ -887,6 +1258,68 @@ test("phrases are looked for in the open draft first, then the newest drafts", a
 
   await page.locator("#draftList .draft-item", { hasText: "Older" }).click();
   await phraseCard(page, "as you can see").waitFor();
+  assert.deepEqual(app.errors, []);
+});
+
+test("other drafts are cut where the 100,000-character budget ends", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  // The phrase twice in the open draft, and a third time past the budget at
+  // the end of a long other draft.
+  await app.worker.evaluate(async () => {
+    let seed = 2463534242;
+    const word = () => {
+      let text = "";
+      for (let i = 0; i < 6; i++) {
+        seed ^= seed << 13;
+        seed ^= seed >>> 17;
+        seed ^= seed << 5;
+        text += String.fromCharCode(97 + (seed >>> 0) % 26);
+      }
+      return text;
+    };
+    let long = "";
+    while (long.length < 120000) long += word() + " ";
+    long += "As you can see, three.";
+    await chrome.storage.local.set({
+      "pad-draft:long": { id: "long", title: "Long notes", body: long, createdAt: 1, updatedAt: 1000, rev: 1 },
+      "pad-draft:open": { id: "open", title: "Open", body: "As you can see, one. As you can see, two.", createdAt: 2, updatedAt: 2000, rev: 1 },
+    });
+  });
+  const page = await openSuggestPad(app);
+  assert.equal(await page.inputValue("#padTitle"), "Open");
+  await page.locator(".suggest-empty").waitFor();
+  await page.waitForTimeout(500);
+  assert.equal(await phraseCard(page, "as you can see").count(), 0, "the third time is past the budget");
+  assert.deepEqual(app.errors, []);
+});
+
+test("a long open draft counts once, even when it is cut to the budget", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  // 60,000 characters with the phrase twice near the start: once in the
+  // editor and once more in a cut copy would make it look like 4 times.
+  await app.worker.evaluate(async () => {
+    let seed = 88172645;
+    const word = () => {
+      let text = "";
+      for (let i = 0; i < 6; i++) {
+        seed ^= seed << 13;
+        seed ^= seed >>> 17;
+        seed ^= seed << 5;
+        text += String.fromCharCode(97 + (seed >>> 0) % 26);
+      }
+      return text;
+    };
+    let body = "As you can see, one. As you can see, two. ";
+    while (body.length < 60000) body += word() + " ";
+    await chrome.storage.local.set({ "pad-draft:long": { id: "long", title: "Report", body, createdAt: 1, updatedAt: 1000, rev: 1 } });
+  });
+  const page = await openSuggestPad(app);
+  assert.equal(await page.inputValue("#padTitle"), "Report");
+  await page.locator(".suggest-empty").waitFor();
+  await page.waitForTimeout(500);
+  assert.equal(await phraseCard(page, "as you can see").count(), 0, "written twice is not enough");
   assert.deepEqual(app.errors, []);
 });
 

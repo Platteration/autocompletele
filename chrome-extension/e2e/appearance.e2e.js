@@ -280,10 +280,12 @@ for (const theme of ["light", "dark"]) {
     const app = await launch();
     t.after(() => app.close());
     const page = await openSuggestingPad(app, theme, 1280);
+    await page.evaluate(() => self.ActlePadStore.dismissPhrase("a phrase not to suggest"));
+    await page.waitForSelector("#padDismissed:not([hidden])");
     // One chip left as written, so both chip states are measured.
     await page.locator(".blank-chip").nth(1).click();
     await page.mouse.move(0, 0);
-    await assertReadable(page, ".suggest-eyebrow, .suggest-text, .suggest-phrase, .suggest-title, .suggest-hint, .suggest-label, .blank-value, .pad-side button");
+    await assertReadable(page, ".suggest-eyebrow, .suggest-text, .suggest-phrase, .suggest-title, .suggest-hint, .suggest-label, .suggest-note, .blank-value, #padDismissedText, .pad-side button");
     assert.deepEqual(await page.locator(".blank-chip").evaluateAll((all) => all.map((chip) => chip.getAttribute("aria-pressed"))).then((states) => [...new Set(states)].sort()), ["false", "true"]);
     await assertKeyboardFocus(page, ".blank-chip >> nth=0", "Tab", ".blank-chip >> nth=1");
     await assertKeyboardFocus(page, "#suggestToggle", "Tab", '.suggest-card[data-phrase="as you can see"] .suggest-trigger');
@@ -318,6 +320,106 @@ test("on wide screens long suggestions scroll in their own column", async (t) =>
   assert.ok(layout.page[0] <= layout.page[1], `The page must not grow past the window: ${JSON.stringify(layout)}`);
   assert.ok(layout.side[0] > layout.side[1], `The suggestions column scrolls instead: ${JSON.stringify(layout)}`);
   assert.ok(layout.trash <= 720, `Recently deleted drafts stays in view: ${JSON.stringify(layout)}`);
+});
+
+// Where the pad's columns and the editor's actions sit in a wide window.
+function padLayout(page) {
+  return page.evaluate(() => {
+    const box = (selector) => {
+      const rect = document.querySelector(selector).getBoundingClientRect();
+      return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), middle: Math.round((rect.top + rect.bottom) / 2) };
+    };
+    return {
+      window: innerHeight,
+      page: document.documentElement.scrollHeight,
+      trash: box("#padTrashSummary"),
+      actions: box(".pad-actions"),
+      railHead: box(".rail-head"),
+      railTitle: box(".rail-title"),
+      sideTitle: box(".side-title"),
+      editorTitle: box("#padTitle"),
+      railRule: box(".draft-list"),
+      sideRule: box(".toggle-row"),
+    };
+  });
+}
+
+test("on wide screens a long drafts list scrolls in its own column", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const seed = await app.context.newPage();
+  await seed.goto(`chrome-extension://${app.extensionId}/src/pad.html`);
+  await seed.waitForFunction(() => !document.getElementById("suggestToggle").disabled);
+  await seed.evaluate(async () => {
+    for (let i = 1; i <= 20; i++) await self.ActlePadStore.createDraft({ title: "Draft " + i, body: "Words " + i });
+  });
+  await seed.close();
+  for (const [width, height] of [[1280, 900], [1366, 768], [1100, 720]]) {
+    const page = await app.context.newPage();
+    await page.setViewportSize({ width, height });
+    await page.goto(`chrome-extension://${app.extensionId}/src/pad.html`);
+    await page.waitForFunction(() => !document.getElementById("suggestToggle").disabled);
+    const layout = await padLayout(page);
+    const at = `${width}x${height}: ${JSON.stringify(layout)}`;
+    assert.ok(layout.page <= layout.window, `The page must not grow past the window at ${at}`);
+    assert.ok(layout.trash.bottom <= layout.window, `Recently deleted drafts stays in view at ${at}`);
+    assert.ok(layout.actions.bottom <= layout.window, `The editor's actions stay in view at ${at}`);
+    assert.equal(await page.locator(".draft-list").evaluate((list) => list.scrollHeight > list.clientHeight), true, `The list scrolls at ${at}`);
+    // Quiet Grid: the column headings share a line, and so do the first rules.
+    assert.ok(Math.abs(layout.railTitle.middle - layout.sideTitle.middle) <= 1, `Drafts and Suggestions line up at ${at}`);
+    assert.equal(layout.railRule.top, layout.sideRule.top, `The first rules line up at ${at}`);
+    assert.equal(layout.editorTitle.top, layout.railHead.top, `The editor starts on the columns' top line at ${at}`);
+    await page.close();
+  }
+});
+
+test("the read-only notice keeps the editor's actions in view", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const first = await app.context.newPage();
+  await first.goto(`chrome-extension://${app.extensionId}/src/pad.html`);
+  await first.waitForFunction(() => !document.getElementById("suggestToggle").disabled);
+  await first.evaluate(async () => {
+    const draft = await self.ActlePadStore.createDraft({ title: "Shared", body: "Open in two tabs" });
+    await self.ActlePadStore.savePrefs({ lastDraftId: draft.id });
+  });
+  await first.reload();
+  await first.waitForFunction(() => document.getElementById("padTitle").value === "Shared");
+  for (const [width, height] of [[1100, 720], [1280, 720], [1366, 768], [1440, 900]]) {
+    const page = await app.context.newPage();
+    await page.setViewportSize({ width, height });
+    await page.goto(`chrome-extension://${app.extensionId}/src/pad.html`);
+    await page.waitForSelector("#padLockNotice:not([hidden])");
+    const layout = await padLayout(page);
+    assert.ok(layout.actions.bottom <= layout.window && layout.page <= layout.window, `Actions in view at ${width}x${height}: ${JSON.stringify(layout)}`);
+    await page.close();
+  }
+});
+
+test("narrow pads put the drafts list box first in the tab order, as on screen", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await openFilledPad(app, "light", 980);
+  const boxes = await page.evaluate(() => ["draftSelect", "newDraftBtn"].map((id) => document.getElementById(id).getBoundingClientRect().left));
+  assert.ok(boxes[0] < boxes[1], "the list box is left of New draft");
+  await assertKeyboardFocus(page, ".pad-library-link", "Tab", "#draftSelect");
+  await assertKeyboardFocus(page, "#draftSelect", "Tab", "#newDraftBtn");
+});
+
+test("the library sidebar scrolls when the window is too short for its links", async (t) => {
+  const app = await launch();
+  t.after(() => app.close());
+  const page = await app.context.newPage();
+  await page.setViewportSize({ width: 980, height: 430 });
+  await page.goto(`chrome-extension://${app.extensionId}/src/options.html`);
+  await page.waitForSelector("#list tbody tr");
+  const link = page.locator(".sidebar-nav a", { hasText: "Writing pad" });
+  await link.focus();
+  const rect = await link.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { top: box.top, bottom: box.bottom, window: innerHeight };
+  });
+  assert.ok(rect.top >= 0 && rect.bottom <= rect.window, `The last link can be reached: ${JSON.stringify(rect)}`);
 });
 
 test("the 320px writing pad keeps suggestion cards and their controls on screen", async (t) => {

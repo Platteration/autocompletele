@@ -16,7 +16,7 @@
     </div>
     <div class="pad-heading">
       <h1>Writing pad</h1>
-      <p class="pad-tagline">Saved on this device as you type. Never sent or synced.</p>
+      <p class="pad-tagline">Drafts are saved on this device as you type. They are never sent or synced.</p>
     </div>
     <a class="pad-library-link" href="options.html">Your library</a>
   </header>
@@ -25,10 +25,12 @@
   <aside class="pad-rail" aria-labelledby="draftsTitle">
     <div class="rail-head">
       <h2 id="draftsTitle" class="rail-title">Drafts <span id="draftCount" class="count-pill">0</span></h2>
+      <!-- Narrow windows show the list box left of New draft: it comes first, so Tab follows the eye. -->
+      <label class="sr-only" for="draftSelect">Open a draft</label>
+      <select id="draftSelect" class="draft-select" aria-describedby="draftSelectHint" data-shorthand-ignore></select>
+      <span id="draftSelectHint" class="sr-only">Press Enter to open the draft you chose.</span>
       <button type="button" id="newDraftBtn" class="new-draft">New draft</button>
     </div>
-    <label class="sr-only" for="draftSelect">Open a draft</label>
-    <select id="draftSelect" class="draft-select" data-shorthand-ignore></select>
     <ul id="draftList" class="draft-list" aria-labelledby="draftsTitle"></ul>
     <p id="draftsEmpty" class="rail-empty">No drafts yet. Start typing and your first draft is saved on this device.</p>
     <details id="padTrash" class="trash">
@@ -76,6 +78,10 @@
          read out on every change. pad.js empties and hides it while
          suggestions are off; see self.ActlePad in pad.js. -->
     <div id="padSuggestions" class="suggestion-panel" data-pad-suggestions hidden></div>
+    <div id="padDismissed" class="dismissed-note" hidden>
+      <span id="padDismissedText" role="status"></span>
+      <button type="button" id="padClearDismissed" class="secondary small">Clear</button>
+    </div>
   </aside>
   </div>
   </div>
@@ -83,6 +89,7 @@
   <script src="brand.js"></script>
   <script src="expander.js"></script>
   <script src="template.js"></script>
+  <script src="conflicts.js"></script>
   <script src="storage.js"></script>
   <script src="field-safety.js"></script>
   <script src="picker.js"></script>

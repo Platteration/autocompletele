@@ -1,5 +1,6 @@
-// Writing pad storage: drafts, Recently deleted drafts, pad preferences and
-// dismissed phrase suggestions. Everything lives in chrome.storage.local in
+// Writing pad storage: drafts, Recently deleted drafts, pad preferences,
+// dismissed phrase suggestions and the text of tabs that closed before their
+// last save finished. Everything lives in chrome.storage.local in
 // both browsers: never in sync storage and never in the library's JSON export.
 // Every key starts with "pad-", which storage.isLibraryChange ignores, so an
 // autosave does not make open pages reload the library.
@@ -10,6 +11,7 @@
   const TRASH_KEY = "pad-trash";
   const PREFS_KEY = "pad-prefs";
   const DISMISSED_KEY = "pad-dismissed";
+  const RESCUE_PREFIX = "pad-rescue:";
   const TRASH_LIMIT = 20;
   const DISMISSED_LIMIT = 200;
   const WRITE_LOCK = "actle-pad-write";
@@ -81,8 +83,11 @@
   }
 
   // Serialized in this tab, and across tabs with a Web Lock when the browser
-  // has one. Without it the pad still saves: the rev check in saveDraft keeps
-  // two tabs from overwriting each other's text.
+  // has one (current Chrome and Firefox do), which makes saveDraft's read,
+  // rev check and write one step. Without a lock manager, or when it refuses
+  // the request, the pad still saves, but two tabs saving the same draft at
+  // the same moment could both pass the rev check and the later write would
+  // win.
   function withWriteLock(fn) {
     const run = () => {
       const locks = typeof navigator !== "undefined" ? navigator.locks : null;
@@ -125,10 +130,12 @@
     return readDraft(String(id));
   }
 
-  async function createDraft({ title = "", body = "" } = {}) {
+  // `id` lets the page name a new draft before it is first saved (newDraftId),
+  // so that text rescued while that first save runs finds the same draft.
+  async function createDraft({ title = "", body = "", id = null } = {}) {
     return withWriteLock(async () => {
       const now = Date.now();
-      const draft = { id: newId(), title: String(title), body: String(body), createdAt: now, updatedAt: now, rev: 1 };
+      const draft = { id: typeof id === "string" && id ? id : newId(), title: String(title), body: String(body), createdAt: now, updatedAt: now, rev: 1 };
       await area().set({ [DRAFT_PREFIX + draft.id]: draftRecord(draft) });
       return draft;
     });
@@ -174,31 +181,37 @@
   }
 
   // The copy in Recently deleted drafts is written first. When it cannot be,
-  // nothing is deleted and the error (code "NOT_KEPT") says why.
-  async function deleteDraft(id) {
+  // nothing is deleted and the error (code "NOT_KEPT", with the browser's
+  // reason) says why; the page may then pass { withoutCopy: true } once the
+  // person agrees, as when storage is too full to hold the copy.
+  async function deleteDraft(id, options = {}) {
     return withWriteLock(async () => {
       const draft = await readDraft(String(id));
       if (!draft) return { deleted: false };
       const entry = { ...draft, deletedAt: Date.now() };
-      let before;
-      try {
-        before = await getTrash();
-        // An older copy under this id with other text stays, under an id of its own.
-        const older = before.flatMap((old) => old.id !== draft.id ? [old] : sameText(old, draft) ? [] : [{ ...old, id: newId() }]);
-        await writeTrash([entry, ...older].slice(0, TRASH_LIMIT));
-      } catch (cause) {
-        const error = new Error("It could not be kept in Recently deleted drafts (" + (cause && cause.message ? cause.message : String(cause)) + "), so it was not deleted.");
-        error.code = "NOT_KEPT";
-        throw error;
+      let before = null;
+      if (!options.withoutCopy) {
+        try {
+          before = await getTrash();
+          // An older copy under this id with other text stays, under an id of its own.
+          const older = before.flatMap((old) => old.id !== draft.id ? [old] : sameText(old, draft) ? [] : [{ ...old, id: newId() }]);
+          await writeTrash([entry, ...older].slice(0, TRASH_LIMIT));
+        } catch (cause) {
+          const reason = cause && cause.message ? cause.message : String(cause);
+          const error = new Error("It could not be kept in Recently deleted drafts (" + reason + "), so it was not deleted.");
+          error.code = "NOT_KEPT";
+          error.reason = reason;
+          throw error;
+        }
       }
       try {
         await area().remove(DRAFT_PREFIX + draft.id);
       } catch (error) {
         // It is still a draft, so it should not also be listed as deleted.
-        await writeTrash(before).catch(() => {});
+        if (before) await writeTrash(before).catch(() => {});
         throw error;
       }
-      return { deleted: true, entry };
+      return options.withoutCopy ? { deleted: true, kept: false } : { deleted: true, kept: true, entry };
     });
   }
 
@@ -225,6 +238,91 @@
       // again finds the same text and only drops the copy.
       await writeTrash(rest).catch(() => {});
       return { restored: true, draft };
+    });
+  }
+
+  // ---- text a closing tab could not save ------------------------------------
+  //
+  // A save needs a lock, a read and a write, and none of that finishes once a
+  // tab is closed or reloaded. So as a pad tab goes away with unsaved text it
+  // makes one write that needs neither: pad-rescue:<tab>. A later pad tab puts
+  // that text where it belongs with recoverRescue, once the tab that wrote it
+  // is gone.
+
+  function sanitizeText(value) {
+    return value && typeof value === "object" && typeof value.title === "string" && typeof value.body === "string"
+      ? { title: value.title, body: value.body } : null;
+  }
+
+  function sanitizeRescue(value) {
+    const text = sanitizeText(value);
+    if (!text || Array.isArray(value)) return null;
+    if (typeof value.draftId !== "string" || !value.draftId || !Number.isInteger(value.baseRev) || value.baseRev < 0) return null;
+    return { draftId: value.draftId, baseRev: value.baseRev, ...text, saving: sanitizeText(value.saving) };
+  }
+
+  // draftId and baseRev: the open draft and the rev this tab last saw (0 for
+  // a new draft whose first save has not landed, under the id it will get);
+  // saving: the text of a save still running, which may land after all.
+  // Never throws: it runs as the page goes away, where nobody could see an error.
+  function writeRescue(tab, { draftId, baseRev, title = "", body = "", saving = null } = {}) {
+    try {
+      const entry = { draftId, baseRev, title: String(title), body: String(body), saving, at: Date.now() };
+      return Promise.resolve(area().set({ [RESCUE_PREFIX + tab]: entry })).catch(() => {});
+    } catch (_) {
+      return Promise.resolve();
+    }
+  }
+
+  function clearRescue(tab) {
+    return withWriteLock(() => area().remove(RESCUE_PREFIX + tab));
+  }
+
+  /** The tabs that left text to recover. */
+  async function rescuedTabs() {
+    const items = await area().get(null);
+    return Object.keys(items || {}).filter((key) => key.startsWith(RESCUE_PREFIX)).map((key) => key.slice(RESCUE_PREFIX.length));
+  }
+
+  // Puts a closed tab's unsaved text where the save would have: over its draft
+  // when no other save came in between (the rev is the one it started from,
+  // or the next one holding exactly the text its running save was writing),
+  // under its own id when its first save never landed, else into a new draft
+  // titled copyTitle(text), so nothing is overwritten. The rescue is removed
+  // only after the text is stored. Resolves { draft, inPlace } with the draft
+  // that now holds the text (stored already when its save landed after all),
+  // or null when there was nothing to keep.
+  async function recoverRescue(tab, copyTitle = (text) => text.title) {
+    return withWriteLock(async () => {
+      const key = RESCUE_PREFIX + tab;
+      const items = await area().get(key);
+      const entry = sanitizeRescue(items && items[key]);
+      let result = null;
+      if (entry) {
+        const stored = await readDraft(entry.draftId);
+        const now = Date.now();
+        const own = stored && (stored.rev === entry.baseRev
+          || (stored.rev === entry.baseRev + 1 && entry.saving && sameText(stored, entry.saving)));
+        let draft = null;
+        if (stored && sameText(stored, entry)) {
+          // That save landed after all.
+          result = { draft: stored, inPlace: true };
+        } else if (own) {
+          draft = { ...stored, title: entry.title, body: entry.body, updatedAt: now, rev: stored.rev + 1 };
+        } else if (!stored && entry.baseRev === 0) {
+          // A new draft whose first save never landed.
+          if (entry.title.trim() || entry.body.trim()) draft = { id: entry.draftId, title: entry.title, body: entry.body, createdAt: now, updatedAt: now, rev: 1 };
+        } else {
+          // Saved again or deleted in another tab since: keep both.
+          draft = { id: newId(), title: String(copyTitle({ title: entry.title, body: entry.body })), body: entry.body, createdAt: now, updatedAt: now, rev: 1 };
+        }
+        if (draft) {
+          await area().set({ [DRAFT_PREFIX + draft.id]: draftRecord(draft) });
+          result = { draft, inPlace: draft.id === entry.draftId };
+        }
+      }
+      await area().remove(key);
+      return result;
     });
   }
 
@@ -293,6 +391,10 @@
     });
   }
 
+  function clearDismissed() {
+    return withWriteLock(() => area().remove(DISMISSED_KEY));
+  }
+
   function isPadKey(key) {
     return typeof key === "string" && key.startsWith("pad-");
   }
@@ -301,6 +403,7 @@
     listDrafts,
     getDraft,
     createDraft,
+    newDraftId: newId,
     saveDraft,
     deleteDraft,
     getTrash,
@@ -311,6 +414,11 @@
     savePrefs,
     getDismissed,
     dismissPhrase,
+    clearDismissed,
+    writeRescue,
+    clearRescue,
+    rescuedTabs,
+    recoverRescue,
     countWords,
     normalizePhrase,
     fileNameFor,
@@ -319,6 +427,7 @@
     TRASH_KEY,
     PREFS_KEY,
     DISMISSED_KEY,
+    RESCUE_PREFIX,
     TRASH_LIMIT,
     DISMISSED_LIMIT,
     DEFAULT_PREFS,

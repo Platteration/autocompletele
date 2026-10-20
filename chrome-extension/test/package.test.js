@@ -97,7 +97,7 @@ test("browser packages contain only runtime files and installable manifests", as
     // The Suggestions panel uses the pad's hook, the library storage and both engines.
     assert.ok(files.includes("src/pad-suggestions.js"), "pad-suggestions.js must ship in both browser packages");
     const panelIndex = padScripts.indexOf("pad-suggestions.js");
-    for (const name of ["storage.js", "phrase-miner.js", "template-maker.js", "pad.js"]) {
+    for (const name of ["storage.js", "conflicts.js", "phrase-miner.js", "template-maker.js", "pad.js"]) {
       const index = padScripts.indexOf(name);
       assert.ok(index >= 0 && index < panelIndex, `The pad must load ${name} before pad-suggestions.js`);
     }
