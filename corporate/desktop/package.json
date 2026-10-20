@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Desktop shell for the actle business edition: a tray app that expands shortcuts in every application and shows keystrokes and time saved.",
+  "author": "actle contributors",
   "main": "main.js",
   "engines": { "node": ">=22.2.0" },
   "scripts": {
@@ -25,6 +26,7 @@
     "artifactName": "actle-corporate-${version}-${os}-${arch}.${ext}",
     "copyright": "actle contributors",
     "asar": true,
+    "npmRebuild": false,
     "files": [
       "package.json",
       "main.js",

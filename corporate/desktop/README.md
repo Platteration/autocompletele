@@ -31,7 +31,10 @@ npm run dist                       # installers into dist/: NSIS .exe, .dmg + .z
 npm run check:package -- dist/linux-unpacked   # confirms the packaged layout loads the core
 ```
 
-`electron-builder` packs this folder into `app.asar` and copies `../core`
+`electron-builder` does not rebuild `uiohook-napi` (`npmRebuild: false`):
+the module ships N-API prebuilds for every platform, which Electron loads
+as they are, and compiling it from source would need the X11 headers on
+Linux. It packs this folder into `app.asar` and copies `../core`
 and the three personal modules (`chrome-extension/src/{expander,template,
 palette}.js`) next to it as extra resources, so the `../core` requires in
 this folder and `core/personal.js`'s second search path resolve inside the
