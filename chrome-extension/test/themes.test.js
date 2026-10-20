@@ -94,6 +94,11 @@ test("text and controls meet WCAG AA in every style, appearance and overlay", ()
         const ratio = contrast(colors[fg], colors[bg]);
         assert.ok(ratio >= 4.5, `${theme.id} ${mode}: ${fg} on ${bg} is ${ratio.toFixed(2)}:1`);
       }
+      if (!overlay) {
+        const focus = colors.sidebarFocus || colors.sidebarActiveText;
+        const ratio = contrast(focus, colors.sidebar);
+        assert.ok(ratio >= 3, `${theme.id} ${mode}: sidebar focus ring on the sidebar is ${ratio.toFixed(2)}:1`);
+      }
       for (const [fg, bg] of [["control", "panel"], ["accent", "panel"]]) {
         const ratio = contrast(colors[fg], colors[bg]);
         assert.ok(ratio >= 3, `${theme.id} ${mode}: ${fg} boundary on ${bg} is ${ratio.toFixed(2)}:1`);
@@ -179,4 +184,41 @@ test("unavailable page storage still applies the style", () => {
   assert.equal(api.applyRemembered(doc), "classic");
   assert.equal(api.applyPage(doc, "swiss"), "swiss");
   assert.equal(doc.documentElement.dataset.actleTheme, "swiss");
+});
+
+test("Swiss Grid and Warm Paper restyle overlay structure; other styles only recolor", () => {
+  for (const id of ["swiss", "paper"]) {
+    const css = themes.overlayCss(id);
+    for (const rule of [".item {", "div.heading", ".brand::after", ".hint kbd", "header.heading"]) {
+      assert.ok(css.includes(rule), `${id} overlays restyle ${rule}`);
+    }
+  }
+  assert.match(themes.overlayCss("swiss"), /\.item\[data-selected="true"\], \.item\[data-selected="true"\]:hover \{ background: #d7000f; \}/);
+  assert.match(themes.overlayCss("paper"), /\.item\[data-selected="true"\]::after \{ content: "↵";/);
+  for (const theme of others.filter((entry) => !["swiss", "paper"].includes(entry.id))) {
+    assert.doesNotMatch(themes.overlayCss(theme.id), /\.item|\.brand|\.heading/, `${theme.id} sets tokens only`);
+  }
+  // White on the selected Swiss row, in both appearances.
+  assert.ok(contrast("#ffffff", "#d7000f") >= 4.5);
+});
+
+test("the page flavor sheet only styles Swiss Grid and Warm Paper", () => {
+  const css = fs.readFileSync(path.join(SRC, "themes.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{[^{}]*\}/g)].map((match) => match[1].trim());
+  assert.ok(rules.length > 50);
+  for (const selector of rules) {
+    // Split the selector list at top-level commas only.
+    const parts = [];
+    let depth = 0, start = 0;
+    for (let i = 0; i < selector.length; i++) {
+      if (selector[i] === "(") depth++;
+      else if (selector[i] === ")") depth--;
+      else if (selector[i] === "," && depth === 0) { parts.push(selector.slice(start, i)); start = i + 1; }
+    }
+    parts.push(selector.slice(start));
+    for (const part of parts) {
+      assert.match(part.trim(), /^(:root)?(\[data-actle-theme="(swiss|paper)"\]|:is\(\[data-actle-theme="swiss"\], \[data-actle-theme="paper"\]\))/,
+        `unscoped rule: ${part.trim()}`);
+    }
+  }
 });

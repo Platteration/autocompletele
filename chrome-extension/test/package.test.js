@@ -45,6 +45,7 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.ok(files.includes("src/field-safety.js"));
     assert.ok(files.includes("src/suggestions.js"));
     assert.ok(files.includes("src/themes.js"));
+    assert.ok(files.includes("src/themes.css"));
     for (const name of ["premium-config", "license", "premium-service", "premium-client", "premium-ui"]) {
       assert.ok(files.includes(`src/${name}.js`), `${name} must ship in both browser packages`);
     }
@@ -84,6 +85,10 @@ test("browser packages contain only runtime files and installable manifests", as
     assert.ok(optionScripts.indexOf("premium-client.js") < optionScripts.indexOf("content.js"));
     const popup = fs.readFileSync(path.join(directory, manifest.action.default_popup), "utf8");
     const popupScripts = [...popup.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
+    for (const page of [options, popup]) {
+      const sheets = [...page.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((match) => match[1]);
+      assert.equal(sheets.at(-1), "themes.css", "Flavor rules must load after the page's own styles");
+    }
     for (const scripts of [optionScripts, popupScripts]) {
       const themesIndex = scripts.indexOf("themes.js");
       for (const name of ["template-form.js", "premium-client.js", "options.js", "popup.js"].filter((file) => scripts.includes(file))) {

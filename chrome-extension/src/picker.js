@@ -109,6 +109,7 @@
         }
         .empty, .hint { padding: 10px 12px; color: var(--muted); }
         .hint { border-top: 1px solid var(--line); font-size: 11px; }
+        .hint kbd { font: inherit; }
         @media (forced-colors: active) {
           .panel { border-color: ButtonText; }
           .item[data-selected="true"] { border-left-color: Highlight; outline: 1px solid Highlight; outline-offset: -1px; }
@@ -120,7 +121,7 @@
         <div class="query"></div>
         <div class="list" role="listbox"></div>
         <div class="empty" hidden>No matching shorthand</div>
-        <div class="hint">↑↓ choose · Enter insert · Esc cancel</div>
+        <div class="hint"><kbd>↑↓</kbd> choose · <kbd>Enter</kbd> insert · <kbd>Esc</kbd> cancel</div>
       </div>`;
     listEl = shadow.querySelector(".list");
     queryEl = shadow.querySelector(".query");

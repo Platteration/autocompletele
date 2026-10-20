@@ -180,3 +180,57 @@ test("the toolbar popup switches styles and suggestions on an open page follow",
   assert.deepEqual(errors, []);
   assert.deepEqual(popupErrors, []);
 });
+
+test("Swiss Grid and Warm Paper restyle the library, overlays and focus as full flavors", async (t) => {
+  const app = await launch({ shorthands: ENTRIES });
+  t.after(() => app.close());
+  const expected = {
+    swiss: { heading: "800", grid: true, selected: "rgb(215, 0, 15)", trigger: "rgb(255, 255, 255)", marker: "none", focus: "rgb(215, 0, 15)" },
+    paper: { heading: "400", grid: false, selected: "rgb(243, 227, 214)", trigger: "rgb(162, 74, 36)", marker: "\"↵\"", focus: "rgb(122, 58, 30)" },
+  };
+  for (const [theme, want] of Object.entries(expected)) {
+    await t.test(theme, async () => {
+      await app.worker.evaluate((id) => self.ShorthandStorage.saveSettings({ theme: id }), theme);
+      const { page, errors } = await openPage(app, "options", "light", 1280);
+      await page.setViewportSize({ width: 1280, height: 3000 });
+      await page.waitForFunction(() => document.querySelector("[data-actle-brand]").dataset.actleState === "idle", null, { timeout: 8000 });
+      const layout = await page.evaluate(() => ({
+        sidebar: getComputedStyle(document.querySelector(".sidebar")).position,
+        icon: getComputedStyle(document.querySelector(".brand-home")).display,
+        mark: getComputedStyle(document.querySelector(".actle-brand__word"), "::after").opacity,
+        heading: getComputedStyle(document.querySelector("h1")).fontWeight,
+        grid: getComputedStyle(document.querySelector(".main-content")).backgroundImage.includes("repeating-linear-gradient"),
+        rows: getComputedStyle(document.querySelector("#list tbody tr")).borderTopLeftRadius,
+      }));
+      assert.deepEqual(layout, { sidebar: "static", icon: "none", mark: "1", heading: want.heading, grid: want.grid, rows: "0px" });
+
+      // Reach the first section link by keyboard so it shows its focus ring.
+      const nav = page.locator(".sidebar-nav a").first();
+      await nav.focus();
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+      assert.equal(await nav.evaluate((element) => element.matches(":focus-visible")), true);
+      assert.equal(await nav.evaluate((element) => getComputedStyle(element).outlineColor), want.focus);
+
+      await page.evaluate(observeSuggestions);
+      await page.locator("#tryit").click();
+      await page.keyboard.type("th");
+      await page.waitForFunction(() => window.suggestionRoot && window.suggestionRoot.querySelector(".item")
+        && window.suggestionRoot.querySelector(".panel").isConnected);
+      await page.keyboard.press("ArrowDown");
+      const row = await page.evaluate(() => {
+        const item = window.suggestionRoot.querySelector('.item[data-selected="true"]');
+        return {
+          background: getComputedStyle(item).backgroundColor,
+          trigger: getComputedStyle(item.querySelector(".trigger")).color,
+          marker: getComputedStyle(item, "::after").content,
+          keycaps: window.suggestionRoot.querySelectorAll(".hint kbd").length,
+        };
+      });
+      assert.deepEqual(row, { background: want.selected, trigger: want.trigger, marker: want.marker, keycaps: 3 });
+      await page.keyboard.press("Escape");
+      assert.deepEqual(errors, []);
+      await page.close();
+    });
+  }
+});

@@ -76,10 +76,17 @@ expansion outline, including ones already open on other pages:
 - **Quiet Grid**: neutral greys, hairline rules, square corners and one blue.
 - **Quiet Utility**: white panels, soft grey borders and one steady blue.
 - **Warm Paper**: off-white paper, dark ink, terracotta and a serif for headings.
+  A full flavor: the library gets a top bar, ruled lists with serif expansions,
+  and an editor panel on darker paper. Suggestions show a tinted row with ↵ and
+  keycap-style keys, and the wordmark completes in italics.
 - **Bright Playful**: violet and sunflower with rounded keycap buttons; on
   webpages its overlays are a dark violet bubble.
 - **Dark Pro**: near-black with an electric-lime accent, dark in both appearances.
 - **Swiss Grid**: black on white, square corners and one signal red.
+  A full flavor: the library shows a numbered 12-column grid, a top bar, poster
+  headings and thick black rules. Red marks only the current item: the row
+  being edited, the selected suggestion (a solid red row) and the wordmark's
+  block.
 
 Every style has light and dark colors (Dark Pro is always dark) that meet WCAG AA
 contrast. The style is saved with your other settings. Fonts come from your
@@ -301,6 +308,7 @@ Use the appropriate `autocomplete` tokens on credential and payment controls.
 | `src/animation-frames.js` | Grapheme-aware Expand and Casino animation frames             |
 | `src/expansion-feedback.js` | Temporary in-field animation, respecting reduced motion    |
 | `src/themes.js`       | Selectable styles: colors and shapes for every surface         |
+| `src/themes.css`      | Swiss Grid and Warm Paper layout for the library and popup     |
 | `src/picker.js`       | The `;;` search overlay (closed shadow root, key capture)       |
 | `src/palette.js`      | Pure ranking logic for the toolbar command palette             |
 | `src/import-plan.js`  | Pure import preview and safe-merge planning                    |

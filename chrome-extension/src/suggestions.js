@@ -97,6 +97,7 @@
       .typed { color: var(--text); font-weight: 400; }
       .expansion { display: block; margin-top: 2px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .hint { padding: 8px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+      .hint kbd { font: inherit; }
       .status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
       @media (prefers-color-scheme: dark) {
         :host { --panel: #151d2c; --text: #eef2f7; --muted: #a7b4c8; --line: #344159; --control: #7f8da5; --accent: #a4bdff; --soft: #233354; --pressed: #30446c; }
@@ -111,7 +112,7 @@
       <div class="panel">
         <div class="heading"><span class="brand">actle</span><span>Suggestions</span><span class="count"></span></div>
         <div class="list" role="listbox" aria-label="Shorthand suggestions"></div>
-        <div class="hint">↓ choose · Enter insert · Esc dismiss</div>
+        <div class="hint"><kbd>↓</kbd> choose · <kbd>Enter</kbd> insert · <kbd>Esc</kbd> dismiss</div>
         <div class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>`;
     listEl = shadow.querySelector(".list");
