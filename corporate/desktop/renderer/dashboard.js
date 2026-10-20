@@ -340,12 +340,31 @@
   });
 
   // Policy sources and the change log
+  const EVENT_LABELS = {
+    "policy-applied": "Policy applied",
+    "policy-source-problem": "Policy source failing",
+    "policy-source-recovered": "Policy source recovered",
+    "capture-rules-changed": "Your capture rules changed",
+    "corpus-key-created": "Learning key created",
+    "corpus-key-replaced": "Learning key replaced",
+    "corpus-encrypted": "Learned text encrypted",
+    "corpus-deleted": "Learned text deleted",
+  };
+
   function auditDetail(entry) {
     switch (entry.event) {
-      case "policy-applied":
-        return (entry.organization || "policy") + (entry.paused ? ", PAUSED" : "") + "; sources: "
-          + (entry.sources || []).map((s) => s.label + " #" + (s.serial == null ? "-" : s.serial)).join(", ")
+      case "policy-applied": {
+        const sources = (entry.sources || []).map((s) => s.label + (s.serial == null ? " (" + s.status + ")" : " #" + s.serial));
+        return (entry.organization || "No organisation policy") + (entry.paused ? ", paused" : "")
+          + (sources.length ? "; sources: " + sources.join(", ") : "")
           + (entry.warnings ? "; " + entry.warnings + " warning(s)" : "");
+      }
+      case "corpus-encrypted":
+        return entry.sessions + " message(s) from an earlier version";
+      case "corpus-deleted":
+        return entry.sessions + " message(s)";
+      case "corpus-key-replaced":
+        return "the previous key could not be read and protected nothing; kept as " + entry.aside;
       case "policy-source-problem":
         return entry.source + ": " + (entry.error || entry.status);
       case "policy-source-recovered":
@@ -381,7 +400,7 @@
     for (const entry of entries) {
       audit.append(el("tr", {}, [
         el("td", { text: new Date(entry.at).toLocaleString() }),
-        el("td", { text: entry.event }),
+        el("td", { text: EVENT_LABELS[entry.event] || entry.event }),
         el("td", { text: auditDetail(entry) }),
       ]));
     }
@@ -398,12 +417,16 @@
   async function renderStatus() {
     const status = await api.getStatus();
     const problems = [];
-    if (status.paused) problems.push("Paused by your organisation" + (status.pausedMessage ? ": " + status.pausedMessage : ".") + " Nothing is expanded, offered or learned until it is resumed.");
+    if (status.paused) {
+      const reason = status.pausedMessage ? ": " + status.pausedMessage.replace(/[.!?]*$/, ".") : ".";
+      problems.push("Paused by your organisation" + reason + " Nothing is expanded, offered or learned until it is resumed.");
+    }
     if (!status.listener.available) problems.push("Keyboard listener unavailable: " + (status.listener.error || "unknown reason") + ". Shortcuts are not expanded until this is fixed.");
     if (!status.sender.available) problems.push("Cannot type into other applications: " + status.sender.reason + ".");
     for (const warning of status.warnings) problems.push(warning);
     $("banner").hidden = !problems.length;
-    text($("banner"), problems.join(" "));
+    $("banner").textContent = "";
+    for (const problem of problems) $("banner").append(el("div", { text: problem }));
     const ctx = status.context || {};
     text($("context"), ctx.process ? "Focused: " + ctx.process + " (" + status.mode + ")" : "");
   }

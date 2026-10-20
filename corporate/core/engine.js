@@ -111,16 +111,30 @@ function createEngine(options) {
     }
   }
 
-  function sessionReplaceTail(typedChars, inserted) {
-    if (session) {
-      if (typedChars > 0) session.text = session.text.slice(0, Math.max(0, session.text.length - typedChars));
-      session.text += inserted;
-    }
-    if (tracksField()) {
-      if (typedChars > 0) fieldText = fieldText.slice(0, Math.max(0, fieldText.length - typedChars));
-      fieldText += inserted;
-      capField();
-    }
+  // Learning is about what the person types. Where actle inserts text, the
+  // learning session gets a paragraph break instead, so the miner never
+  // proposes actle's own output (a signature, an address) back as a phrase.
+  // The field text keeps the insertion: a disclaimer inserted by a shortcut
+  // must count for compliance rules.
+  const LEARN_GAP = "\n\n";
+
+  function sessionTail(remove, add) {
+    if (!session) return;
+    if (remove > 0) session.text = session.text.slice(0, Math.max(0, session.text.length - remove));
+    session.text += add;
+  }
+
+  function fieldTail(remove, add) {
+    if (!tracksField()) return;
+    if (remove > 0) fieldText = fieldText.slice(0, Math.max(0, fieldText.length - remove));
+    fieldText += add;
+    capField();
+  }
+
+  /** actle replaced `typedChars` just typed with `inserted`. */
+  function insertedText(typedChars, inserted) {
+    sessionTail(typedChars, inserted ? LEARN_GAP : "");
+    fieldTail(typedChars, inserted);
   }
 
   /** Tell the engine which window has the focus. Returns the learning session that just ended, if any. */
@@ -164,9 +178,9 @@ function createEngine(options) {
       };
     }
     const rendered = template.render(sh.expansion, null, new Date(now()));
-    undo = { trigger: sh.trigger, text: rendered.text, cursorOffset: rendered.cursorOffset };
+    undo = { trigger: sh.trigger, text: rendered.text, cursorOffset: rendered.cursorOffset, learned: rendered.text ? LEARN_GAP.length : 0 };
     pendingRecord = { kind: "expansion", trigger: sh.trigger, source: sh.source, inserted: rendered.text, typed: sh.trigger, app: appName() };
-    sessionReplaceTail(sh.trigger.length, rendered.text);
+    insertedText(sh.trigger.length, rendered.text);
     return {
       type: "expand",
       trigger: sh.trigger,
@@ -193,7 +207,8 @@ function createEngine(options) {
       undo = null;
       pendingRecord = null;
       buffer = reverted.trigger;
-      sessionReplaceTail(reverted.text.length, reverted.trigger);
+      sessionTail(reverted.learned, reverted.trigger);
+      fieldTail(reverted.text.length, reverted.trigger);
       return [{
         type: "undo",
         trigger: reverted.trigger,
@@ -235,7 +250,7 @@ function createEngine(options) {
     if (doc) {
       const typedInField = settings.swallowsTriggerKey ? doc.shortcut.trigger.length - text.length : doc.shortcut.trigger.length;
       buffer = "";
-      sessionReplaceTail(doc.shortcut.trigger.length, "");
+      insertedText(doc.shortcut.trigger.length, "");
       actions.push({
         type: "documents",
         trigger: doc.shortcut.trigger,
@@ -265,7 +280,7 @@ function createEngine(options) {
     const kind = metrics.KINDS.includes(data.kind) ? data.kind : "suggestion";
     const inserted = String(data.inserted == null ? "" : data.inserted);
     const typed = String(data.typed == null ? "" : data.typed);
-    if (inserted) sessionReplaceTail(typed.length, inserted);
+    if (inserted) insertedText(typed.length, inserted);
     const fixedSeconds = kind === "document"
       ? Math.max(1, Math.floor(Number(data.count) || 1)) * policy.typing.secondsPerAttachment
       : Number(data.fixedSeconds) || 0;

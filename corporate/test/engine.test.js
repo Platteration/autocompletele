@@ -132,7 +132,9 @@ test("learn mode keeps a scrubbed session and flushes it on focus change", () =>
   engine.tick(5000);
   const { session } = engine.focusChanged({ process: "notepad" });
   assert.equal(session.app, "outlook");
-  assert.equal(session.text, "Hello there, That is really cool! my card is [card].\nBye!");
+  // Only typed text is learned: the expansion actle inserted becomes a paragraph break.
+  assert.equal(session.text, "Hello there, \n\n my card is [card].\nBye!");
+  assert.equal(session.text.includes("That is really cool"), false);
   assert.equal(session.redactions, 1);
   assert.equal(session.endedAt - session.startedAt, 5000);
   assert.equal(engine.session, null);
@@ -239,4 +241,18 @@ test("without keyword rules the field text is not kept at all", () => {
   assert.equal(kept.fieldText.length, 4000, "capped");
   kept.setPolicy(orgPolicy.parse({}));
   assert.equal(kept.fieldText, "", "dropped when the rules go away");
+});
+
+test("learning keeps what was typed, never what actle inserted, and undo restores the trigger", () => {
+  const engine = make();
+  engine.focusChanged({ process: "outlook.exe" });
+  engine.type("Our signature: sig/");
+  engine.keyTyped({ isBackspace: true });
+  assert.equal(engine.session.text, "Our signature: sig/", "after undo the session holds exactly what was typed");
+  engine.type(" then sig/ and ");
+  engine.recordInsert({ kind: "keyword", trigger: "refund", inserted: "Inserted refund text", typed: "" });
+  engine.type("the end of a long enough message");
+  const { session } = engine.focusChanged({ process: "notepad" });
+  assert.equal(session.text, "Our signature: sig/ then \n\n and \n\nthe end of a long enough message");
+  assert.equal(/Kind regards|Inserted refund/.test(session.text), false);
 });
