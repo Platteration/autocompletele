@@ -19,8 +19,10 @@ npm run simulate     # headless walk-through, no Electron needed (see below)
 
 An organisation policy is read from `policy.json` in the data folder, or from
 the file named by the `ACTLE_POLICY_FILE` environment variable on first start.
-See [`../shared/ORG-POLICY.md`](../shared/ORG-POLICY.md) and the example in
-`../shared/org-policy.example.json`.
+A centrally managed desk instead has a `deployment.json` naming signed policy
+sources and the public keys that sign them; it then ignores any local
+`policy.json`. See [`../shared/ORG-POLICY.md`](../shared/ORG-POLICY.md) and the
+example in `../shared/org-policy.example.json`.
 
 ## Where data lives
 
@@ -34,9 +36,23 @@ Everything is in Electron's `userData` folder for the app
 | `library.json`    | Own shortcuts, in the shared `shorthands.json` format (version 1) |
 | `policy.json`     | The organisation policy, if one was installed                   |
 | `settings.json`   | Enabled flag, own capture rules, typing-speed override          |
-| `metrics.jsonl`   | One line per insert: time, kind, application, keystrokes saved  |
-| `corpus.jsonl`    | Scrubbed text from learn-mode applications, pruned by retention |
+| `metrics.jsonl`   | One line per insert: time, kind, application, keystrokes saved, whether the shortcut was the organisation's or the person's |
+| `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
+| `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
 | `learned.json`    | Proposals the person dismissed                                  |
+| `deployment.json` | Managed desks only: signed policy sources and pinned public keys, written by IT |
+| `policy-cache/`   | Last good copy of each signed policy layer                     |
+| `policy-state.json` | Hash of the policy last applied and each source's status     |
+| `audit.jsonl`     | Policy changes, failing or recovering sources, capture-rule changes, corpus key and deletion events; never typed text |
+
+Learned text is only written encrypted. When the system has no secure
+keychain (for example Linux without GNOME Keyring or KWallet, where Electron
+would fall back to a fixed password), learning sessions are not written at
+all and the dashboard says so. Text written by an earlier version without
+encryption is encrypted on the next start. Records the current key cannot
+open are kept untouched, never dropped, and the key file is never replaced
+while such records exist. The Learning tab shows how much text is stored and
+can delete all of it.
 
 A file that cannot be parsed is moved aside (`*.corrupt-<timestamp>`), the
 dashboard shows a warning, and the app starts with defaults. Nothing refuses
@@ -72,7 +88,11 @@ written), a document shortcut, an undo, a password manager and a banking
 portal (never learned / off), then a message the next day. It prints every
 action the shell would carry out, the day/week/month/all-time summaries, the
 per-application table and the learning candidates, including the template
-proposal with its detected slots. It exits 0 when the pipeline works.
+proposal with its detected slots, the usage report this desk would export,
+and a managed desk receiving signed policy layers from a file share, being
+paused by IT, and refusing a tampered copy. A stand-in replaces the operating
+system keychain so the encrypted corpus can be exercised. It exits 0 when the
+pipeline works.
 
 ## Not verified
 
@@ -90,3 +110,6 @@ Electron and without the native `uiohook-napi` build:
   has only been checked with a synthetic table.
 - Package installation ran with `--ignore-scripts` to produce the lockfile;
   the Electron download and the uiohook native build were not performed.
+- `safeStorage` (the keychain behind corpus encryption), the policy refresh
+  timer, the save dialogs for usage reports, and the warning popover have not
+  run inside Electron; their logic is tested in Node with stand-ins.

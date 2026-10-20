@@ -4,7 +4,7 @@
 "use strict";
 
 const path = require("node:path");
-const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, shell, nativeImage, Notification, dialog } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, shell, nativeImage, Notification, dialog, safeStorage } = require("electron");
 const { createAssistant } = require("./assistant.js");
 const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
@@ -247,6 +247,8 @@ function registerIpc() {
   handle("learning:candidates", () => assistant.candidates());
   handle("learning:accept", (c) => { const r = assistant.acceptCandidate(c || {}); broadcast({ library: true, learning: true }); return r; });
   handle("learning:dismiss", (text) => { const r = assistant.dismissCandidate(text); broadcast({ learning: true }); return r; });
+  handle("learning:info", () => assistant.corpusInfo());
+  handle("learning:clear", () => { const r = assistant.clearLearning(); broadcast({ learning: true, policy: true }); return r; });
   handle("app:status", () => ({
     listener: listenerStatus,
     sender: { available: sender.isAvailable(), reason: sender.isAvailable() ? null : sender.unavailableReason() },
@@ -268,6 +270,7 @@ function start() {
     dataDir: app.getPath("userData"),
     policyFile: process.env.ACTLE_POLICY_FILE || null,
     swallowsTriggerKey: false,
+    keychain: safeStorage,
     log: (line) => console.log(line),
   });
   sender = createSender({ clipboard, notify });

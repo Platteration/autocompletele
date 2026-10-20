@@ -18,4 +18,5 @@ module.exports = {
   engine: require("./engine.js"),
   report: require("./report.js"),
   store: require("./store.js"),
+  cryptoBox: require("./crypto-box.js"),
 };

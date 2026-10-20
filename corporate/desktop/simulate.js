@@ -24,10 +24,23 @@ let clock = new Date(2026, 9, 19, 9, 0, 0).getTime(); // Monday 19 October 2026,
 const now = () => clock;
 const tick = (ms) => { clock += ms; };
 
+// Stand-in for Electron's safeStorage. The desktop app uses the operating
+// system keychain; this only lets the headless run store encrypted sessions.
+const testKeychain = {
+  isEncryptionAvailable: () => true,
+  encryptString: (text) => Buffer.from("SIMULATED-KEYCHAIN:" + text),
+  decryptString: (blob) => {
+    const text = Buffer.from(blob).toString();
+    if (!text.startsWith("SIMULATED-KEYCHAIN:")) throw new Error("not ours");
+    return text.slice("SIMULATED-KEYCHAIN:".length);
+  },
+};
+
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "actle-corporate-sim-"));
 const assistant = createAssistant({
   dataDir,
   now,
+  keychain: testKeychain,
   policyFile: fs.existsSync(POLICY_FILE) ? POLICY_FILE : null,
   policy: FALLBACK_POLICY,
 });
@@ -136,7 +149,8 @@ print("  organisation shortcuts: " + usage.byShortcut.map((s) => s.kind + " " + 
 print(`  own shortcuts: ${usage.personal.inserts} inserts, not named; typed text included: ${JSON.stringify(usage).includes("Thanks for reaching out") ? "YES" : "no"}`);
 
 const sessions = assistant.store.loadSessions();
-print(`\nCorpus on disk: ${sessions.length} session(s); secrets scrubbed: ${sessions.some((s) => s.text.includes("[card]") && s.text.includes("[redacted]")) ? "yes" : "NO"}`);
+const rawCorpus = fs.readFileSync(path.join(dataDir, "corpus.jsonl"), "utf8");
+print(`\nCorpus on disk: ${sessions.length} session(s); secrets scrubbed: ${sessions.some((s) => s.text.includes("[card]") && s.text.includes("[redacted]")) ? "yes" : "NO"}; encrypted on disk: ${!rawCorpus.includes("Thanks for") && rawCorpus.includes('"enc":"v1:') ? "yes (simulated keychain)" : "NO"}`);
 print("Store warnings: " + (assistant.store.warnings().join("; ") || "none"));
 
 // Central distribution: IT signs the example policy plus a team overlay,

@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld("actle", {
   getCandidates: invoke("learning:candidates"),
   acceptCandidate: invoke("learning:accept"),
   dismissCandidate: invoke("learning:dismiss"),
+  getLearningInfo: invoke("learning:info"),
+  clearLearning: invoke("learning:clear"),
   getStatus: invoke("app:status"),
   // Popover windows (template form, documents, keyword offer).
   getPopover: invoke("popover:get"),

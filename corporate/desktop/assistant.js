@@ -8,6 +8,7 @@ const fs = require("node:fs");
 const crypto = require("node:crypto");
 const core = require("../core/index.js");
 const learning = require("./learning.js");
+const { loadCorpusKey } = require("./corpus-key.js");
 
 function readPolicyFile(filePath) {
   try {
@@ -24,6 +25,18 @@ function createAssistant(options) {
   const log = typeof settings.log === "function" ? settings.log : () => {};
 
   let userSettings = store.loadSettings();
+
+  // Learned text is only ever written encrypted. Without a usable keychain
+  // key, sessions are not stored and the dashboard says so.
+  const corpusKey = loadCorpusKey({ store, keychain: settings.keychain });
+  const learningStorage = !!corpusKey.key;
+  if (learningStorage) store.setCorpusBox(core.cryptoBox.createBox(corpusKey.key));
+  else warnings.push(corpusKey.message);
+  if (corpusKey.status === "created" || corpusKey.status === "replaced") {
+    audit({ event: "corpus-key-" + corpusKey.status, aside: corpusKey.aside || null });
+  }
+  const encryptedNow = store.encryptCorpus();
+  if (encryptedNow) audit({ event: "corpus-encrypted", sessions: encryptedNow });
 
   // A desk is "managed" when IT installed a deployment file naming signed
   // policy sources. Then only signed layers apply; an unsigned local policy
@@ -158,7 +171,7 @@ function createAssistant(options) {
   }
 
   function persistSession(session) {
-    if (!session) return;
+    if (!session || !learningStorage) return;
     store.appendSession(session);
     cachedCandidates = null;
     emit("session", session);
@@ -189,6 +202,24 @@ function createAssistant(options) {
       });
     }
     return cachedCandidates.slice();
+  }
+
+  function corpusInfo() {
+    return Object.assign(store.corpusInfo(), {
+      storing: learningStorage,
+      problem: learningStorage ? null : corpusKey.message,
+      retentionDays: policy.retention.corpusDays,
+    });
+  }
+
+  /** The person deletes everything learned so far (decisions on proposals are kept). */
+  function clearLearning() {
+    const before = store.corpusInfo();
+    store.clearSessions();
+    cachedCandidates = null;
+    audit({ event: "corpus-deleted", by: "person", sessions: before.sessions + before.locked });
+    emit("candidates", candidates());
+    return corpusInfo();
   }
 
   function saveShorthand(sh) {
@@ -320,6 +351,8 @@ function createAssistant(options) {
     warnings: () => warnings.concat(sourceReport.warnings, policy.warnings, store.warnings()),
     refreshPolicy,
     usageReport,
+    corpusInfo,
+    clearLearning,
     audit: (limit) => store.loadAudit(limit),
     get managed() { return managed; },
     get paused() { return policy.paused.active; },

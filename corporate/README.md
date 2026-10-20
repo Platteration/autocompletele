@@ -21,6 +21,15 @@ adds what a business asks for:
 - **Document shortcuts**: typing `/sld` lists the files the organisation marked
   as the standard hand-outs for "shipping logistics department", so they can be
   attached in one step.
+- **Compliance warnings**: a rule can warn instead of offer, for example when
+  "contract" is written without the legal disclaimer or a card number is typed
+  into a message, with an optional one-click fix.
+- **Central management**: signed policy files fetched from an intranet URL or
+  a file share, layered organisation, department and team; rollback
+  protection; an administrator kill switch; and a change log on every desk.
+- **Usage reports**: a counts-only report a person previews and exports, and
+  an administrator roll-up with hours saved per team, estimated value,
+  shortcuts by use and shortcuts nobody uses.
 - **One organisation policy file** drives all of it:
   [`shared/ORG-POLICY.md`](shared/ORG-POLICY.md), with a complete example in
   [`shared/org-policy.example.json`](shared/org-policy.example.json).
@@ -56,11 +65,17 @@ corporate/
     diff.js                   word-level diff and similarity
     variable-detector.js      slots across similar messages -> [[name]] template + overlay segments
     phrase-miner.js           recurring sentences, paragraphs and phrases across messages
-    keyword-rules.js          keyword rules and once-per-field offers
+    keyword-rules.js          keyword offers and compliance warnings, once per field
     documents.js              document shortcuts (/sld) and search
-    org-policy.js             the organisation policy parser (skips bad parts, never refuses)
+    org-policy.js             the organisation policy parser and layer merge (skips bad parts, never refuses)
+    policy-signing.js         Ed25519 signing and verification of policy files
+    policy-source.js          fetch signed layers, verify, refuse replays, keep the last good copy
+    report.js                 counts-only usage reports, team roll-up, CSV
+    crypto-box.js             AES-256-GCM records for the learning corpus
     engine.js                 headless assistant: keys + focus in, actions out
-    store.js                  app-data files: library, policy, settings, metrics log, learning corpus
+    store.js                  app-data files: library, policy, settings, metrics log, learning corpus, audit log
+  admin/
+    actle-admin.js            keygen, sign, verify, validate, layers, report
   test/                       node --test suites for every module, plus the shared conformance suite
   shared/
     ORG-POLICY.md             policy file format
@@ -107,14 +122,19 @@ it is bounded on purpose:
   fields, even when a rule says `learn`.
 - Only text typed into fields, per session, after scrubbing; window titles are
   not stored.
-- Locally, under the app-data folder, for `retention.corpusDays` (default
-  90); the dashboard shows it, can pause it, and can delete it.
-- Nothing is sent anywhere. There is no network code in this folder.
+- Locally, under the app-data folder, encrypted with a key held in the
+  operating system keychain, for `retention.corpusDays` (default 90). Without
+  a secure keychain nothing is written. The Learning tab shows how much is
+  stored and can delete all of it; switching an application to triggers mode
+  stops learning there.
+- Nothing typed is ever sent anywhere. The only network access is fetching
+  signed policy files on a managed desk; usage reports are files the person
+  saves and hands over.
 
 ## Run
 
 ```
-cd corporate && npm test             # 107 core tests, including the shared conformance suite
+cd corporate && npm test             # core, admin and assistant tests, including the shared conformance suite
 cd corporate && npm run check        # node --check on every file
 cd corporate && npm run simulate     # whole pipeline headlessly, no Electron needed
 cd corporate/desktop && npm install  # downloads Electron and builds the keyboard listener
@@ -140,13 +160,15 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
 
 ## Follow-ups
 
-- Licensing and distribution for organisations (per-seat, policy signing,
-  installer packaging). Nothing from the personal premium preview is wired in.
+- Licensing and installer packaging for organisations (per-seat, signed
+  installers, silent install). Nothing from the personal premium preview is
+  wired in. Policy signing and distribution exist (see ORG-POLICY.md).
 - Dead keys and input methods: the listener maps a US layout; other layouts
   need a per-platform translation (the personal Windows app has the same
   limit).
 - Attaching files directly into a mail client's compose window is
   platform-specific; the shell copies the paths and reveals the files, and
   counts an attachment only when the person confirms it.
-- A central statistics roll-up (per team or organisation) would need an
-  export the person triggers; none is built, deliberately.
+- Usage reports travel as files the person saves; an upload to a collection
+  point is not built, deliberately, so nothing leaves a desk without the
+  person's action.

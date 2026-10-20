@@ -170,7 +170,26 @@
     return box;
   }
 
+  async function renderCorpusInfo() {
+    const info = await api.getLearningInfo();
+    let line;
+    if (!info.storing) line = info.problem;
+    else if (!info.sessions) line = "No learned text stored. Learned text is encrypted with your system keychain and kept for " + info.retentionDays + " days.";
+    else line = info.sessions + " learned message(s) from " + new Date(info.oldest).toLocaleDateString() + " to " + new Date(info.newest).toLocaleDateString()
+      + ", encrypted with your system keychain and kept for " + info.retentionDays + " days.";
+    if (info.locked) line += " " + info.locked + " older message(s) cannot be read with the current key and are kept.";
+    text($("corpus-info"), line);
+    $("corpus-clear").disabled = !(info.sessions || info.locked);
+  }
+
+  $("corpus-clear").addEventListener("click", async () => {
+    if (!window.confirm("Delete all learned text on this computer? Proposals based on it disappear. Your shortcuts and statistics are not affected.")) return;
+    await api.clearLearning();
+    announce("Learned text deleted");
+  });
+
   async function renderLearning() {
+    await renderCorpusInfo();
     const list = await api.getCandidates();
     const host = $("candidates");
     host.textContent = "";
