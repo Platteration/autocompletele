@@ -145,10 +145,15 @@ test("the toolbar popup switches styles and suggestions on an open page follow",
   const app = await launch({ shorthands: ENTRIES });
   t.after(() => app.close());
   const { page: library, errors } = await openPage(app, "options", "light", 1280);
+  // Any page scroll closes suggestions. Taller than the page, the playground
+  // needs no scrolling, so a late layout change cannot close the list.
+  await library.setViewportSize({ width: 1280, height: 3000 });
+  assert.ok(await library.evaluate(() => document.documentElement.scrollHeight <= innerHeight));
   await library.evaluate(observeSuggestions);
   await library.locator("#tryit").click();
   await library.keyboard.type("th");
-  await library.waitForFunction(() => window.suggestionRoot && window.suggestionRoot.querySelector(".item"));
+  await library.waitForFunction(() => window.suggestionRoot && window.suggestionRoot.querySelector(".item")
+    && window.suggestionRoot.querySelector(".panel").isConnected);
   const classic = await panelStyle(library);
   assert.equal(classic.radius, "12px");
   assert.equal(classic.background, "rgb(255, 255, 255)");
