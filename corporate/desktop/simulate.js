@@ -192,6 +192,37 @@ const rawCorpus = fs.readFileSync(path.join(dataDir, "corpus.jsonl"), "utf8");
 print(`\nCorpus on disk: ${sessions.length} session(s); secrets scrubbed: ${sessions.some((s) => s.text.includes("[card]") && s.text.includes("[redacted]")) ? "yes" : "NO"}; encrypted on disk: ${!rawCorpus.includes("Thanks for") && rawCorpus.includes('"enc":"v1:') ? "yes (simulated keychain)" : "NO"}`);
 print("Store warnings: " + (assistant.store.warnings().join("; ") || "none"));
 
+// Template answers remembered per email conversation: the pop-out reply
+// window's subject (per mail client) is the conversation; the answers given
+// in it are offered as defaults the next time a template in it asks for the
+// same blank, and never to another conversation.
+print("\nAnswers remembered per email conversation");
+function templateIn(title, trigger) {
+  focus({ process: "OUTLOOK.EXE", title });
+  let action = null;
+  for (const ch of trigger) for (const a of assistant.keyTyped({ text: ch })) if (a.type === "template") action = a;
+  tick(500);
+  if (!action) { print(`    ${trigger} is not a template here`); return null; }
+  const memory = assistant.templateDefaults(action);
+  print(`    ${trigger} asks for ${action.fields.map((f) => f.name).join(", ")}; prefilled: ${Object.keys(memory.values).length ? Object.entries(memory.values).map(([k, v]) => k + " = " + v).join(", ") + " (from \u201c" + memory.thread.subject + "\u201d)" : "nothing"}`);
+  return action;
+}
+const first = templateIn("RE: Order 1234 - Message (HTML)", "ack/");
+if (first) {
+  const remembered = assistant.templateInserted(
+    { trigger: first.trigger, source: first.source, origin: first.origin, fields: first.fields, backspaces: first.backspaces, spentKeystrokes: 0 },
+    { values: { name: "Jo Bloggs", subject: "order 1234", date: "Friday", password: "hunter2" }, pronounPreset: "she/her" },
+    "Hi Jo Bloggs,"
+  );
+  print(`    inserted with name, subject, date and a field called password: ${remembered} answer(s) remembered`);
+  templateIn("FW: RE: Order 1234 - Message (HTML)", "ack/");
+  templateIn("RE: Order 9999 - Message (HTML)", "ack/");
+  const threads = assistant.threads();
+  print(`    Learning tab lists ${threads.items.length} conversation(s): ${threads.items.map((t) => t.subject + " (" + t.app + "): " + t.answers.map((a) => a.name).join(", ")).join("; ")}`);
+  const rawThreads = fs.existsSync(path.join(dataDir, "threads.jsonl")) ? fs.readFileSync(path.join(dataDir, "threads.jsonl"), "utf8") : "";
+  print(`    on disk: ${rawThreads ? "sealed" : "NOT WRITTEN"}; answer or subject readable: ${/Jo Bloggs|order 1234|hunter2/i.test(rawThreads) ? "YES" : "no"}; in the usage report or change log: ${/Jo Bloggs|order 1234/i.test(JSON.stringify(assistant.usageReport()) + JSON.stringify(assistant.audit())) ? "YES" : "no"}`);
+}
+
 // Central distribution: IT signs the example policy plus a team overlay,
 // a managed desk fetches both from a file share, then IT pauses every desk.
 async function managedDesk() {

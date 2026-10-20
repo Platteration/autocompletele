@@ -78,6 +78,7 @@ Everything is in Electron's `userData` folder for the app
 | `metrics.jsonl`   | One line per insert: time, kind, application, keystrokes saved, whether the shortcut was the organisation's or the person's |
 | `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
+| `threads.jsonl`   | Template answers remembered per email conversation, one record per conversation, each sealed with the corpus key (nothing is written without one) |
 | `learned.json`    | SHA-256 digests of proposals the person dismissed (no readable text) |
 | `lookup-cache/`   | Last good copy of each lookup's data source, plain JSON (organisation reference data, not typed text) |
 | `upload-state.json` | When the policy sets `reporting.endpoint`: time and outcome of the last usage-report upload and the exact body sent |
@@ -97,7 +98,20 @@ encryption is encrypted on the next start. Records the current key cannot
 open are kept untouched, never dropped, and the key file is never replaced
 while such records exist. The Learning tab shows how much text is stored;
 "Delete learned text" removes it together with the dismissed-proposal
-digests and any suggestions not yet exported.
+digests and any suggestions not yet exported, and the answers remembered
+per email conversation.
+
+Template answers remembered per email conversation (`threads.jsonl`) follow
+the same rules: sealed with the corpus key, kept for this run only without
+one, records another key sealed are kept and the key file is not replaced
+while they exist, 90 days of retention (or `retention.corpusDays` if that is
+shorter), never in usage reports or the change log, and listed on the
+Learning tab with Remove and Forget all. This is a deliberate difference
+from the personal browser extension, whose template answers are never
+stored. It needs the window title of the mail client: Outlook pop-out
+messages, Thunderbird compose windows and Gmail or Outlook on the web in a
+browser tab; macOS without the Accessibility permission and Linux on
+Wayland give no titles, and the Learning tab says nothing is remembered.
 
 A file that cannot be parsed is moved aside (`*.corrupt-<timestamp>`), the
 dashboard shows a warning, and the app starts with defaults. Nothing refuses
