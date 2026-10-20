@@ -183,8 +183,41 @@
     $("corpus-clear").disabled = !(info.sessions || info.locked);
   }
 
+  async function renderThreads() {
+    const info = await api.getThreads();
+    const body = $("threads");
+    body.textContent = "";
+    let line;
+    if (!info.enabled) line = info.reason === "organisation" ? "Switched off by your organisation's policy. Answers already remembered stay listed until they expire." : "Switched off in your settings. Answers already remembered stay listed until they expire.";
+    else if (!info.storing) line = "Kept for this session only: " + (info.problem || "no secure keychain is available");
+    else line = "Encrypted with your system keychain and kept for " + info.retentionDays + " days; never part of usage reports or the change log.";
+    if (info.locked) line += " " + info.locked + " conversation(s) cannot be read with the current key and are kept.";
+    text($("threads-info"), line);
+    $("threads-enabled").checked = info.reason !== "setting";
+    $("threads-enabled").disabled = info.reason === "organisation";
+    for (const item of info.items) {
+      const remove = el("button", { class: "plain", text: "Remove" });
+      remove.addEventListener("click", async () => { await api.forgetThread(item.id); announce("Forgot the answers for " + item.subject); });
+      const answers = item.answers.map((a) => a.name + " = " + a.value).concat(item.pronouns ? ["pronouns = " + item.pronouns] : []).join(", ");
+      body.append(el("tr", {}, [el("td", { text: item.subject + " (" + item.app + ")" }), el("td", { text: answers }), el("td", { text: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "" }), el("td", {}, [remove])]));
+    }
+    if (!info.items.length) body.append(el("tr", {}, [el("td", { colspan: "4", text: "Nothing remembered yet. Fill in a template while writing an email and its answers appear here." })]));
+    $("threads-clear").disabled = !info.items.length;
+  }
+
+  $("threads-enabled").addEventListener("change", async () => {
+    await api.saveSettings({ rememberAnswers: $("threads-enabled").checked });
+    announce($("threads-enabled").checked ? "Answers are remembered per conversation" : "Answers are no longer remembered");
+    await renderThreads();
+  });
+  $("threads-clear").addEventListener("click", async () => {
+    if (!window.confirm("Forget every remembered answer on this computer? Templates in those conversations will ask again.")) return;
+    await api.forgetAllThreads();
+    announce("Remembered answers forgotten");
+  });
+
   $("corpus-clear").addEventListener("click", async () => {
-    if (!window.confirm("Delete all learned text on this computer, including suggestions not yet exported? Proposals based on it disappear. Your shortcuts and statistics are not affected.")) return;
+    if (!window.confirm("Delete all learned text on this computer, including suggestions not yet exported and the answers remembered per email conversation? Proposals based on it disappear. Your shortcuts and statistics are not affected.")) return;
     await api.clearLearning();
     announce("Learned text deleted");
   });
@@ -730,6 +763,7 @@
     if (what.metrics || what.settings) await renderOverview();
     if (what.library) await renderLibrary();
     if (what.learning || what.library) await renderLearning();
+    if (what.learning || what.settings) await renderThreads();
     if (what.settings) await renderApps();
     if (what.settings || what.keyboard) await renderKeyboard();
     if (what.settings || what.policy) {

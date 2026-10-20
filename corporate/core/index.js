@@ -18,6 +18,7 @@ module.exports = {
   policySigning: require("./policy-signing.js"),
   policySource: require("./policy-source.js"),
   license: require("./license.js"),
+  threadMemory: require("./thread-memory.js"),
   engine: require("./engine.js"),
   report: require("./report.js"),
   reportUpload: require("./report-upload.js"),

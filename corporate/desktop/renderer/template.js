@@ -6,6 +6,10 @@
   if (!state || state.kind !== "template") return window.actle.closePopover();
   document.getElementById("title").textContent = "Fill in " + state.trigger;
   const form = document.getElementById("form");
+  // Answers remembered from earlier templates in the same email conversation.
+  const memory = state.memory && typeof state.memory === "object" ? state.memory : { values: {}, pronouns: null, thread: null };
+  const remembered = memory.values && typeof memory.values === "object" ? memory.values : {};
+  let prefilled = 0;
   for (const field of state.fields) {
     const label = document.createElement("label");
     const span = document.createElement("span");
@@ -15,8 +19,19 @@
     input.name = "field:" + field.name;
     input.required = true;
     input.autocomplete = "off";
+    if (Object.hasOwn(remembered, field.name) && typeof remembered[field.name] === "string") {
+      input.value = remembered[field.name];
+      input.addEventListener("focus", () => input.select());
+      prefilled++;
+    }
     label.append(span, input);
     form.append(label);
+  }
+  if (prefilled && memory.thread) {
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = "Filled in from your earlier answers in \u201c" + memory.thread.subject + "\u201d (" + memory.thread.app + "). Check before inserting.";
+    form.append(hint);
   }
   if (state.variables.some((name) => name !== "weekday")) {
     const label = document.createElement("label");
@@ -28,6 +43,7 @@
       const option = document.createElement("option");
       option.value = preset;
       option.textContent = preset;
+      if (memory.pronouns === preset) option.selected = true;
       select.append(option);
     }
     label.append(span, select);
@@ -42,11 +58,12 @@
     event.preventDefault();
     const values = {};
     let pronouns = null;
+    let pronounPreset = null;
     for (const [key, value] of new FormData(form).entries()) {
       if (key.startsWith("field:")) values[key.slice(6)] = value;
-      else if (key === "pronouns") pronouns = PRESETS[value] || null;
+      else if (key === "pronouns") { pronouns = PRESETS[value] || null; pronounPreset = PRESETS[value] ? value : null; }
     }
-    window.actle.submitPopover({ values, pronouns });
+    window.actle.submitPopover({ values, pronouns, pronounPreset });
   });
   document.getElementById("cancel").addEventListener("click", () => window.actle.closePopover());
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") window.actle.closePopover(); });

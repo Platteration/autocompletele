@@ -40,6 +40,7 @@ function empty() {
     serial: null,
     licence: null,
     licensing: { allowTierOverride: false },
+    threadMemory: { enabled: true },
     updates: { url: null, channel: "latest" },
     reporting: { team: "", hourlyRate: null, currency: null, includeApps: false, period: "week", periods: 12, endpoint: null, uploadEvery: "week", uploadToken: null },
     warnings: [],
@@ -80,7 +81,7 @@ function merge(layers) {
     if (typeof layer.organization === "string") out.organization = layer.organization;
     if (typeof layer.licence === "string" && layer.licence.trim()) out.licence = layer.licence;
     if (isObject(layer.updates) && typeof layer.updates.url === "string" && layer.updates.url.trim()) out.updates = Object.assign({}, layer.updates);
-    for (const section of ["typing", "learning", "retention", "reporting", "licensing"]) {
+    for (const section of ["typing", "learning", "retention", "reporting", "licensing", "threadMemory"]) {
       if (isObject(layer[section])) out[section] = Object.assign({}, out[section], layer[section]);
     }
     if (layer.paused && !(out.paused && pausedOf(out.paused).active)) out.paused = layer.paused;
@@ -302,6 +303,11 @@ function parse(input, options) {
   const licensing = isObject(source.licensing) ? source.licensing : {};
   if (licensing.allowTierOverride !== undefined && typeof licensing.allowTierOverride !== "boolean") policy.warnings.push("licensing.allowTierOverride ignored: use true or false");
   policy.licensing.allowTierOverride = licensing.allowTierOverride === true;
+
+  // Template answers remembered per email conversation (core/thread-memory.js); on unless the organisation says otherwise.
+  const threadMemory = isObject(source.threadMemory) ? source.threadMemory : {};
+  if (threadMemory.enabled !== undefined && typeof threadMemory.enabled !== "boolean") policy.warnings.push("threadMemory.enabled ignored: use true or false");
+  policy.threadMemory.enabled = threadMemory.enabled !== false;
 
   const learning = source.learning && typeof source.learning === "object" ? source.learning : {};
   policy.learning.minCount = Math.max(2, Math.floor(positive(learning.minCount, policy.learning.minCount)));

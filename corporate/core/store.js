@@ -25,6 +25,7 @@ const FILES = Object.freeze({
   suggestions: "suggestions.json",
   uploadState: "upload-state.json",
   lookupCacheDir: "lookup-cache",
+  threads: "threads.jsonl",
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -38,6 +39,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   keyboardLayout: "auto",     // a layout id from desktop/adapters/layouts.js, or "auto" to follow the system
   deferUpdates: false,        // true: an available update is only downloaded when the person asks
   tierOverride: null,         // internal testing: run this desk as a tier id from core/license.js; null follows the licence
+  rememberAnswers: true,      // remember template answers per email conversation (core/thread-memory.js)
 });
 
 function createStore(dir) {
@@ -163,6 +165,7 @@ function createStore(dir) {
     out.keyboardLayout = typeof out.keyboardLayout === "string" && out.keyboardLayout.trim() ? out.keyboardLayout.trim() : "auto";
     out.deferUpdates = out.deferUpdates === true;
     out.tierOverride = TIER_IDS.includes(out.tierOverride) ? out.tierOverride : null;
+    out.rememberAnswers = out.rememberAnswers !== false;
     return out;
   }
 
@@ -282,6 +285,60 @@ function createStore(dir) {
 
   function clearSessions() {
     rewriteLines(FILES.corpus, []);
+  }
+
+  // Template answers remembered per email conversation (core/thread-memory.js):
+  // one sealed record per conversation, the same rules as the corpus. Records
+  // the current key cannot open are kept as `locked`, never overwritten.
+  function readThreads() {
+    const threads = [];
+    const locked = [];
+    for (const record of readLines(FILES.threads)) {
+      if (typeof record.enc !== "string") continue; // answers are never written in the clear
+      const opened = corpusBox ? corpusBox.open(record.enc) : null;
+      let thread = null;
+      try {
+        thread = opened == null ? null : JSON.parse(opened);
+      } catch (error) {
+        thread = null;
+      }
+      if (thread && typeof thread.subject === "string" && Array.isArray(thread.answers)) threads.push(thread);
+      else locked.push(record);
+    }
+    return { threads, locked };
+  }
+
+  let lockedThreadsWarned = -1;
+  function loadThreads() {
+    const found = readThreads();
+    if (found.locked.length && found.locked.length !== lockedThreadsWarned) {
+      warnings.push(found.locked.length + " remembered conversation(s) are encrypted with a key this desk cannot read; they are kept but not used");
+    }
+    lockedThreadsWarned = found.locked.length;
+    return found;
+  }
+
+  /** Write the conversations sealed; without a key nothing is written and false comes back. */
+  function saveThreads(threads) {
+    if (!corpusBox) return false;
+    const locked = readThreads().locked;
+    rewriteLines(FILES.threads, locked.concat((threads || []).map((t) => ({ enc: corpusBox.seal(JSON.stringify(t)) }))));
+    return true;
+  }
+
+  function threadsInfo() {
+    const found = readThreads();
+    let bytes = 0;
+    try {
+      bytes = fs.statSync(file(FILES.threads)).size;
+    } catch (error) {
+      bytes = 0;
+    }
+    return { count: found.threads.length, locked: found.locked.length, bytes };
+  }
+
+  function clearThreads() {
+    rewriteLines(FILES.threads, []);
   }
 
   function loadCorpusKeyBlob() {
@@ -433,6 +490,10 @@ function createStore(dir) {
     encryptCorpus,
     corpusInfo,
     clearSessions,
+    loadThreads,
+    saveThreads,
+    threadsInfo,
+    clearThreads,
     loadCorpusKeyBlob,
     saveCorpusKeyBlob,
     moveCorpusKeyAside,

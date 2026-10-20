@@ -124,6 +124,16 @@ test("licensing.allowTierOverride is a boolean that a later layer may change", (
   assert.equal(orgPolicy.parse(orgPolicy.merge([{ licensing: { allowTierOverride: true } }, {}])).licensing.allowTierOverride, true);
 });
 
+test("threadMemory.enabled is a boolean, on by default, and a later layer may turn it off", () => {
+  assert.deepEqual(orgPolicy.parse({}).threadMemory, { enabled: true });
+  assert.equal(orgPolicy.parse({ threadMemory: { enabled: false } }).threadMemory.enabled, false);
+  const loose = orgPolicy.parse({ threadMemory: { enabled: "no" } });
+  assert.equal(loose.threadMemory.enabled, true);
+  assert.ok(loose.warnings.some((w) => /threadMemory.enabled ignored: use true or false/.test(w)));
+  assert.equal(orgPolicy.parse(orgPolicy.merge([{ threadMemory: { enabled: true } }, { threadMemory: { enabled: false } }])).threadMemory.enabled, false);
+  assert.equal(orgPolicy.parse(orgPolicy.merge([{ threadMemory: { enabled: false } }, {}])).threadMemory.enabled, false);
+});
+
 test("update servers are https only, channels are plain names, and later layers replace the whole block", () => {
   assert.deepEqual(orgPolicy.parse({}).updates, { url: null, channel: "latest" });
   assert.deepEqual(orgPolicy.parse({ updates: { url: " https://updates.example/actle/ ", channel: "beta" } }).updates, { url: "https://updates.example/actle", channel: "beta" });

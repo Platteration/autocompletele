@@ -343,3 +343,103 @@ test("groups apply to an unmanaged desk with a groups-only deployment file, and 
   assert.deepEqual(outsider.licence().usage, { shortcuts: 20, layers: 1 });
   assert.equal(outsider.warnings().some((w) => /organisation shortcuts ignored/.test(w)), false, "no cap warning for content the desk does not receive");
 });
+
+test("template answers are remembered per email conversation and offered back in the same conversation only", () => {
+  const dataDir = temp();
+  const keychain = { isEncryptionAvailable: () => true, encryptString: (t) => Buffer.from("K" + t), decryptString: (b) => Buffer.from(b).toString().slice(1) };
+  const policy = {
+    organization: "Example Ltd",
+    capture: { defaultMode: "triggers", apps: [{ id: "bank", label: "Banking", mode: "off", match: { title: "Online Banking" } }] },
+    library: [{ trigger: "ack/", expansion: "Hi [[name]], your order [[order]] ships [[date]]." }],
+  };
+  const now = Date.UTC(2026, 9, 20, 9);
+  const desk = createAssistant({ dataDir, keychain, policy, now: () => now });
+  const typed = (assistant, text) => { let actions = []; for (const ch of text) actions = actions.concat(assistant.keyTyped({ text: ch })); return actions; };
+  const fields = ["name", "order", "date"];
+  const fromPaletteShape = () => ({ type: "template", trigger: "ack/", fields: fields.map((name) => ({ name, label: name })), backspaces: 0, source: "organization", spentKeystrokes: 4 });
+
+  desk.focusChanged({ process: "OUTLOOK.EXE", title: "RE: Order 1234 - Message (HTML)" });
+  let [action] = typed(desk, "ack/");
+  assert.equal(action.type, "template");
+  assert.equal(action.origin.title, "RE: Order 1234 - Message (HTML)", "the action remembers the window it was typed in");
+  let memory = desk.templateDefaults(action);
+  assert.deepEqual([memory.thread.app, memory.thread.subject, memory.values], ["outlook", "order 1234", {}]);
+  // The person switches to the popover (actle's own window) before submitting; the origin still counts.
+  desk.focusChanged({ process: "electron", title: "actle", ownWindow: true });
+  assert.equal(desk.templateInserted(action, { values: { name: "Jo Bloggs", order: "1234", date: "3 May", extra: "x" }, pronounPreset: "she/her" }, "Hi Jo Bloggs, your order 1234 ships 3 May."), 3);
+  assert.equal(desk.summary({ period: "all" }).expansions, 1, "the insert is counted as before");
+
+  desk.focusChanged({ process: "OUTLOOK.EXE", title: "FW: RE: Order 1234 - Message (HTML)" });
+  [action] = typed(desk, "ack/");
+  memory = desk.templateDefaults(action);
+  assert.deepEqual(memory.values, { name: "Jo Bloggs", order: "1234", date: "3 May" });
+  assert.equal(memory.pronouns, "she/her");
+  desk.focusChanged({ process: "OUTLOOK.EXE", title: "RE: Order 9999 - Message (HTML)" });
+  [action] = typed(desk, "ack/");
+  assert.deepEqual(desk.templateDefaults(action).values, {}, "another conversation gets nothing");
+  desk.focusChanged({ process: "notepad.exe", title: "Order 1234" });
+  [action] = typed(desk, "ack/");
+  assert.equal(desk.templateDefaults(action).thread, null, "not a mail window");
+  const banking = { process: "OUTLOOK.EXE", title: "Online Banking - Order 1234 - Message (HTML)" };
+  assert.equal(desk.threadFor(banking), null, "capture off for this window");
+  const viaPalette = Object.assign({}, fromPaletteShape(), { origin: banking });
+  assert.equal(desk.templateDefaults(viaPalette).thread, null);
+  assert.equal(desk.templateInserted(viaPalette, { values: { name: "Nope" } }, "x"), 0);
+  assert.equal(desk.threads().items.some((t) => t.answers.some((a) => a.value === "Nope")), false);
+
+  // The palette: the conversation is the window that had the focus before the palette opened.
+  desk.focusChanged({ process: "OUTLOOK.EXE", title: "Re: Order 1234 - Outlook" });
+  desk.paletteOpened();
+  desk.focusChanged({ process: "electron", title: "actle search", ownWindow: true });
+  desk.paletteOpened();
+  const fromPalette = desk.paletteChoose({ kind: "shortcut", trigger: "ack/", query: "ack" });
+  assert.equal(fromPalette.type, "template");
+  assert.equal(desk.templateDefaults(fromPalette).values.name, "Jo Bloggs");
+
+  // What is stored, and what never leaves the desk.
+  const list = desk.threads();
+  assert.deepEqual([list.enabled, list.storing, list.reason, list.retentionDays], [true, true, null, 90]);
+  assert.deepEqual(list.items.map((t) => [t.app, t.subject, t.answers.length]), [["outlook", "order 1234", 3]]);
+  assert.equal(desk.corpusInfo().threads.count, 1);
+  const raw = fs.readFileSync(path.join(dataDir, "threads.jsonl"), "utf8");
+  assert.equal(raw.includes("Jo Bloggs") || raw.includes("order 1234"), false, "sealed on disk");
+  for (const text of [JSON.stringify(desk.usageReport()), JSON.stringify(desk.audit()), JSON.stringify(desk.suggestionsExport())]) {
+    assert.equal(text.includes("Jo Bloggs") || text.includes("order 1234"), false, "answers and subjects never leave the desk");
+  }
+  // A restart reads them back; forgetting and deleting learned text remove them.
+  const again = createAssistant({ dataDir, keychain, policy, now: () => now + 1000 });
+  assert.equal(again.threads().items.length, 1);
+  assert.equal(again.forgetThread(again.threads().items[0].id), 1);
+  assert.deepEqual(again.threads().items, []);
+  desk.focusChanged({ process: "OUTLOOK.EXE", title: "RE: Order 1234 - Message (HTML)" });
+  [action] = typed(desk, "ack/");
+  desk.templateInserted(action, { values: { name: "Jo" } }, "Hi Jo");
+  assert.equal(desk.threads().items.length, 1);
+  desk.clearLearning();
+  assert.deepEqual(desk.threads().items, []);
+  assert.equal(desk.audit().filter((e) => e.event === "corpus-deleted").pop().threads, 1);
+  assert.equal(fs.readFileSync(path.join(dataDir, "threads.jsonl"), "utf8"), "");
+
+  // Switched off by the person or by the organisation: nothing is offered or stored.
+  desk.saveSettings({ rememberAnswers: false });
+  desk.focusChanged({ process: "OUTLOOK.EXE", title: "RE: Order 1234 - Message (HTML)" });
+  [action] = typed(desk, "ack/");
+  assert.equal(desk.templateDefaults(action).thread, null);
+  assert.deepEqual([desk.threads().enabled, desk.threads().reason], [false, "setting"]);
+  desk.saveSettings({ rememberAnswers: true });
+  const off = createAssistant({ dataDir: temp(), keychain, policy: Object.assign({ threadMemory: { enabled: false } }, policy), now: () => now });
+  off.focusChanged({ process: "OUTLOOK.EXE", title: "RE: Order 1234 - Message (HTML)" });
+  [action] = typed(off, "ack/");
+  assert.equal(off.templateDefaults(action).thread, null);
+  assert.deepEqual([off.threads().enabled, off.threads().reason], [false, "organisation"]);
+  assert.equal(off.policyInfo().threadMemory.enabled, false);
+
+  // Without a keychain the answers live for this run only.
+  const noKey = createAssistant({ dataDir: temp(), policy, now: () => now });
+  noKey.focusChanged({ process: "OUTLOOK.EXE", title: "RE: Order 1 - Message (HTML)" });
+  [action] = typed(noKey, "ack/");
+  noKey.templateInserted(action, { values: { name: "Sam" } }, "Hi Sam");
+  assert.equal(noKey.templateDefaults(action).values.name, "Sam");
+  assert.deepEqual([noKey.threads().storing, fs.existsSync(path.join(noKey.store.root, "threads.jsonl"))], [false, false]);
+  assert.match(noKey.threads().problem, /keychain/);
+});

@@ -10,6 +10,11 @@ adds what a business asks for:
   organisation opts in (mail clients, typically), the text typed there is kept
   locally so recurring sentences, paragraphs and phrases can be proposed as
   shortcuts.
+- **Answers remembered per email conversation**: fill in a template's
+  blanks once in a reply; the next template in the same conversation
+  (same subject, same mail client) offers the same name, order number and
+  date back, editable. Stored encrypted like learned text, 90 days, visible
+  and deletable on the dashboard, never in reports.
 - **Variable detection**: messages that differ only in a name, a date, an
   order reference or an amount are shown as a diff overlay (unchanged text in
   one colour, each changing part in another, with the values seen so far) and

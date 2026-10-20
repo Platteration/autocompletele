@@ -44,7 +44,8 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `updates.channel` | Lower-case name, default `latest`: the desk reads `<channel>.yml` (`<channel>-mac.yml`, `<channel>-linux.yml`) from `updates.url`. |
 | `reporting.uploadToken` | Optional shared secret. The body is signed with HMAC-SHA256 (`X-Actle-Signature: sha256=…`) so the collector can drop posts from anyone who merely knows the URL. |
 | `retention.metricsDays` | Days of statistics kept on disk (default 365). |
-| `retention.corpusDays` | Days of learning text kept on disk (default 90). |
+| `retention.corpusDays` | Days of learning text kept on disk (default 90). Answers remembered per email conversation are kept for 90 days or this, whichever is shorter. |
+| `threadMemory.enabled` | `false` stops desks remembering template answers per email conversation (default `true`; see "Capture modes"). What a desk already remembered stays until it expires or the person deletes it. |
 
 ## Central distribution (signed policies)
 
@@ -384,3 +385,29 @@ terminals or secure-input fields, even when a rule asks for it, and card
 numbers, labelled secrets ("password: …") and long token-like strings are
 masked before a session is stored. The person can see, pause and delete the
 learning corpus from the dashboard at any time.
+
+### Answers remembered per email conversation
+
+When a person fills in a template's `[[blanks]]` while writing in a mail
+client, the answers are kept for that conversation and offered as defaults
+the next time a template in the same conversation asks for the same blank
+(editable; nothing is inserted unseen). A conversation is the subject of
+the focused window, per mail application: reply and forward prefixes
+(`RE:`, `FW:`, `AW:`, …), the client's and the browser's suffixes and the
+account name are stripped, and folder or view titles (Inbox, Sent, Drafts…)
+never count. Recognised: Outlook, Thunderbird, Apple Mail and Evolution by
+their process, Gmail and Outlook on the web by the tab title. In Outlook
+the title of the main window is the folder, so only pop-out message windows
+are recognised; macOS without the Accessibility permission and Linux on
+Wayland give no window titles, so nothing is remembered there.
+
+Nothing is remembered in a window whose capture mode is `off`, in
+credential prompts, or while the policy is paused; blanks whose name says
+they hold a secret (password, PIN, token, CVV…) and values that scrubbing
+would change (card numbers, labelled secrets, tokens) are never stored.
+Records are sealed with the same key as learned text (without a keychain
+they live for the session only), expire after 90 days or
+`retention.corpusDays` if that is shorter, are never part of usage reports
+or the change log, and are listed on the Learning tab with Remove and
+Forget all. `threadMemory.enabled: false` switches the feature off for
+every desk; the person can switch it off for their own desk.

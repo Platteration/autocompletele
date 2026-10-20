@@ -113,6 +113,21 @@ function createAssistant(options) {
   ledger.onRecord((entry) => store.appendMetric(entry));
   store.pruneMetrics(policy.retention.metricsDays);
   store.pruneSessions(policy.retention.corpusDays);
+
+  // Template answers remembered per email conversation, sealed with the
+  // corpus key; without a key they live for this run only.
+  let threadMemory = null;
+  function buildThreadMemory() {
+    threadMemory = core.threadMemory.createThreadMemory({
+      load: () => store.loadThreads().threads,
+      save: (records) => store.saveThreads(records),
+      now: settings.now,
+      retentionDays: Math.min(core.threadMemory.DEFAULTS.retentionDays, policy.retention.corpusDays),
+      presets: core.personal.template.pronounPresets,
+    });
+  }
+  buildThreadMemory();
+  threadMemory.prune();
   warnings.push(...store.warnings());
 
   const engine = core.engine.createEngine({
@@ -184,6 +199,7 @@ function createAssistant(options) {
     policy = buildPolicy();
     applyEngineSettings();
     buildLookupStore();
+    buildThreadMemory();
     cachedCandidates = null;
     recordPolicyAudit(origin);
   }
@@ -224,7 +240,76 @@ function createAssistant(options) {
   }
 
   function keyTyped(key) {
-    return engine.keyTyped(key);
+    const actions = engine.keyTyped(key);
+    // A template action remembers the window it was typed in: that is the
+    // conversation its answers belong to, whatever has the focus by the time
+    // the form is submitted.
+    for (const action of actions) if (action.type === "template") action.origin = engine.context;
+    return actions;
+  }
+
+  // --- Template answers per email conversation ---
+  let paletteOrigin = null;
+
+  /** The conversation a window stands for, or null when nothing is remembered there. */
+  function threadFor(origin) {
+    if (!policy.threadMemory.enabled || userSettings.rememberAnswers === false || policy.paused.active) return null;
+    const ctx = origin && typeof origin === "object" ? origin : {};
+    if (core.capturePolicy.decide(ctx, policy.capture).mode === "off") return null;
+    return core.threadMemory.threadKey(ctx);
+  }
+
+  /** Called by the shell before the palette window takes the focus. */
+  function paletteOpened() {
+    const ctx = engine.context;
+    if (!ctx.ownWindow) paletteOrigin = ctx;
+  }
+
+  /** What to prefill in a template form: the answers given earlier in the same conversation. */
+  function templateDefaults(action) {
+    const thread = threadFor(action && action.origin);
+    const names = (action && Array.isArray(action.fields) ? action.fields : []).map((f) => f.name);
+    const found = threadMemory.defaults(thread, names);
+    return {
+      thread: thread ? { id: thread.id, app: thread.app, subject: thread.subject } : null,
+      values: Object.assign({}, found.values),
+      pronouns: found.pronouns,
+      updatedAt: found.updatedAt,
+    };
+  }
+
+  /** A template was inserted: count it, then remember the answers for the conversation. */
+  function templateInserted(state, payload, inserted) {
+    const typed = state.backspaces ? state.trigger : "";
+    engine.recordInsert({ kind: "template", trigger: state.trigger, source: state.source, inserted, typed, spentKeystrokes: state.spentKeystrokes });
+    const thread = threadFor(state.origin);
+    if (!thread) return 0;
+    const names = (Array.isArray(state.fields) ? state.fields : []).map((f) => f.name);
+    return threadMemory.remember(thread, payload && payload.values, names, payload && payload.pronounPreset);
+  }
+
+  function threads() {
+    const enabled = policy.threadMemory.enabled && userSettings.rememberAnswers !== false;
+    return {
+      enabled,
+      reason: !policy.threadMemory.enabled ? "organisation" : userSettings.rememberAnswers === false ? "setting" : null,
+      storing: learningStorage,
+      problem: learningStorage ? null : corpusKey.message,
+      retentionDays: Math.min(core.threadMemory.DEFAULTS.retentionDays, policy.retention.corpusDays),
+      locked: store.threadsInfo().locked,
+      items: threadMemory.list(),
+    };
+  }
+
+  function forgetThread(id) {
+    return threadMemory.forget(String(id || ""));
+  }
+
+  function forgetThreads() {
+    const count = threadMemory.clear();
+    store.clearThreads();
+    audit({ event: "threads-deleted", by: "person", threads: count });
+    return count;
   }
 
   function candidates() {
@@ -240,23 +325,28 @@ function createAssistant(options) {
   }
 
   function corpusInfo() {
+    const threadsOnDisk = store.threadsInfo();
     return Object.assign(store.corpusInfo(), {
       storing: learningStorage,
       problem: learningStorage ? null : corpusKey.message,
       retentionDays: policy.retention.corpusDays,
+      threads: { count: threadMemory.size(), locked: threadsOnDisk.locked, storing: learningStorage },
     });
   }
 
   /** The person deletes everything learned so far (decisions on proposals are kept). */
   function clearLearning() {
     const before = store.corpusInfo();
+    const threadsBefore = threadMemory.size() + store.threadsInfo().locked;
     store.clearSessions();
-    // Everything derived from learned text goes too: dismissals and the
-    // suggestions not yet exported.
+    // Everything derived from learned text goes too: dismissals, the
+    // suggestions not yet exported and the answers remembered per conversation.
     store.saveLearned({ dismissed: [] });
     store.saveSuggestions([]);
+    threadMemory.clear();
+    store.clearThreads();
     cachedCandidates = null;
-    audit({ event: "corpus-deleted", by: "person", sessions: before.sessions + before.locked });
+    audit({ event: "corpus-deleted", by: "person", sessions: before.sessions + before.locked, threads: threadsBefore });
     emit("candidates", candidates());
     return corpusInfo();
   }
@@ -365,7 +455,7 @@ function createAssistant(options) {
     if (!sh) return null;
     const { template } = core.personal;
     if (template.requiresInput(sh.expansion)) {
-      return { type: "template", trigger: sh.trigger, expansion: sh.expansion, fields: template.fields(sh.expansion), variables: template.variables(sh.expansion), backspaces: 0, source: sh.source, via: "palette", spentKeystrokes };
+      return { type: "template", trigger: sh.trigger, expansion: sh.expansion, fields: template.fields(sh.expansion), variables: template.variables(sh.expansion), backspaces: 0, source: sh.source, via: "palette", spentKeystrokes, origin: paletteOrigin };
     }
     const rendered = template.render(sh.expansion, null, new Date(settings.now()));
     return { type: "expand", trigger: sh.trigger, text: rendered.text, cursorOffset: rendered.cursorOffset, backspaces: 0, source: sh.source, via: "palette", spentKeystrokes };
@@ -526,6 +616,7 @@ function createAssistant(options) {
       paused: Object.assign({}, policy.paused),
       reporting: Object.assign({}, policy.reporting),
       updates: Object.assign({}, policy.updates),
+      threadMemory: Object.assign({}, policy.threadMemory),
       licence: licenceInfo(),
       lookups: lookupStore.status().lookups,
       groups: groups.slice(),
@@ -587,6 +678,13 @@ function createAssistant(options) {
     clearLearning,
     paletteSearch,
     paletteChoose,
+    paletteOpened,
+    threadFor,
+    templateDefaults,
+    templateInserted,
+    threads,
+    forgetThread,
+    forgetThreads,
     paletteInserted,
     suggest,
     unsuggest,
