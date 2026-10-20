@@ -13,7 +13,8 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `version` | `1`. A newer number is accepted with a warning; unknown fields are ignored. |
 | `serial` | Positive integer, required for a signed policy. Raise it every time the policy changes; desks refuse a signed policy whose serial is lower than the one they already accepted for that source, or the same serial with different content. |
 | `layer` | Required for a signed policy: the name of the layer it is for, matching the `layer` of the deployment source it is published at. A desk refuses a policy signed for another layer, so an old organisation policy cannot be replayed at a team's location. |
-| `licence` | The business licence token issued by the vendor (`actle-admin license issue`). The desk verifies it offline; see "Licensing" below. Later layers override earlier ones. |
+| `licence` | The business licence token issued by the vendor (`actle-admin license issue`): organisation, tier, seats, expiry. The desk verifies it offline; see "Licensing" below. Later layers override earlier ones. |
+| `licensing.allowTierOverride` | `true` lets a person try a lower tier on the Policy tab while licensing is enforced (default `false`); never a higher one. See "Trying another tier". |
 | `paused` | Kill switch. `true` or `{ "message": "…" }` pauses every desk that receives the policy: nothing is expanded, offered or learned, and the dashboard and tray offer no way to resume it. Nothing is deleted. Remove it (or set `{ "active": false }`) to resume. It is an administrative control, not a security boundary: `deployment.json` lives in the person's own data folder, so someone who edits that file can leave central management. |
 | `organization` | Name shown on the dashboard. |
 | `typing.charsPerMinute` | Typing-speed assumption behind "time saved" (default 200, which is 40 words per minute). Changing it re-estimates history. |
@@ -126,32 +127,80 @@ and recovers at its next successful fetch.
 A business licence is a signed token (`actlebiz1.…`) issued by the vendor,
 never by the organisation: it is signed with the vendor's key, whose public
 part is built into the desktop app (`core/license.js`), so a policy signer
-cannot grant itself seats. It states the organisation, the number of seats,
-an expiry date and a grace period. Put the token in the policy as `licence`
-and sign the policy as usual.
+cannot grant itself seats or a higher tier. It states the organisation, the
+**tier**, the number of seats, an expiry date and a grace period. Put the
+token in the policy as `licence` and sign the policy as usual.
+
+### Tiers
+
+| Tier | Seats | Organisation shortcuts | Policy layers | Learning | Keyword rules and warnings | Documents and attach | Lookups | Report upload |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Free (no licence) | 1 | 25 | 1 | – | – | – | – | – |
+| Team | 25 | 1,000 | 2 | yes | yes | yes | – | – |
+| Business | 500 | 10,000 | 3 | yes | yes | yes | yes | yes |
+| Enterprise | no limit | no limit | no limit | yes | yes | yes | yes | yes |
+
+Never gated or counted in any tier: a person's own shortcuts, templates, the
+palette, statistics, the local usage report, the update server
+(`updates.url`), signing-key rotation and the pause switch. The table lives
+in `core/license.js` (`TIERS`); the numbers are a product decision, not a
+technical one.
 
 What the desk checks, every time a policy is applied: the signature, that
 the licence names the policy's organisation, and the dates. Valid, or
-expired but within the grace period: every feature is on. Expired past the
-grace period, missing, invalid or issued to another organisation: the desk
-runs the **free tier**. Shortcuts (own and organisation), templates, the
-palette, statistics and the local usage report keep working; learning,
-keyword rules and warnings, document shortcuts, lookups and report upload
-are off, including the person's own learn rules. Typing is never blocked.
-The Policy tab shows the licence and the reason for the tier; the change
-log records licence changes (id and status only).
+expired but within the grace period: the desk runs the licence's tier.
+Expired past the grace period, missing, invalid or issued to another
+organisation: the desk runs **Free**. Features the tier lacks are switched
+off, including the person's own learn rules on Free. Over the shortcut cap
+the desk keeps the first N organisation shortcuts in policy order (the
+organisation layer first, then department, then team, so an entry added at
+the end is the one left out) and shows one warning with the counts; a
+keyword rule that pointed at a shortcut left out is dropped with its own
+warning. Over the layer cap the desk applies every layer anyway and only
+warns, because a dropped layer could remove an `off` capture rule or a
+pause. Typing is never blocked. The Policy tab shows the tier, what the
+policy uses against each cap, and the features on and off; the change log
+records licence changes (id, status and tier only).
 
 Seats are a contract term. Desks cannot see each other, so the desk never
 refuses on seat count; the administrator's roll-up (`actle-admin report
---policy org.json`) counts desks per licence id and warns when a licence
-is over its seats.
+--policy org.json`) counts desks per licence id and tier and warns when a
+licence is over its seats or when desks report another tier than the
+licence's.
 
-While no vendor key is built into a version, licences cannot be checked:
-the desk reports licensing as not enforced and keeps every feature on.
+Version 1 tokens (issued before tiers existed) still verify and count as
+Business. A desk from before this version marks a version 2 token invalid,
+so pin a vendor key only in a release that understands version 2. While no
+vendor key is built into a version, licences cannot be checked: the desk
+reports licensing as not enforced and runs as Enterprise.
+
+### Checking a policy against the caps
+
+`actle-admin sign`, `validate` and `layers` check the policy against the
+tier named by `--tier`, or by the licence token found in the file (decoded,
+not verified; the output says so). A policy over a cap prints the same
+warning the desk would show; `sign` then refuses unless `--allow-warnings`,
+and `validate` and `layers` exit 1. `layers` counts its files against the
+layer cap. With no licence in the file and no `--tier`, the caps are not
+checked and the output says so.
+
+### Trying another tier (internal testing)
+
+The Policy tab has **Testing: run this desk as**, which stores
+`tierOverride` in the desk's settings. While no vendor key is built in, any
+tier can be chosen. Once licensing is enforced, the choice is honoured only
+when the policy sets `licensing.allowTierOverride: true`, and only for
+tiers at or below the licensed one: a hand-edited settings file can never
+unlock more than the licence grants. An honoured override is announced in
+the dashboard banner and written to the change log
+(`tier-override-changed`); the licence status itself is unchanged, and a
+desk's usage report names the tier it ran.
 
 ```
-node admin/actle-admin.js license issue --key vendor.key --org "Example Logistics Ltd" --seats 50 --expires 2027-12-31 --grace 30 --out licence.txt
+node admin/actle-admin.js license issue --key vendor.key --org "Example Logistics Ltd" --tier business --seats 50 --expires 2027-12-31 --grace 30 --out licence.txt
 node admin/actle-admin.js license show licence.txt --pub vendor.pub
+node admin/actle-admin.js validate org.json --tier team
+node admin/actle-admin.js layers org.json dept.json team.json
 ```
 
 ## Usage reports

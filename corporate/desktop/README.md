@@ -74,7 +74,7 @@ Everything is in Electron's `userData` folder for the app
 | ----------------- | --------------------------------------------------------------- |
 | `library.json`    | Own shortcuts, in the shared `shorthands.json` format (version 1) |
 | `policy.json`     | The organisation policy, if one was installed                   |
-| `settings.json`   | Enabled flag, own capture rules, typing-speed override, palette hotkey (`paletteShortcut`, an Electron accelerator; `""` turns it off), `keyboardLayout` (`auto` or a layout id), `deferUpdates` |
+| `settings.json`   | Enabled flag, own capture rules, typing-speed override, palette hotkey (`paletteShortcut`, an Electron accelerator; `""` turns it off), `keyboardLayout` (`auto` or a layout id), `deferUpdates`, `tierOverride` (a tier id for internal testing, or `null`) |
 | `metrics.jsonl`   | One line per insert: time, kind, application, keystrokes saved, whether the shortcut was the organisation's or the person's |
 | `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |

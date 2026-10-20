@@ -95,7 +95,16 @@ function focus(context) {
 
 print("actle Corporate simulation");
 print("policy: " + (assistant.policyInfo().organization || "(none)") + "; warnings: " + (assistant.warnings().join("; ") || "none"));
-print("licence: " + assistant.licence().status + (assistant.licence().enforced ? "" : " (no vendor key built in; nothing is switched off)"));
+const lic = assistant.licence();
+const cap = (v) => (v == null ? "no limit" : String(v));
+print("licence: " + lic.status + (lic.enforced ? "" : " (no vendor key built in; nothing is switched off)") + "; tier: " + lic.tier + " (" + lic.tierSource + "); organisation shortcuts " + lic.usage.shortcuts + " of " + cap(lic.limits.shortcuts) + ", layers " + lic.usage.layers + " of " + cap(lic.limits.layers));
+// The testing override: a desk can run as any tier while licensing is unenforced.
+assistant.saveSettings({ tierOverride: "free" });
+print("tier override free: keyword rules " + assistant.policyInfo().keywordRules.length + ", lookups " + assistant.policyInfo().lookups.length + ", shortcuts " + assistant.policyInfo().organizationLibrary.length + ", capture default " + assistant.policyInfo().capture.defaultMode);
+assistant.saveSettings({ tierOverride: "team" });
+print("tier override team: keyword rules " + assistant.policyInfo().keywordRules.length + ", lookups " + assistant.policyInfo().lookups.length + ", badge: " + (assistant.licence().override.honoured ? "testing: " + assistant.licence().tierName + " tier" : "none"));
+assistant.saveSettings({ tierOverride: null });
+print("tier override off: tier " + assistant.licence().tier + ", lookups " + assistant.policyInfo().lookups.length);
 
 async function main() {
   // Updates: the stand-in autoUpdater records what a packaged desk would ask of electron-updater.
