@@ -109,11 +109,13 @@
   // Firefox keeps the library in storage.local beside premium accounting, use
   // counts, the selection draft and Recently deleted. Only library or settings
   // changes should make a page reload them; otherwise every expansion in any
-  // tab would.
+  // tab would. Every Writing pad key starts with "pad-" (pad-store.js), and
+  // the pad autosaves as the person types.
   const NON_LIBRARY_KEYS = new Set(["actle-premium", USAGE_KEY, DRAFT_KEY, TRASH_KEY]);
+  const NON_LIBRARY_PREFIX = "pad-";
 
   function isLibraryChange(changes, area) {
-    return area === AREA && Object.keys(changes || {}).some((key) => !NON_LIBRARY_KEYS.has(key));
+    return area === AREA && Object.keys(changes || {}).some((key) => !NON_LIBRARY_KEYS.has(key) && !key.startsWith(NON_LIBRARY_PREFIX));
   }
 
   async function saveShorthand(sh) {

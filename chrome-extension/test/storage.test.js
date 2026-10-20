@@ -748,6 +748,21 @@ test("on Chrome, nothing about Recently deleted is ever written to sync storage"
   assert.ok(app.localCalls.some((call) => call.operation === "set" && TRASH in call.payload), "it went to local storage instead");
 });
 
+test("Writing pad keys are never library changes", () => {
+  // Firefox keeps the library in storage.local beside the pad, which autosaves
+  // as the person types: those writes must not make every page reload it.
+  const firefox = storageWith({}, { firefox: true }).storage;
+  for (const key of ["pad-draft:abc123", "pad-trash", "pad-prefs", "pad-dismissed", "pad-anything-later"]) {
+    assert.equal(firefox.isLibraryChange({ [key]: {} }, "local"), false, key);
+  }
+  assert.equal(firefox.isLibraryChange({ "pad-draft:abc123": {}, "pad-trash": {} }, "local"), false);
+  assert.equal(firefox.isLibraryChange({ "pad-draft:abc123": {}, "sh:a": {} }, "local"), true);
+  assert.equal(firefox.isLibraryChange({ "pad-prefs": {}, settings: {} }, "local"), true);
+  const chromeStorage = storageWith({}).storage;
+  assert.equal(chromeStorage.isLibraryChange({ "pad-draft:abc123": {} }, "local"), false);
+  assert.equal(chromeStorage.isLibraryChange({ "sh:a": {} }, "sync"), true);
+});
+
 test("a Recently deleted change is not a library change", () => {
   const firefox = storageWith({}, { firefox: true }).storage;
   assert.equal(firefox.TRASH_KEY, TRASH);
