@@ -40,6 +40,15 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `retention.metricsDays` | Days of statistics kept on disk (default 365). |
 | `retention.corpusDays` | Days of learning text kept on disk (default 90). |
 
+## Suite sections (work in progress)
+
+`reply`, `sheets`, `forms`, `guard` and `notes` are read by the parser for
+the other apps of the business suite (see the corporate README, "The
+suite"). Invalid parts are reported as warnings like every other section,
+and layers merge their lists by id. Nothing in the desktop app acts on them
+yet, and their shapes are drafts: the module headers in `core/` describe
+them until they are settled and documented here.
+
 ## Central distribution (signed policies)
 
 On a managed desk, IT installs `deployment.json` in the app's data folder:

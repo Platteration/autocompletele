@@ -154,6 +154,24 @@ it is bounded on purpose:
   signed policy files on a managed desk; usage reports are files the person
   saves and hands over.
 
+## The suite (work in progress)
+
+actle Filer above is the first of six dedicated business apps that share one
+engine and one policy file. The other five exist as pure core modules with
+their own tests; the policy parser reads their sections (with warnings, never
+a refusal) and the admin `validate` summary counts them, but **nothing in the
+desktop shell uses them yet**: no popover, no tab, no metrics, no
+documentation of their policy sections beyond the module headers. Treat
+their policy shapes as drafts that may change.
+
+| App | Module | What the core does today |
+| --- | --- | --- |
+| actle Reply | `core/reply.js` | Reads the message being answered, finds the sender's name, order and ticket references, date and amount, ranks prewritten replies by keywords and fills their blanks; quoted history is ignored. Policy section `reply`. |
+| actle Sheets | `core/sheets.js` | Column-aware completion for spreadsheet cells: controlled vocabularies with aliases return the organisation's one spelling, column profiles learned from existing values, `/` blocks and formulas, CSV import of vocabularies, a guard against formula-like values. Policy section `sheets`. The Excel and Google Sheets add-in does not exist. |
+| actle Forms | `core/forms.js` | Named records that fill a whole form, lookups by exact key or key pattern, a plan of field values with missing blanks listed, learning of field sets filled together (secrets never proposed). Policy section `forms`. The accessibility-tree shell does not exist. |
+| actle Guard | `core/guard.js` | Compliance checks with masked findings: card numbers, IBANs, e-mail addresses, phone numbers, national IDs (US, GB, ES, FR), forbidden phrases, internal codes, labelled secrets; rule packs with severities and fixes; rules that fire only for external recipients; counts-only summaries. Policy section `guard`. `severity: "block"` is a label only; nothing blocks. |
+| actle Notes | `core/notes.js` | Minutes, handovers and logs from a house-style document: sections, repeatable sections, date, weekday and author filled, action items collected by owner and due phrase with dates resolved, an idempotent action-item block. Policy section `notes`. |
+
 ## Run
 
 ```

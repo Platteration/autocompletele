@@ -91,6 +91,10 @@ function summary(policy) {
   lines.push("keyword rules:    " + policy.keywordRules.length);
   lines.push("document sets:    " + policy.documents.shortcuts.map((s) => s.trigger).join(", "));
   lines.push("filing rules:     " + policy.filing.rules.map((r) => r.id).concat(policy.filing.fallback ? ["(fallback)"] : []).join(", ") + (policy.filing.watch.length ? "; watching " + policy.filing.watch.map((w) => w.path).join(", ") : ""));
+  const suite = [["reply", (policy.reply.replies || []).length, "replies"], ["sheets", Object.keys(policy.sheets.vocabularies || {}).length, "vocabularies"],
+    ["forms", (policy.forms.records || []).length, "records"], ["guard", (policy.guard.packs || []).length, "packs"], ["notes", (policy.notes.documents || []).length, "documents"]]
+    .filter(([, count]) => count > 0).map(([name, count, what]) => name + " (" + count + " " + what + ")");
+  if (suite.length) lines.push("suite (WIP):      " + suite.join(", "));
   lines.push("typing speed:     " + policy.typing.charsPerMinute + " characters per minute");
   return lines.join("\n");
 }

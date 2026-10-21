@@ -118,6 +118,48 @@ test("layers merge field by field, team rules first, shortcuts and rules by key"
   assert.deepEqual(orgPolicy.merge("nope"), {});
 });
 
+test("the suite sections (WIP) are parsed with warnings and merged across layers", () => {
+  const empty = orgPolicy.parse({});
+  assert.deepEqual(empty.warnings, []);
+  assert.deepEqual(empty.reply.replies, []);
+  assert.deepEqual(empty.sheets.vocabularies, {});
+  assert.deepEqual(empty.forms.records, []);
+  assert.deepEqual(empty.guard.packs, []);
+  assert.deepEqual(empty.notes.documents, []);
+  for (const section of ["reply", "sheets", "forms", "guard", "notes"]) assert.equal(Object.hasOwn(empty[section], "warnings"), false);
+  const bad = orgPolicy.parse({ reply: { replies: [{ id: "x" }] }, sheets: { blocks: [{ trigger: "nope" }] }, forms: { records: [{ id: "r" }] }, guard: { packs: [{ id: "p", rules: [{ id: "q" }] }] }, notes: { documents: [{ id: "d" }] } });
+  assert.ok(bad.warnings.some((w) => /reply x ignored/.test(w)), bad.warnings.join("; "));
+  assert.ok(bad.warnings.some((w) => /sheets|block/.test(w)));
+  assert.ok(bad.warnings.some((w) => /form record r ignored/.test(w)));
+  assert.ok(bad.warnings.some((w) => /guard|pack|rule q/.test(w)));
+  assert.ok(bad.warnings.some((w) => /notes|document/.test(w)));
+  const merged = orgPolicy.merge([
+    { reply: { max: 2, extract: { customer: { after: "Customer" } }, replies: [{ id: "late", keywords: ["late"], text: "Org late" }, { id: "ack", keywords: ["ticket"], text: "Org ack" }] },
+      sheets: { vocabularies: { customers: ["Acme"] }, blocks: [{ trigger: "/vat", formula: "=1" }] },
+      forms: { records: [{ id: "refund", fields: { category: "Refund" } }] },
+      guard: { internalDomains: ["example.com"], packs: [{ id: "pci", rules: [{ id: "card", detect: ["card-number"], message: "No cards." }] }] },
+      notes: { documents: [{ id: "mins", trigger: "/mins", sections: ["Attendees"] }] } },
+    { reply: { replies: [{ id: "late", keywords: ["late", "delayed"], text: "Team late" }] },
+      sheets: { vocabularies: { centres: ["CC-1"] }, blocks: [{ trigger: "/vat", formula: "=2" }, { trigger: "/exp", rows: [["a"]] }] },
+      forms: { records: [{ id: "memo", fields: { category: "Memo" } }] },
+      guard: { internalDomains: ["example.com", "corp.example"], packs: [{ id: "gdpr", rules: [{ id: "ids", detect: ["national-id"], message: "No IDs." }] }] },
+      notes: { author: "author", documents: [{ id: "handover", trigger: "/handover", sections: ["Risks"] }] } },
+  ]);
+  assert.deepEqual(merged.reply.replies.map((r) => r.text), ["Team late", "Org ack"]);
+  assert.equal(merged.reply.max, 2);
+  assert.deepEqual(Object.keys(merged.sheets.vocabularies), ["customers", "centres"]);
+  assert.deepEqual(merged.sheets.blocks.map((b) => b.trigger + b.formula), ["/vat=2", "/expundefined"]);
+  assert.deepEqual(merged.forms.records.map((r) => r.id), ["refund", "memo"]);
+  assert.deepEqual(merged.guard.internalDomains, ["example.com", "corp.example"]);
+  assert.deepEqual(merged.guard.packs.map((p) => p.id), ["pci", "gdpr"]);
+  assert.deepEqual(merged.notes.documents.map((d) => d.id), ["mins", "handover"]);
+  const parsed = orgPolicy.parse(merged);
+  assert.deepEqual(parsed.warnings, [], parsed.warnings.join("; "));
+  assert.equal(parsed.reply.replies.length, 2);
+  assert.equal(parsed.guard.packs.length, 2);
+  assert.equal(orgPolicy.merge([{ library: [] }]).guard, undefined);
+});
+
 test("the kill switch pauses from any layer and carries a message", () => {
   assert.deepEqual(orgPolicy.parse({}).paused, { active: false, message: "" });
   assert.deepEqual(orgPolicy.parse({ paused: true }).paused, { active: true, message: "" });

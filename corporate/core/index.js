@@ -15,6 +15,12 @@ module.exports = {
   extract: require("./extract.js"),
   filer: require("./filer.js"),
   paletteSearch: require("./palette-search.js"),
+  // Suite modules (work in progress; parsed from the policy, not yet used by the shell).
+  reply: require("./reply.js"),
+  sheets: require("./sheets.js"),
+  forms: require("./forms.js"),
+  guard: require("./guard.js"),
+  notes: require("./notes.js"),
   orgPolicy: require("./org-policy.js"),
   policySigning: require("./policy-signing.js"),
   policySource: require("./policy-source.js"),

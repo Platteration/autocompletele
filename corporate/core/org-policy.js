@@ -12,6 +12,15 @@ const documents = require("./documents.js");
 const metrics = require("./metrics.js");
 const miner = require("./phrase-miner.js");
 const filer = require("./filer.js");
+// Suite modules (work in progress): each parses its own policy section; the
+// shell does not use them yet.
+const SUITE = Object.freeze({
+  reply: { module: require("./reply.js"), normalize: "normalizeReplies", lists: ["replies"], maps: ["extract"] },
+  sheets: { module: require("./sheets.js"), normalize: "normalizeSheets", lists: ["columns", "blocks"], maps: ["vocabularies"], listKeys: { blocks: "trigger" } },
+  forms: { module: require("./forms.js"), normalize: "normalizeForms", lists: ["records", "lookups", "forms"], maps: [] },
+  guard: { module: require("./guard.js"), normalize: "normalizeGuard", lists: ["packs", "internalDomains", "internalCodes"], maps: [] },
+  notes: { module: require("./notes.js"), normalize: "normalizeNotes", lists: ["documents"], maps: ["actions"] },
+});
 
 const VERSION = 1;
 
@@ -29,6 +38,11 @@ function empty() {
     keywordRules: [],
     documents: { shortcuts: [] },
     filing: { watch: [], fields: {}, rules: [], fallback: null, dateOrder: "dmy" },
+    reply: null,
+    sheets: null,
+    forms: null,
+    guard: null,
+    notes: null,
     library: [],
     learning: { minCount: miner.DEFAULTS.minCount, minLength: miner.DEFAULTS.minLength, minWords: miner.DEFAULTS.minWords },
     retention: { metricsDays: 365, corpusDays: 90 },
@@ -106,6 +120,29 @@ function merge(layers) {
     }
     out.filing = filing;
   }
+  // Suite sections: lists merge by id (blocks by trigger, plain strings by
+  // value), maps by key, scalars from the later layer.
+  for (const [name, spec] of Object.entries(SUITE)) {
+    const sections = list.map((layer) => layer[name]).filter(isObject);
+    if (!sections.length) continue;
+    const merged = {};
+    for (const section of sections) {
+      for (const [key, value] of Object.entries(section)) {
+        if (spec.lists.includes(key) && Array.isArray(value)) {
+          const previous = Array.isArray(merged[key]) ? merged[key] : [];
+          const keyName = (spec.listKeys || {})[key] || "id";
+          merged[key] = value.every((v) => typeof v === "string")
+            ? [...new Set(previous.concat(value))]
+            : byKey([previous, value], keyName);
+        } else if (spec.maps.includes(key) && isObject(value)) {
+          merged[key] = Object.assign({}, isObject(merged[key]) ? merged[key] : {}, value);
+        } else {
+          merged[key] = value;
+        }
+      }
+    }
+    out[name] = merged;
+  }
   return out;
 }
 
@@ -157,6 +194,13 @@ function parse(input) {
   const filing = filer.normalizeFiling(source.filing);
   policy.filing = { watch: filing.watch, fields: filing.fields, rules: filing.rules, fallback: filing.fallback, dateOrder: filing.dateOrder };
   policy.warnings.push(...filing.warnings);
+
+  for (const [name, spec] of Object.entries(SUITE)) {
+    const normalized = spec.module[spec.normalize](source[name]);
+    policy.warnings.push(...normalized.warnings);
+    delete normalized.warnings;
+    policy[name] = normalized;
+  }
 
   const library = source.library && typeof source.library === "object" && Array.isArray(source.library.shorthands)
     ? source.library.shorthands : Array.isArray(source.library) ? source.library : [];
