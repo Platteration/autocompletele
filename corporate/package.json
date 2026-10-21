@@ -6,7 +6,7 @@
   "description": "Business edition of actle: a desktop assistant that expands shorthands in every application, learns recurring phrases in the applications a person opts in, and reports keystrokes and time saved.",
   "scripts": {
     "test": "node --test",
-    "check": "for f in core/*.js test/*.js admin/*.js desktop/*.js desktop/adapters/*.js desktop/renderer/*.js; do node --check \"$f\" || exit 1; done",
+    "check": "for f in core/*.js test/*.js admin/*.js desktop/*.js desktop/adapters/*.js desktop/renderer/*.js desktop/apps/*.js desktop/apps/*/*.js desktop/renderer/apps/*.js; do node --check \"$f\" || exit 1; done",
     "simulate": "node desktop/simulate.js",
     "admin": "node admin/actle-admin.js"
   }

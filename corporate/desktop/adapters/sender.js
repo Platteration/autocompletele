@@ -49,6 +49,8 @@ const platforms = {
     deletes: (n) => n > 0 ? "{DEL " + n + "}" : "",
     left: (n) => n > 0 ? "{LEFT " + n + "}" : "",
     paste: () => "^v",
+    // Named keys the suite's apps press between fields (Forms) or lines.
+    key: (name) => ({ tab: "{TAB}", enter: "{ENTER}", escape: "{ESC}" })[name] || "",
   },
   darwin: {
     available: () => true,
@@ -61,6 +63,7 @@ const platforms = {
     deletes: (n) => Array.from({ length: n }, () => "key code 117"),
     left: (n) => Array.from({ length: n }, () => "key code 123"),
     paste: () => ["keystroke \"v\" using command down"],
+    key: (name) => ({ tab: ["key code 48"], enter: ["key code 36"], escape: ["key code 53"] })[name] || [],
   },
   linux: {
     available: () => !!process.env.DISPLAY && which("xdotool"),
@@ -72,6 +75,7 @@ const platforms = {
     deletes: (n) => Array.from({ length: n }, () => "Delete"),
     left: (n) => Array.from({ length: n }, () => "Left"),
     paste: () => ["ctrl+v"],
+    key: (name) => ({ tab: ["Tab"], enter: ["Return"], escape: ["Escape"] })[name] || [],
   },
 };
 
@@ -176,7 +180,21 @@ function createSender(options) {
     });
   }
 
-  return { replace, undo, isAvailable, unavailableReason, platform: settings.platform, hostname: os.hostname() };
+  /** Press a named key ("tab", "enter", "escape") `count` times, in order with the other jobs. */
+  function press(name, count) {
+    const key = String(name == null ? "" : name).toLowerCase();
+    const times = Math.max(1, Math.floor(Number(count) || 1));
+    return enqueue(async () => {
+      if (!isAvailable()) throw new Error(unavailableReason());
+      const one = impl.key(key);
+      if (!one || !one.length) throw new Error("unknown key " + key);
+      const steps = Array.from({ length: times }, () => one);
+      await impl.keys(join(settings.platform, steps));
+      return { ok: true };
+    });
+  }
+
+  return { replace, undo, press, isAvailable, unavailableReason, platform: settings.platform, hostname: os.hostname() };
 }
 
 module.exports = { createSender, RESTORE_DELAY_MS };

@@ -23,6 +23,7 @@ const FILES = Object.freeze({
   corpusKey: "corpus.key",
   suggestions: "suggestions.json",
   filing: "filing-index.json",
+  appsDir: "apps",
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -358,6 +359,20 @@ function createStore(dir) {
     writeJson(FILES.suggestions, { queued: Array.isArray(queued) ? queued : [] });
   }
 
+  /** Per-app data files (apps/<id>.json) for the suite's apps: counts, sessions, settings of their own. */
+  function appFile(id) {
+    const safe = String(id == null ? "" : id).replace(/[^a-z0-9-]/gi, "");
+    return path.join(FILES.appsDir, (safe || "app") + ".json");
+  }
+
+  function loadAppData(id, fallback) {
+    return readJson(appFile(id), fallback === undefined ? {} : fallback);
+  }
+
+  function saveAppData(id, value) {
+    writeJson(appFile(id), value && typeof value === "object" ? value : {});
+  }
+
   /** Filed documents: names, paths and the values found, never document text. */
   function loadFilingIndex() {
     const data = readJson(FILES.filing, { version: 1, entries: [] });
@@ -436,6 +451,8 @@ function createStore(dir) {
     saveSuggestions,
     loadFilingIndex,
     saveFilingIndex,
+    loadAppData,
+    saveAppData,
   };
 }
 

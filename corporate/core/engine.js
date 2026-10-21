@@ -23,6 +23,8 @@ const DEFAULTS = Object.freeze({
   swallowsTriggerKey: false,
 });
 
+const ORGANIZATION_KINDS = Object.freeze(["document", "keyword", "filed", "reply", "form", "guard", "notes"]);
+
 function mergeLibraries(personal, organization) {
   const own = expander.sanitizeList(personal);
   const seen = new Set(own.map((sh) => sh.trigger));
@@ -50,6 +52,10 @@ function createEngine(options) {
   let personal = expander.sanitizeList(settings.library);
   let library = mergeLibraries(personal, policy.library);
   const keywordState = keywords.createState();
+  // App extensions (the suite): each may offer a trigger source checked after
+  // the library and document shortcuts, and a check run when a word ends on
+  // the current field's text. See setExtensions.
+  let extensions = [];
 
   let buffer = "";
   let fieldText = "";
@@ -96,7 +102,24 @@ function createEngine(options) {
   }
 
   function tracksField() {
-    return policy.keywordRules.length > 0;
+    return policy.keywordRules.length > 0 || extensions.some((ext) => typeof ext.check === "function");
+  }
+
+  function resetExtensions() {
+    for (const ext of extensions) {
+      if (typeof ext.reset === "function") ext.reset();
+    }
+  }
+
+  /**
+   * Register app extensions: [{ id, trigger(textBeforeCaret) -> {trigger, action}|null,
+   * check(fieldText, context) -> action|null, reset() }]. A trigger hit becomes an
+   * action { type: "app", app: id, trigger, backspaces, ...action }; a check hit
+   * becomes { type: "app", app: id, ...action }. Replaces the previous set.
+   */
+  function setExtensions(list) {
+    extensions = (Array.isArray(list) ? list : []).filter((ext) => ext && typeof ext === "object" && typeof ext.id === "string" && ext.id);
+    if (!tracksField()) fieldText = "";
   }
 
   function capField() {
@@ -143,6 +166,7 @@ function createEngine(options) {
     buffer = "";
     fieldText = "";
     keywordState.reset();
+    resetExtensions();
     const ended = flushSession();
     context = nextContext && typeof nextContext === "object" ? Object.assign({}, nextContext) : {};
     decision = decideMode();
@@ -156,6 +180,7 @@ function createEngine(options) {
     buffer = "";
     fieldText = "";
     keywordState.reset();
+    resetExtensions();
     const ended = flushSession();
     if (decision.mode === "learn") startSession();
     return ended;
@@ -260,14 +285,36 @@ function createEngine(options) {
       });
       return actions;
     }
+    // App triggers (a notes document, a form record) come after the library
+    // and document shortcuts, so a shortcut with the same trigger wins.
+    for (const ext of extensions) {
+      if (typeof ext.trigger !== "function") continue;
+      const hit = ext.trigger(buffer);
+      if (!hit || typeof hit.trigger !== "string" || !hit.trigger) continue;
+      const typedInField = settings.swallowsTriggerKey ? hit.trigger.length - text.length : hit.trigger.length;
+      buffer = "";
+      insertedText(hit.trigger.length, "");
+      actions.push(Object.assign({ type: "app", app: ext.id, trigger: hit.trigger, backspaces: Math.max(0, typedInField) }, hit.action || {}));
+      return actions;
+    }
     // Keywords are checked when a word ends, so "invoices" is not offered on "inv".
-    if (policy.keywordRules.length && !expander.isBoundary(buffer[buffer.length - 2]) && expander.isBoundary(text[text.length - 1])) {
+    const wordEnded = !expander.isBoundary(buffer[buffer.length - 2]) && expander.isBoundary(text[text.length - 1]);
+    if (policy.keywordRules.length && wordEnded) {
       const hits = keywords.detect(fieldText, policy.keywordRules, keywordState);
       // One action for all hits, warnings first: the shell shows one popover,
       // so a warning is never replaced by an offer that fired on the same word.
       const warnings = hits.filter((hit) => hit.rule.action === "warn");
       const offers = hits.filter((hit) => hit.rule.action !== "warn");
       if (hits.length) actions.push({ type: warnings.length ? "warning" : "keyword", hits: warnings.concat(offers) });
+    }
+    if (wordEnded) {
+      // App checks (compliance) see the same field text; their action comes
+      // last so the shell's single popover shows it over a keyword offer.
+      for (const ext of extensions) {
+        if (typeof ext.check !== "function") continue;
+        const hit = ext.check(fieldText, Object.assign({}, context));
+        if (hit && typeof hit === "object") actions.push(Object.assign({ type: "app", app: ext.id }, hit));
+      }
     }
     return actions;
   }
@@ -289,8 +336,8 @@ function createEngine(options) {
       ? Math.max(1, Math.floor(Number(data.count) || 1)) * policy.typing.secondsPerAttachment
       : kind === "filed" ? (policy.typing.secondsPerFiling || 0)
         : Number(data.fixedSeconds) || 0;
-    // Keyword rules, document sets and filing rules only exist in the organisation policy.
-    const source = kind === "document" || kind === "keyword" || kind === "filed" ? "organization" : data.source;
+    // Keyword rules, document sets, filing rules and the suite's policy items only exist in the organisation policy.
+    const source = ORGANIZATION_KINDS.includes(kind) ? "organization" : data.source;
     const keystrokesSaved = Math.max(0, metrics.keystrokesSaved(inserted, typed) - spent);
     return ledger.record({ kind, trigger: data.trigger, source, keystrokesSaved, fixedSeconds, app: appName() });
   }
@@ -325,6 +372,7 @@ function createEngine(options) {
     recordInsert,
     setLibrary,
     setPolicy,
+    setExtensions,
     setEnabled,
     ledger,
     get enabled() { return enabled; },
@@ -335,6 +383,8 @@ function createEngine(options) {
     get buffer() { return buffer; },
     get library() { return library.slice(); },
     get policy() { return policy; },
+    get fieldText() { return fieldText; },
+    get extensions() { return extensions.slice(); },
     get session() { return session ? Object.assign({}, session) : null; },
     get fieldText() { return fieldText; },
   };

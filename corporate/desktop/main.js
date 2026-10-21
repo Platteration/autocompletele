@@ -93,9 +93,25 @@ function updateTray() {
     { label: "Open dashboard", click: openDashboard },
     { label: "Search shortcuts…" + (paletteStatus.registered ? " (" + paletteStatus.accelerator.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl") + ")" : ""), click: openPalette },
     { label: "Enabled", type: "checkbox", checked: enabled, click: (item) => { assistant.setEnabled(item.checked); updateTray(); broadcast({ settings: true }); } },
+    ...appTrayItems(),
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ]));
+}
+
+function appTrayItems() {
+  const items = [];
+  for (const appItem of assistant.apps) {
+    if (typeof appItem.trayItems !== "function") continue;
+    try {
+      for (const entry of appItem.trayItems(shellApi()) || []) {
+        if (entry && entry.label && typeof entry.click === "function") items.push({ label: entry.label, click: () => entry.click(shellApi()) });
+      }
+    } catch (error) {
+      assistant.log("app " + appItem.id + " tray items failed: " + error.message);
+    }
+  }
+  return items.length ? [{ type: "separator" }, ...items] : [];
 }
 
 function trayIcon() {
@@ -148,6 +164,8 @@ function handleAction(action) {
       return showPopover("documents", Object.assign({ kind: "documents" }, action), { width: 460, height: 160 + 44 * action.documents.length });
     case "filing":
       return showPopover("filing", { kind: "filing", proposal: action.proposal }, { width: 540, height: 250 + 62 * action.proposal.missing.length });
+    case "app":
+      return showAppPopover(action);
     case "keyword":
     case "warning":
       return showPopover("keyword", { kind: "keyword", warning: action.type === "warning", hits: action.hits.map((hit) => ({ rule: hit.rule, matched: hit.matched })) }, { width: 380, height: 90 + 72 * action.hits.length, focusable: false });
@@ -159,6 +177,7 @@ function handleAction(action) {
 async function submitPopover(payload) {
   const state = popoverState;
   if (state && state.kind === "filing") return submitFiling(state, payload);
+  if (state && state.kind === "app") return submitAppPopover(state, payload);
   closePopover();
   if (!state || !payload) return { ok: false };
   if (state.kind === "template") {
@@ -205,6 +224,52 @@ async function submitPopover(payload) {
   }
   broadcast({ metrics: true });
   return { ok: true };
+}
+
+// The suite's apps: an engine action {type: "app", app, popover, ...} opens
+// the popover the app declared; the app's submit handler gets a small shell
+// API to type text, use the clipboard, notify and open further actions.
+function shellApi() {
+  return {
+    sender,
+    clipboard,
+    notify,
+    broadcast,
+    closePopover,
+    handleAction,
+    showItemInFolder: (p) => shell.showItemInFolder(String(p)),
+    openDashboard,
+  };
+}
+
+function showAppPopover(action) {
+  const app = assistant.app(action.app);
+  const def = app && app.popovers && app.popovers[action.popover];
+  if (!def || !def.file) {
+    assistant.log("app " + action.app + " has no popover " + action.popover);
+    return null;
+  }
+  const size = typeof def.size === "function" ? def.size(action) : def.size;
+  return showPopover(def.file, Object.assign({ kind: "app" }, action), Object.assign({ width: 440, height: 220 }, size || {}, def.focusable === false ? { focusable: false } : {}));
+}
+
+async function submitAppPopover(state, payload) {
+  const app = assistant.app(state.app);
+  const def = app && app.popovers && app.popovers[state.popover];
+  if (!def || typeof def.submit !== "function") {
+    closePopover();
+    return { ok: false, error: "no handler" };
+  }
+  let result;
+  try {
+    result = await def.submit(state, payload || {}, shellApi());
+  } catch (error) {
+    result = { ok: false, error: String(error && error.message || error) };
+  }
+  // A refused submission keeps the popover open with the reason, as filing does.
+  if (!result || result.ok !== false || result.close) closePopover();
+  broadcast({ metrics: true, apps: true });
+  return result || { ok: true };
 }
 
 // Document filing: new files in watched folders get a popover; the person
@@ -399,6 +464,12 @@ function registerIpc() {
     return { ok: true, queued: files.length };
   });
   handle("filing:reveal", (p) => { if (p) shell.showItemInFolder(String(p)); return { ok: true }; });
+  handle("apps:list", () => assistant.appsInfo());
+  handle("app:invoke", async (q) => {
+    const result = await assistant.invoke(q && q.channel, q && q.payload);
+    if (result && result.broadcast) broadcast(result.broadcast);
+    return result;
+  });
   handle("settings:enabled", (value) => { const r = assistant.setEnabled(value !== false); updateTray(); broadcast({ settings: true }); return r; });
   handle("learning:candidates", () => assistant.candidates());
   handle("learning:accept", (c) => { const r = assistant.acceptCandidate(c || {}); broadcast({ library: true, learning: true }); return r; });
@@ -474,6 +545,14 @@ function start() {
   schedulePolicyRefresh();
   registerPaletteShortcut();
   startWatching();
+  for (const appItem of assistant.apps) {
+    if (typeof appItem.onStart !== "function") continue;
+    try {
+      appItem.onStart(shellApi());
+    } catch (error) {
+      assistant.log("app " + appItem.id + " start failed: " + error.message);
+    }
+  }
   updateTray();
   openDashboard();
 }
@@ -490,6 +569,7 @@ app.on("will-quit", () => globalShortcut.unregisterAll());
 
 app.on("before-quit", () => {
   if (refreshTimer) clearInterval(refreshTimer);
+  if (assistant) for (const appItem of assistant.apps) { if (typeof appItem.onStop === "function") { try { appItem.onStop(); } catch (error) { /* quitting */ } } }
   if (folderWatcher) folderWatcher.stop();
   if (listener) listener.stop();
   if (assistant) assistant.endSession();

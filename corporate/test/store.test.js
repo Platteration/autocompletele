@@ -91,6 +91,19 @@ test("the filing index round-trips, tolerates junk and starts empty", () => {
   assert.deepEqual(store.loadSettings().ignoredFolders, ["~/Downloads"]);
 });
 
+test("per-app data files live under apps/ and start from the given fallback", () => {
+  const store = createStore(temp());
+  assert.deepEqual(store.loadAppData("reply"), {});
+  assert.deepEqual(store.loadAppData("reply", { stats: {} }), { stats: {} });
+  store.saveAppData("reply", { stats: { late: { offered: 2 } } });
+  assert.deepEqual(store.loadAppData("reply").stats.late.offered, 2);
+  assert.ok(fs.existsSync(path.join(store.root, "apps", "reply.json")));
+  store.saveAppData("../escape", { x: 1 });
+  assert.ok(fs.existsSync(path.join(store.root, "apps", "escape.json")), "ids cannot leave the apps folder");
+  store.saveAppData("notes", "junk");
+  assert.deepEqual(store.loadAppData("notes"), {});
+});
+
 test("deployment, policy cache, policy state and audit log persist", () => {
   const store = createStore(temp());
   assert.equal(store.loadDeployment(), null);

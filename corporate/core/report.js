@@ -218,6 +218,16 @@ function organizationShortcuts(policy) {
   for (const rule of policy.keywordRules || []) out.push({ trigger: rule.id, kind: "keyword" });
   const filing = policy.filing || {};
   for (const rule of (filing.rules || []).concat(filing.fallback ? [filing.fallback] : [])) out.push({ trigger: rule.id, kind: "filed" });
+  // Suite modules name their own organisation items (a reply id, a record id, a
+  // guard rule id, a notes document id) through an optional organizationItems().
+  for (const name of ["reply", "forms", "guard", "notes"]) {
+    const mod = require("./" + name + ".js");
+    if (typeof mod.organizationItems === "function" && policy[name]) {
+      for (const item of mod.organizationItems(policy[name]) || []) {
+        if (item && typeof item.trigger === "string" && item.trigger) out.push({ trigger: item.trigger, kind: typeof item.kind === "string" ? item.kind : null });
+      }
+    }
+  }
   return out;
 }
 

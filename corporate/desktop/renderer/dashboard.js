@@ -36,8 +36,47 @@
     text($("status"), message);
   }
 
+  // The suite's apps: one tab each, rendered by renderer/apps/<id>.js through
+  // window.actleApps[id].render(section, helpers, change). Tabs are inserted
+  // before Policy; an app without a renderer gets a placeholder.
+  const appRenderers = window.actleApps || {};
+  let appList = [];
+  function addAppTabs(list) {
+    const nav = document.querySelector("nav");
+    const policyTab = nav.querySelector('[data-tab="policy"]');
+    const policySection = $("tab-policy");
+    for (const app of list) {
+      if (!app.tab || $("tab-" + app.id)) continue;
+      const button = el("button", { role: "tab", "data-tab": app.id, "aria-selected": "false", text: app.title });
+      nav.insertBefore(button, policyTab);
+      const section = el("section", { id: "tab-" + app.id, role: "tabpanel" });
+      section.hidden = true;
+      policySection.parentNode.insertBefore(section, policySection);
+    }
+  }
+  const helpers = { api, el, text, announce, seconds, preview: (value) => String(value || "").replace(/\s+/g, " ").slice(0, 140) };
+  async function renderApps(change) {
+    for (const app of appList) {
+      if (!app.tab) continue;
+      const section = $("tab-" + app.id);
+      const renderer = appRenderers[app.id];
+      if (!section) continue;
+      if (!renderer || typeof renderer.render !== "function") {
+        section.textContent = "";
+        section.append(el("p", { class: "hint", text: app.title + " has no dashboard page yet." }));
+        continue;
+      }
+      try {
+        await renderer.render(section, helpers, change || {});
+      } catch (error) {
+        section.textContent = "";
+        section.append(el("p", { class: "hint", text: app.title + " could not be shown: " + (error && error.message || error) }));
+      }
+    }
+  }
+
   // Tabs
-  const tabs = Array.from(document.querySelectorAll("nav [role=tab]"));
+  let tabs = Array.from(document.querySelectorAll("nav [role=tab]"));
   function select(name) {
     for (const tab of tabs) {
       const on = tab.dataset.tab === name;
@@ -46,7 +85,7 @@
     }
     try { localStorage.setItem("tab", name); } catch (error) { /* optional */ }
   }
-  tabs.forEach((tab) => tab.addEventListener("click", () => select(tab.dataset.tab)));
+  tabs.forEach((tab) => { tab.dataset.wired = "1"; tab.addEventListener("click", () => select(tab.dataset.tab)); });
   document.querySelector("nav").addEventListener("keydown", (event) => {
     const index = tabs.indexOf(document.activeElement);
     if (index < 0) return;
@@ -581,11 +620,22 @@
     if (what.settings) await renderApps();
     if (what.settings || what.policy) await renderPolicy();
     if (what.settings || what.policy || what.filing) await renderFiling();
+    await renderApps(what);
   }
 
   api.onChange((change) => { renderAll(change).catch(console.error); });
-  let initial = "overview";
-  try { initial = localStorage.getItem("tab") || initial; } catch (error) { /* optional */ }
-  select(tabs.some((t) => t.dataset.tab === initial) ? initial : "overview");
-  renderAll().catch(console.error);
+  (async function init() {
+    try {
+      appList = await api.listApps();
+    } catch (error) {
+      appList = [];
+    }
+    addAppTabs(appList);
+    tabs = Array.from(document.querySelectorAll("nav [role=tab]"));
+    tabs.forEach((tab) => { if (!tab.dataset.wired) { tab.dataset.wired = "1"; tab.addEventListener("click", () => select(tab.dataset.tab)); } });
+    let initial = "overview";
+    try { initial = localStorage.getItem("tab") || initial; } catch (error) { /* optional */ }
+    select(tabs.some((t) => t.dataset.tab === initial) ? initial : "overview");
+    await renderAll();
+  })().catch(console.error);
 })();

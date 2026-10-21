@@ -152,6 +152,18 @@ const undone = assistant.undoFiling(filed[filed.length - 1].id);
 print(`  undo last: ${undone.ok ? "back at " + path.relative(docsDir, undone.to) : undone.error}`);
 print(`  index holds ${assistant.filingInfo().indexed} document(s); document text in index: ${fs.readFileSync(path.join(dataDir, "filing-index.json"), "utf8").includes("amount due") ? "YES" : "no"}`);
 
+// The suite's apps each walk through their own scenario headlessly.
+for (const app of assistant.apps) {
+  if (typeof app.simulate !== "function") continue;
+  print("\n" + app.title + " (app)");
+  try {
+    app.simulate({ print, assistant, focus, type, tick, now, brief, docsDir, describe });
+  } catch (error) {
+    print("  FAILED: " + (error && error.stack || error));
+    process.exitCode = 1;
+  }
+}
+
 print("\nMetrics");
 for (const period of ["day", "week", "month", "all"]) {
   const s = assistant.summary({ period, now: clock });

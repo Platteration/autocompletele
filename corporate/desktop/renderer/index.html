@@ -22,6 +22,7 @@
     <button role="tab" data-tab="keywords" aria-selected="false">Keywords</button>
     <button role="tab" data-tab="documents" aria-selected="false">Documents</button>
     <button role="tab" data-tab="filing" aria-selected="false">Filing</button>
+    <!-- The suite's apps add their tabs here (dashboard.js, from apps:list). -->
     <button role="tab" data-tab="policy" aria-selected="false">Policy</button>
   </nav>
   <main>
@@ -169,6 +170,11 @@
     </div>
   </dialog>
   <div class="status" role="status" aria-live="polite" id="status"></div>
+  <script src="apps/reply.js"></script>
+  <script src="apps/sheets.js"></script>
+  <script src="apps/forms.js"></script>
+  <script src="apps/guard.js"></script>
+  <script src="apps/notes.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>

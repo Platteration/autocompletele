@@ -48,7 +48,10 @@ contextBridge.exposeInMainWorld("actle", {
   ignoreFilingFolder: invoke("filing:ignoreFolder"),
   rescanFilingFolder: invoke("filing:rescan"),
   revealFiled: invoke("filing:reveal"),
-  // Popover windows (template form, documents, keyword offer, filing).
+  // The suite's apps: tabs and channels they register (desktop/apps/index.js).
+  listApps: invoke("apps:list"),
+  invoke: (channel, payload) => ipcRenderer.invoke("app:invoke", { channel, payload }),
+  // Popover windows (template form, documents, keyword offer, filing, app popovers).
   getPopover: invoke("popover:get"),
   submitPopover: invoke("popover:submit"),
   closePopover: invoke("popover:close"),

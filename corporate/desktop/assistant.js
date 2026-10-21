@@ -11,6 +11,7 @@ const crypto = require("node:crypto");
 const core = require("../core/index.js");
 const learning = require("./learning.js");
 const { loadCorpusKey } = require("./corpus-key.js");
+const { loadApps } = require("./apps/index.js");
 
 function readPolicyFile(filePath) {
   try {
@@ -109,6 +110,50 @@ function createAssistant(options) {
   engine.setEnabled(userSettings.enabled);
   recordPolicyAudit("start");
 
+  // The suite's apps. Each gets the same host; a broken app is logged and
+  // skipped so the assistant always starts.
+  const host = {
+    store,
+    engine,
+    ledger,
+    policy: () => policy,
+    settings: () => Object.assign({}, userSettings),
+    saveSettings: (next) => saveSettings(next),
+    audit: (entry) => audit(entry),
+    now: () => settings.now(),
+    log,
+    recordInsert: (event) => engine.recordInsert(event),
+    dataDir: store.root,
+    appData: (id) => ({ load: (fallback) => store.loadAppData(id, fallback), save: (value) => store.saveAppData(id, value) }),
+  };
+  const apps = loadApps(host, { ids: settings.appIds, factories: settings.apps, log: (line) => { warnings.push(line); log(line); } });
+  engine.setExtensions(apps.map((app) => app.extension).filter(Boolean));
+  const appById = new Map(apps.map((app) => [app.id, app]));
+
+  function notifyApps(hook, value) {
+    for (const app of apps) {
+      if (typeof app[hook] !== "function") continue;
+      try {
+        app[hook](value);
+      } catch (error) {
+        log("app " + app.id + " " + hook + " failed: " + error.message);
+      }
+    }
+  }
+
+  /** Call an app's IPC channel ("guard:summary"). Unknown channels are an error result, never a throw. */
+  function invoke(channel, payload) {
+    const name = String(channel == null ? "" : channel);
+    const app = appById.get(name.split(":")[0]);
+    const fn = app && app.ipc[name];
+    if (!fn) return { ok: false, error: "unknown channel " + name };
+    return fn(payload);
+  }
+
+  function appsInfo() {
+    return apps.map((app) => ({ id: app.id, title: app.title, tab: app.tab !== false }));
+  }
+
   let cachedCandidates = null;
   const listeners = { session: [], candidates: [] };
   let filingIndex = core.filer.normalizeIndex(store.loadFilingIndex());
@@ -166,6 +211,7 @@ function createAssistant(options) {
     applyEngineSettings();
     cachedCandidates = null;
     recordPolicyAudit(origin);
+    notifyApps("onPolicy", policy);
   }
 
   /** Fetch the signed policy layers again (managed desks only). */
@@ -196,6 +242,7 @@ function createAssistant(options) {
   function focusChanged(context) {
     const result = engine.focusChanged(context);
     persistSession(result.session);
+    notifyApps("onFocus", engine.context);
     return result;
   }
 
@@ -301,6 +348,8 @@ function createAssistant(options) {
     policy = buildPolicy();
     applyEngineSettings();
     cachedCandidates = null;
+    notifyApps("onSettings", Object.assign({}, userSettings));
+    notifyApps("onPolicy", policy);
     return userSettings;
   }
 
@@ -312,7 +361,12 @@ function createAssistant(options) {
   // remembering its trigger.
   function paletteSearch(query, limit) {
     if (policy.paused.active) return [];
-    const items = core.paletteSearch.items(engine.library, policy.documents, filingIndex);
+    let items = core.paletteSearch.items(engine.library, policy.documents, filingIndex);
+    for (const app of apps) {
+      if (!app.palette || typeof app.palette.items !== "function") continue;
+      const extra = app.palette.items() || [];
+      items = items.concat(extra.map((item) => Object.assign({ source: "organization", needsInput: false, preview: "" }, item, { kind: "app:" + app.id })));
+    }
     return core.paletteSearch.search(items, query, limit).map((item) => ({
       kind: item.kind, trigger: item.trigger, source: item.source, needsInput: item.needsInput, preview: item.preview,
     }));
@@ -325,6 +379,10 @@ function createAssistant(options) {
     if (choice.kind === "documents") {
       const set = policy.documents.shortcuts.find((s) => s.trigger === choice.trigger);
       return set ? { type: "documents", trigger: set.trigger, label: set.label, documents: set.documents.slice(), backspaces: 0, via: "palette" } : null;
+    }
+    if (typeof choice.kind === "string" && choice.kind.startsWith("app:")) {
+      const app = appById.get(choice.kind.slice(4));
+      return app && app.palette && typeof app.palette.choose === "function" ? app.palette.choose(Object.assign({}, choice, { spentKeystrokes })) : null;
     }
     if (choice.kind === "file") {
       // A filed document is offered like a one-file document set, so the
@@ -666,6 +724,10 @@ function createAssistant(options) {
     filingAddFolder,
     filingRemoveFolder,
     filingIgnoreFolder,
+    apps,
+    app: (id) => appById.get(id) || null,
+    appsInfo,
+    invoke,
     suggest,
     unsuggest,
     suggestions: () => store.loadSuggestions(),

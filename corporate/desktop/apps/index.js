@@ -1,0 +1,76 @@
+// The suite's apps (Reply, Sheets, Forms, Guard, Notes) plug into the desktop
+// assistant through this registry. Each app lives in its own folder,
+// desktop/apps/<id>/app.js, and exports createApp(host) returning the shape
+// below. Plain Node: the assistant, the tests and the simulator load apps the
+// same way; main.js adds the Electron pieces (popovers, tray items, IPC).
+//
+//   {
+//     id: "guard",                       // required, matches the folder and the policy section
+//     title: "Guard",                    // dashboard tab title; omit `tab: false` to show a tab
+//     tab: true,
+//     ipc: { "guard:summary": (payload) => result },   // channels the dashboard calls through window.actle.invoke
+//     extension: { id, trigger(textBeforeCaret), check(fieldText, context), reset() },  // engine hooks, optional
+//     popovers: { "warning": { file: "apps/guard-popover", size: (action) => ({ width, height }), submit: async (state, payload, shell) => result } },
+//     palette: { items: () => [...], choose: (choice) => action|null },   // optional palette contributions, kind "app:guard"
+//     trayItems: () => [{ label, click }],                                // optional
+//     onPolicy(policy), onSettings(settings), onFocus(context), onStart(shell), onStop(),   // optional
+//     simulate(sim),                      // optional headless walk-through for desktop/simulate.js
+//   }
+//
+// The host handed to createApp:
+//   { store, engine, ledger, policy: () => policy, settings: () => settings, saveSettings(next),
+//     audit(entry), now(), log(line), recordInsert(event), dataDir }
+"use strict";
+
+const path = require("node:path");
+
+const APP_IDS = Object.freeze(["reply", "sheets", "forms", "guard", "notes"]);
+
+function validate(app, id) {
+  if (!app || typeof app !== "object") throw new Error("app " + id + " did not return an object");
+  if (app.id !== id) throw new Error("app " + id + " reports id " + JSON.stringify(app.id));
+  const out = Object.assign({ title: id, tab: true, ipc: {}, popovers: {} }, app);
+  if (!out.ipc || typeof out.ipc !== "object") out.ipc = {};
+  for (const channel of Object.keys(out.ipc)) {
+    if (!channel.startsWith(id + ":")) throw new Error("app " + id + " channel " + channel + " must start with " + id + ":");
+    if (typeof out.ipc[channel] !== "function") throw new Error("app " + id + " channel " + channel + " is not a function");
+  }
+  if (out.extension && out.extension.id !== id) out.extension = Object.assign({}, out.extension, { id });
+  return out;
+}
+
+/**
+ * Load every app that has a module. A missing or broken app is skipped with a
+ * logged reason, never fatal: the assistant must start even when one app of
+ * the suite cannot.
+ */
+function loadApps(host, options) {
+  const given = options || {};
+  const settings = { ids: Array.isArray(given.ids) ? given.ids : APP_IDS, log: typeof given.log === "function" ? given.log : () => {}, factories: given.factories };
+  const apps = [];
+  for (const id of settings.ids) {
+    let create;
+    if (settings.factories && typeof settings.factories[id] === "function") {
+      create = settings.factories[id];
+    } else {
+      try {
+        create = require(path.join(__dirname, id, "app.js")).createApp;
+      } catch (error) {
+        settings.log("app " + id + " not loaded: " + error.message);
+        continue;
+      }
+    }
+    if (typeof create !== "function") {
+      settings.log("app " + id + " not loaded: no createApp export");
+      continue;
+    }
+    try {
+      apps.push(validate(create(host), id));
+    } catch (error) {
+      settings.log("app " + id + " not loaded: " + error.message);
+    }
+  }
+  return apps;
+}
+
+module.exports = { APP_IDS, loadApps, validate };
