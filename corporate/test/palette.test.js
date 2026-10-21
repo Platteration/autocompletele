@@ -18,6 +18,12 @@ test("palette items cover shortcuts and document sets with a short preview", () 
   assert.equal(items[0].preview, "123 Example Street Springfield");
   assert.equal(items[2].preview, "Shipping logistics department: Packing list");
   assert.equal(paletteSearch.items(null, null).length, 0);
+  const filed = paletteSearch.items([], null, { entries: [{ name: "2026-10-21_Acme_invoice_INV-20481.pdf", path: "S:/Finance/2026/2026-10-21_Acme_invoice_INV-20481.pdf", folder: "S:/Finance/2026", ruleLabel: "Supplier invoice", originalName: "scan.pdf", values: { client: "Acme Logistics GmbH" } }] });
+  assert.deepEqual(filed.map((i) => [i.kind, i.trigger, i.source, i.path]), [["file", "2026-10-21_Acme_invoice_INV-20481.pdf", "organization", "S:/Finance/2026/2026-10-21_Acme_invoice_INV-20481.pdf"]]);
+  assert.equal(filed[0].preview, "Supplier invoice: S:/Finance/2026");
+  assert.deepEqual(paletteSearch.search(filed, "acme").map((i) => i.kind), ["file"]);
+  assert.deepEqual(paletteSearch.search(filed, "scan").map((i) => i.kind), ["file"]);
+  assert.deepEqual(paletteSearch.search(filed, "zzz"), []);
 });
 
 test("search finds by trigger first, then by words in the text, labels and tags", () => {

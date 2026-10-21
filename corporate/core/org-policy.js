@@ -11,6 +11,7 @@ const keywords = require("./keyword-rules.js");
 const documents = require("./documents.js");
 const metrics = require("./metrics.js");
 const miner = require("./phrase-miner.js");
+const filer = require("./filer.js");
 
 const VERSION = 1;
 
@@ -23,10 +24,11 @@ function empty() {
   return {
     version: VERSION,
     organization: "",
-    typing: { charsPerMinute: metrics.DEFAULT_CHARS_PER_MINUTE, secondsPerAttachment: 20 },
+    typing: { charsPerMinute: metrics.DEFAULT_CHARS_PER_MINUTE, secondsPerAttachment: 20, secondsPerFiling: 45 },
     capture: capture.createPolicy({}),
     keywordRules: [],
     documents: { shortcuts: [] },
+    filing: { watch: [], fields: {}, rules: [], fallback: null, dateOrder: "dmy" },
     library: [],
     learning: { minCount: miner.DEFAULTS.minCount, minLength: miner.DEFAULTS.minLength, minWords: miner.DEFAULTS.minWords },
     retention: { metricsDays: 365, corpusDays: 90 },
@@ -87,6 +89,23 @@ function merge(layers) {
   const docs = list.map((layer) => isObject(layer.documents) && Array.isArray(layer.documents.shortcuts) ? layer.documents.shortcuts : [])
     .filter((l) => l.length);
   if (docs.length) out.documents = { shortcuts: byKey(docs, "trigger") };
+  // Filing: rules merge by id, watch folders by path, fields by name; a later
+  // layer's fallback and date order win.
+  const filings = list.map((layer) => layer.filing).filter(isObject);
+  if (filings.length) {
+    const filing = {};
+    const rules = filings.map((f) => Array.isArray(f.rules) ? f.rules : []).filter((l) => l.length);
+    if (rules.length) filing.rules = byKey(rules, "id");
+    const watch = filings.map((f) => (Array.isArray(f.watch) ? f.watch : []).map((w) => isObject(w) ? w : { path: w })).filter((l) => l.length);
+    if (watch.length) filing.watch = byKey(watch, "path");
+    const fields = filings.map((f) => f.fields).filter(isObject);
+    if (fields.length) filing.fields = Object.assign({}, ...fields);
+    for (const f of filings) {
+      if (f.fallback !== undefined) filing.fallback = f.fallback;
+      if (f.dateOrder !== undefined) filing.dateOrder = f.dateOrder;
+    }
+    out.filing = filing;
+  }
   return out;
 }
 
@@ -122,6 +141,7 @@ function parse(input) {
   const typing = source.typing && typeof source.typing === "object" ? source.typing : {};
   policy.typing.charsPerMinute = positive(typing.charsPerMinute, policy.typing.charsPerMinute);
   policy.typing.secondsPerAttachment = positive(typing.secondsPerAttachment, policy.typing.secondsPerAttachment);
+  policy.typing.secondsPerFiling = positive(typing.secondsPerFiling, policy.typing.secondsPerFiling);
 
   policy.capture = capture.createPolicy(source.capture);
   policy.warnings.push(...policy.capture.warnings);
@@ -133,6 +153,10 @@ function parse(input) {
   const catalog = documents.normalizeCatalog(source.documents);
   policy.documents = { shortcuts: catalog.shortcuts };
   policy.warnings.push(...catalog.warnings);
+
+  const filing = filer.normalizeFiling(source.filing);
+  policy.filing = { watch: filing.watch, fields: filing.fields, rules: filing.rules, fallback: filing.fallback, dateOrder: filing.dateOrder };
+  policy.warnings.push(...filing.warnings);
 
   const library = source.library && typeof source.library === "object" && Array.isArray(source.library.shorthands)
     ? source.library.shorthands : Array.isArray(source.library) ? source.library : [];

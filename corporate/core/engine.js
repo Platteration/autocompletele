@@ -287,9 +287,10 @@ function createEngine(options) {
     if (inserted) insertedText(typed.length, inserted);
     const fixedSeconds = kind === "document"
       ? Math.max(1, Math.floor(Number(data.count) || 1)) * policy.typing.secondsPerAttachment
-      : Number(data.fixedSeconds) || 0;
-    // Keyword rules and document sets only exist in the organisation policy.
-    const source = kind === "document" || kind === "keyword" ? "organization" : data.source;
+      : kind === "filed" ? (policy.typing.secondsPerFiling || 0)
+        : Number(data.fixedSeconds) || 0;
+    // Keyword rules, document sets and filing rules only exist in the organisation policy.
+    const source = kind === "document" || kind === "keyword" || kind === "filed" ? "organization" : data.source;
     const keystrokesSaved = Math.max(0, metrics.keystrokesSaved(inserted, typed) - spent);
     return ledger.record({ kind, trigger: data.trigger, source, keystrokesSaved, fixedSeconds, app: appName() });
   }

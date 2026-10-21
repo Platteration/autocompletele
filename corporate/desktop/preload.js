@@ -37,7 +37,18 @@ contextBridge.exposeInMainWorld("actle", {
   paletteSearch: invoke("palette:search"),
   paletteChoose: invoke("palette:choose"),
   paletteClose: invoke("palette:close"),
-  // Popover windows (template form, documents, keyword offer).
+  // Document filing.
+  getFilingInfo: invoke("filing:info"),
+  getFilingRecent: invoke("filing:recent"),
+  undoFiling: invoke("filing:undo"),
+  searchFiling: invoke("filing:search"),
+  clearFiling: invoke("filing:clear"),
+  addFilingFolder: invoke("filing:addFolder"),
+  removeFilingFolder: invoke("filing:removeFolder"),
+  ignoreFilingFolder: invoke("filing:ignoreFolder"),
+  rescanFilingFolder: invoke("filing:rescan"),
+  revealFiled: invoke("filing:reveal"),
+  // Popover windows (template form, documents, keyword offer, filing).
   getPopover: invoke("popover:get"),
   submitPopover: invoke("popover:submit"),
   closePopover: invoke("popover:close"),

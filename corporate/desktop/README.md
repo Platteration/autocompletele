@@ -36,6 +36,15 @@ learned. If another application already owns the hotkey, the dashboard says
 so and the tray entry still works. Statistics count a palette insert as its
 length minus the query and the Enter key.
 
+## Document filing
+
+Folders named in the policy's `filing.watch` (and any the person adds on the
+Filing tab) are watched. A new file is read once it has stopped growing, and
+a popover proposes its name and folder; Enter files it, Esc skips it. The
+Filing tab lists watched folders (a policy folder can be turned off on this
+desk), the rules, and filed documents with Undo. "File existing documents…"
+proposes a filing for each document already in a folder, one at a time.
+
 ## Where data lives
 
 Everything is in Electron's `userData` folder for the app
@@ -53,10 +62,11 @@ Everything is in Electron's `userData` folder for the app
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
 | `learned.json`    | SHA-256 digests of proposals the person dismissed (no readable text) |
 | `suggestions.json` | Proposals the person chose to suggest to the organisation, readable, until exported, removed or deleted with the learned text |
+| `filing-index.json` | Documents filed by the filing rules: new and old name and path, rule, values found (a client, a reference); never document text |
 | `deployment.json` | Managed desks only: signed policy sources and pinned public keys, written by IT |
 | `policy-cache/`   | Last good copy of each signed policy layer                     |
 | `policy-state.json` | Hash of the policy last applied and each source's status     |
-| `audit.jsonl`     | Policy changes, failing or recovering sources, capture-rule changes, corpus key and deletion events; never typed text |
+| `audit.jsonl`     | Policy changes, failing or recovering sources, capture-rule changes, corpus key and deletion events, documents filed or unfiled (paths only); never typed text |
 
 Learned text is only written encrypted, with one exception the person
 chooses: proposals they mark "Suggest to organisation" are kept readable in

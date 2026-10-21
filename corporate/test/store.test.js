@@ -73,6 +73,24 @@ test("settings, policy and learned decisions persist", () => {
   assert.deepEqual(store.loadLearned(), { dismissed: ["a phrase"] });
 });
 
+test("the filing index round-trips, tolerates junk and starts empty", () => {
+  const store = createStore(temp());
+  assert.deepEqual(store.loadFilingIndex(), { version: 1, entries: [] });
+  store.saveFilingIndex({ entries: [{ id: "a", path: "S:/x/a.pdf", rule: "invoice" }] });
+  assert.deepEqual(store.loadFilingIndex().entries.map((e) => e.id), ["a"]);
+  store.saveFilingIndex({ entries: "nope" });
+  assert.deepEqual(store.loadFilingIndex().entries, []);
+  fs.writeFileSync(path.join(store.root, FILES.filing), "{broken", "utf8");
+  assert.deepEqual(store.loadFilingIndex(), { version: 1, entries: [] });
+  assert.match(store.warnings()[0], /filing-index\.json could not be read/);
+  const settings = store.loadSettings();
+  assert.deepEqual(settings.watchFolders, []);
+  assert.deepEqual(settings.ignoredFolders, []);
+  store.saveSettings({ watchFolders: [{ path: "~/Scans" }], ignoredFolders: ["~/Downloads"] });
+  assert.deepEqual(store.loadSettings().watchFolders, [{ path: "~/Scans" }]);
+  assert.deepEqual(store.loadSettings().ignoredFolders, ["~/Downloads"]);
+});
+
 test("deployment, policy cache, policy state and audit log persist", () => {
   const store = createStore(temp());
   assert.equal(store.loadDeployment(), null);

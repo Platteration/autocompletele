@@ -17,6 +17,16 @@ const entries = [
   { at: T(2026, 1, 1, 10), kind: "expansion", trigger: "sig/", source: "organization", keystrokesSaved: 999 },
 ].map((e) => metrics.normalizeEntry(e, NOW));
 
+test("filing rules are organisation items a report may name, and a filing counts its fixed time", () => {
+  const policy = orgPolicy.parse({ filing: { rules: [{ id: "invoice", when: { keywords: ["invoice"] }, name: "[[date]]" }], fallback: { name: "[[original]]" } } });
+  assert.deepEqual(report.organizationShortcuts(policy), [{ trigger: "invoice", kind: "filed" }, { trigger: "fallback", kind: "filed" }]);
+  const filed = metrics.normalizeEntry({ at: NOW, kind: "filed", trigger: "invoice", source: "organization", fixedSeconds: 45 }, NOW);
+  assert.equal(filed.kind, "filed");
+  const r = report.buildReport([filed], { now: NOW, period: "week", count: 1, installId: "d" });
+  assert.deepEqual(r.byShortcut, [{ kind: "filed", trigger: "invoice", inserts: 1, keystrokesSaved: 0 }]);
+  assert.equal(r.totals.secondsSaved, 45);
+});
+
 test("metrics entries keep a valid source only", () => {
   assert.equal(metrics.normalizeEntry({ source: "organization" }, 0).source, "organization");
   assert.equal(metrics.normalizeEntry({ source: "personal" }, 0).source, "personal");

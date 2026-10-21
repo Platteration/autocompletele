@@ -21,6 +21,7 @@
     <button role="tab" data-tab="apps" aria-selected="false">Applications</button>
     <button role="tab" data-tab="keywords" aria-selected="false">Keywords</button>
     <button role="tab" data-tab="documents" aria-selected="false">Documents</button>
+    <button role="tab" data-tab="filing" aria-selected="false">Filing</button>
     <button role="tab" data-tab="policy" aria-selected="false">Policy</button>
   </nav>
   <main>
@@ -110,6 +111,26 @@
     <section id="tab-documents" role="tabpanel" hidden>
       <p class="hint">Type a document shortcut in any application to list its files; the paths are copied so they can be pasted into an attachment area.</p>
       <div id="documents"></div>
+    </section>
+
+    <section id="tab-filing" role="tabpanel" hidden>
+      <p class="hint">New documents in the watched folders are read on this computer, named by the organisation's filing rules and moved to the folder the rule says, after you confirm. The index below keeps names, folders and the values found (a client, a reference), never the document's text, so the search palette can find filed documents from any application.</p>
+      <p class="hint" id="filing-status"></p>
+      <h2>Watched folders</h2>
+      <table><thead><tr><th>Folder</th><th>From</th><th>Status</th><th></th></tr></thead><tbody id="filing-folders"></tbody></table>
+      <div class="toolbar mt">
+        <button class="plain" id="filing-add-folder">Add a folder of your own…</button>
+      </div>
+      <h2 class="mt">Rules</h2>
+      <table><thead><tr><th>Rule</th><th>When</th><th>Name</th><th>Folder</th></tr></thead><tbody id="filing-rules"></tbody></table>
+      <h2 class="mt">Filed documents</h2>
+      <div class="toolbar">
+        <input type="text" id="filing-query" placeholder="Search filed documents" aria-label="Search filed documents">
+        <span class="hint" id="filing-count"></span>
+        <span class="spacer"></span>
+        <button class="plain danger" id="filing-clear">Clear index…</button>
+      </div>
+      <table><thead><tr><th>When</th><th>Was</th><th>Now</th><th>Rule</th><th></th></tr></thead><tbody id="filing-recent"></tbody></table>
     </section>
 
     <section id="tab-policy" role="tabpanel" hidden>

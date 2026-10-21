@@ -15,7 +15,36 @@ test("the shipped example policy parses without warnings", () => {
   assert.deepEqual(policy.keywordRules.filter((r) => r.action === "warn").map((r) => r.id), ["contract-disclaimer", "card-numbers"]);
   assert.equal(policy.documents.shortcuts.length, 2);
   assert.equal(policy.typing.charsPerMinute, 200);
+  assert.equal(policy.typing.secondsPerFiling, 45);
   assert.equal(policy.retention.corpusDays, 90);
+  assert.deepEqual(policy.filing.rules.map((r) => r.id), ["invoice", "purchase-order", "contract", "packing-list"]);
+  assert.equal(policy.filing.fallback.label, "Other documents");
+  assert.deepEqual(policy.filing.watch.map((w) => w.label), ["Downloads", "Finance scanner"]);
+  assert.deepEqual(Object.keys(policy.filing.fields), ["client", "ref"]);
+});
+
+test("the filing section is parsed with warnings and merged across layers", () => {
+  const empty = orgPolicy.parse({});
+  assert.deepEqual(empty.filing, { watch: [], fields: {}, rules: [], fallback: null, dateOrder: "dmy" });
+  assert.equal(empty.typing.secondsPerFiling, 45);
+  const bad = orgPolicy.parse({ typing: { secondsPerFiling: -2 }, filing: { rules: [{ id: "x", when: { keywords: ["a"] } }], dateOrder: "ymd" } });
+  assert.equal(bad.typing.secondsPerFiling, 45);
+  assert.deepEqual(bad.filing.rules, []);
+  assert.ok(bad.warnings.some((w) => /filing rule x ignored/.test(w)));
+  assert.ok(bad.warnings.some((w) => /dateOrder/.test(w)));
+  const merged = orgPolicy.merge([
+    { filing: { watch: ["~/Downloads"], fields: { client: { values: ["Org Ltd"] } }, rules: [{ id: "invoice", when: { keywords: ["invoice"] }, name: "org_[[date]]" }], fallback: { name: "[[date]]_[[original]]" }, dateOrder: "mdy" } },
+    { filing: { watch: [{ path: "~/Downloads", recursive: true }, { path: "S:/Scans" }], fields: { ref: { pattern: "X-\\d+" } }, rules: [{ id: "invoice", when: { keywords: ["invoice"] }, name: "team_[[date]]" }, { id: "memo", when: { keywords: ["memo"] }, name: "memo" }], fallback: null } },
+  ]);
+  assert.deepEqual(merged.filing.rules.map((r) => r.name), ["team_[[date]]", "memo"]);
+  assert.deepEqual(merged.filing.watch, [{ path: "~/Downloads", recursive: true }, { path: "S:/Scans" }]);
+  assert.deepEqual(Object.keys(merged.filing.fields), ["client", "ref"]);
+  assert.equal(merged.filing.fallback, null, "a later layer may remove the fallback");
+  assert.equal(merged.filing.dateOrder, "mdy");
+  const parsed = orgPolicy.parse(merged);
+  assert.deepEqual(parsed.warnings, []);
+  assert.equal(parsed.filing.rules.length, 2);
+  assert.equal(orgPolicy.merge([{ library: [] }]).filing, undefined);
 });
 
 test("an empty or missing policy is valid and uses defaults", () => {

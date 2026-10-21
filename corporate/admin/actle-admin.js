@@ -8,6 +8,7 @@
 //   node admin/actle-admin.js layers <org.json> [<team.json> ...]
 //   node admin/actle-admin.js report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
 //   node admin/actle-admin.js suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
+//   node admin/actle-admin.js file <document> [...] --policy <file> [--apply]
 "use strict";
 
 const fs = require("node:fs");
@@ -16,6 +17,8 @@ const signing = require("../core/policy-signing.js");
 const orgPolicy = require("../core/org-policy.js");
 const report = require("../core/report.js");
 const suggestions = require("../core/suggestions.js");
+const extract = require("../core/extract.js");
+const filer = require("../core/filer.js");
 
 const USAGE = `actle Corporate admin tool
 
@@ -29,7 +32,10 @@ const USAGE = `actle Corporate admin tool
   report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
                                   roll desks' usage reports up into a team view
   suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
-                                  rank phrases people suggested; write a library to review`;
+                                  rank phrases people suggested; write a library to review
+  file <document> [...] --policy <file> [--apply]
+                                  show how the policy's filing rules would name and file documents;
+                                  --apply renames and moves them (blanks nothing filled are left alone)`;
 
 function parseArgs(argv) {
   const positional = [];
@@ -38,7 +44,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg.startsWith("--")) {
       const name = arg.slice(2);
-      if (name === "allow-warnings" || name === "json") {
+      if (name === "allow-warnings" || name === "json" || name === "apply") {
         flags[name] = true;
       } else {
         const value = argv[++i];
@@ -84,6 +90,7 @@ function summary(policy) {
   lines.push("shared shortcuts: " + policy.library.length);
   lines.push("keyword rules:    " + policy.keywordRules.length);
   lines.push("document sets:    " + policy.documents.shortcuts.map((s) => s.trigger).join(", "));
+  lines.push("filing rules:     " + policy.filing.rules.map((r) => r.id).concat(policy.filing.fallback ? ["(fallback)"] : []).join(", ") + (policy.filing.watch.length ? "; watching " + policy.filing.watch.map((w) => w.path).join(", ") : ""));
   lines.push("typing speed:     " + policy.typing.charsPerMinute + " characters per minute");
   return lines.join("\n");
 }
@@ -254,6 +261,57 @@ function run(argv, io) {
           out("\nlibrary written to " + target + "; review it, then add it to the policy's library and sign");
         }
         return ranked.desks ? 0 : 1;
+      }
+      case "file": {
+        if (!rest.length) throw new Error("file needs at least one document");
+        const policyFile = one(args.flags, "policy");
+        if (!policyFile) throw new Error("file needs --policy <file>");
+        const policy = orgPolicy.parse(policyFrom(policyFile).policy);
+        for (const warning of policy.warnings) err("warning: " + warning);
+        if (!policy.filing.rules.length && !policy.filing.fallback) throw new Error("the policy has no filing rules");
+        const apply = !!args.flags.apply;
+        let problems = 0;
+        for (const file of rest) {
+          const read = extract.extractText(file);
+          if (read.error && !read.bytes) {
+            err(file + ": " + read.error);
+            problems++;
+            continue;
+          }
+          let modified = Date.now();
+          try {
+            modified = fs.statSync(file).mtimeMs;
+          } catch (error) {
+            modified = Date.now();
+          }
+          const proposal = filer.propose({ name: path.basename(file), ext: read.ext, text: read.text, modified }, policy.filing);
+          if (!proposal) {
+            out(file + ": no rule applies");
+            continue;
+          }
+          const folder = proposal.folder || path.dirname(file);
+          const why = (proposal.matched.length ? "matched " + proposal.matched.join(", ") : proposal.rule.id === "fallback" ? "no rule matched" : "by extension")
+            + (read.unsupported ? "; file name only (" + (read.ext || "no extension") + " is not read)" : read.error ? "; " + read.error : "");
+          out(file + "\n  rule:   " + proposal.rule.label + " (" + why + ")\n  name:   " + proposal.name + "\n  folder: " + folder
+            + (proposal.missing.length ? "\n  missing: " + proposal.missing.join(", ") : ""));
+          if (!apply) continue;
+          if (!proposal.ready) {
+            out("  not applied: blanks missing");
+            problems++;
+            continue;
+          }
+          try {
+            fs.mkdirSync(folder, { recursive: true });
+            const name = filer.uniqueName(proposal.name, (candidate) => fs.existsSync(path.join(folder, candidate)));
+            const target = path.join(folder, name);
+            fs.renameSync(file, target);
+            out("  filed as " + target);
+          } catch (error) {
+            err("  could not file: " + error.message);
+            problems++;
+          }
+        }
+        return problems ? 1 : 0;
       }
       case undefined:
       case "help":

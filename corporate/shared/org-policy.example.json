@@ -1,7 +1,7 @@
 {
   "version": 1,
   "organization": "Example Logistics Ltd",
-  "typing": { "charsPerMinute": 200, "secondsPerAttachment": 20 },
+  "typing": { "charsPerMinute": 200, "secondsPerAttachment": 20, "secondsPerFiling": 45 },
   "capture": {
     "defaultMode": "triggers",
     "apps": [
@@ -47,6 +47,24 @@
         ]
       }
     ]
+  },
+  "filing": {
+    "watch": [
+      { "path": "~/Downloads", "label": "Downloads" },
+      { "path": "S:/Scans/Finance", "label": "Finance scanner", "recursive": false }
+    ],
+    "dateOrder": "dmy",
+    "fields": {
+      "client": { "values": ["Acme Logistics GmbH", "Birch & Co", "Nordwind Shipping AS"], "aliases": { "ACME": "Acme Logistics GmbH", "Nordwind": "Nordwind Shipping AS" } },
+      "ref": { "pattern": "\\b(INV|PO|CT)-\\d{4,}\\b" }
+    },
+    "rules": [
+      { "id": "invoice", "label": "Supplier invoice", "when": { "keywords": ["invoice", "amount due", "rechnung"], "match": "any", "extensions": ["pdf", "docx", "xlsx"] }, "name": "[[date]]_[[client]]_invoice_[[ref]]", "folder": "S:/Shared/Finance/Invoices/[[year]]" },
+      { "id": "purchase-order", "label": "Purchase order", "when": { "keywords": ["purchase order"], "match": "all" }, "name": "[[date]]_[[client]]_PO_[[ref]]", "folder": "S:/Shared/Finance/Purchase orders/[[year]]" },
+      { "id": "contract", "label": "Contract", "when": { "keywords": ["agreement", "hereinafter"], "match": "all" }, "name": "[[date]]_[[client]]_contract", "folder": "S:/Shared/Legal/Contracts/[[client]]" },
+      { "id": "packing-list", "label": "Packing list", "when": { "keywords": ["packing list"] }, "name": "[[date]]_packing-list_[[original]]", "folder": "S:/Shared/Logistics/Packing lists/[[year]]-[[month]]" }
+    ],
+    "fallback": { "label": "Other documents", "name": "[[date]]_[[original]]", "folder": "" }
   },
   "learning": { "minCount": 3, "minLength": 20, "minWords": 4 },
   "retention": { "metricsDays": 365, "corpusDays": 90 }

@@ -21,6 +21,13 @@ adds what a business asks for:
 - **Document shortcuts**: typing `/sld` lists the files the organisation marked
   as the standard hand-outs for "shipping logistics department", so they can be
   attached in one step.
+- **Document filing (actle Filer)**: new files in watched folders (downloads,
+  scanner output) are read on the desk, named from the organisation's naming
+  rule (`[[date]]_[[client]]_invoice_[[ref]]`) and moved to the folder the rule
+  says, after the person confirms. Filed documents are indexed by name, folder
+  and the values found, never by their text, so the search palette finds them
+  from any application. Plain text, Word and Excel are read without any
+  dependency; PDFs and scans are judged by their file name for now.
 - **Compliance warnings**: a rule can warn instead of offer, for example when
   "contract" is written without the legal disclaimer or a card number is typed
   into a message, with an optional one-click fix.
@@ -73,6 +80,8 @@ corporate/
     phrase-miner.js           recurring sentences, paragraphs and phrases across messages
     keyword-rules.js          keyword offers and compliance warnings, once per field
     documents.js              document shortcuts (/sld) and search
+    extract.js                local text extraction: plain text, .docx, .xlsx (zip + XML, no dependency)
+    filer.js                  filing rules, field detection, safe names, the index of filed documents
     palette-search.js         search palette items, scored by the extension's palette module
     org-policy.js             the organisation policy parser and layer merge (skips bad parts, never refuses)
     policy-signing.js         Ed25519 signing and verification of policy files
@@ -83,12 +92,12 @@ corporate/
     engine.js                 headless assistant: keys + focus in, actions out
     store.js                  app-data files: library, policy, settings, metrics log, learning corpus, audit log
   admin/
-    actle-admin.js            keygen, sign, verify, validate, layers, report, suggestions
+    actle-admin.js            keygen, sign, verify, validate, layers, report, suggestions, file
   test/                       node --test suites for every module, plus the shared conformance suite
   shared/
     ORG-POLICY.md             policy file format
     org-policy.example.json   complete example used by the simulator and the tests
-  desktop/                    Electron shell, input and typing adapters, dashboard, headless simulator
+  desktop/                    Electron shell, input and typing adapters, folder watcher, dashboard, headless simulator
 ```
 
 The core has no dependencies beyond Node's standard library and the two
@@ -113,7 +122,11 @@ the desktop shell only carries actions out.
    detector clusters similar messages and proposes templates.
 4. Keyword rules are checked each time a word ends; each rule is offered once
    per field.
-5. Every insertion is recorded in the metrics log with the keystrokes it
+5. The folder watcher reports a new document once it has stopped growing. The
+   assistant reads it, proposes a name and folder from the filing rules, and
+   the shell asks the person to confirm. See "Document filing" in
+   `shared/ORG-POLICY.md`.
+6. Every insertion is recorded in the metrics log with the keystrokes it
    saved (graphemes inserted minus graphemes typed). Time saved is estimated
    from a typing-speed assumption in the policy (default 200 characters a
    minute, which is 40 words a minute); attachments count a fixed number of
@@ -182,3 +195,8 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
 - Usage reports travel as files the person saves; an upload to a collection
   point is not built, deliberately, so nothing leaves a desk without the
   person's action.
+- Document filing reads PDFs and scanned images by file name only. Reading
+  their text needs a PDF library and OCR in `desktop/` (the core stays
+  dependency-free); that is the owner's call. Filing by sender or source
+  folder, and attaching a filed document straight into a mail compose window,
+  are not built.

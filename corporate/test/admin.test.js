@@ -86,6 +86,50 @@ test("validate and layers report the effective policy", () => {
   assert.match(broken.err, /not valid JSON/);
 });
 
+test("file shows how documents would be named and files them only with --apply", () => {
+  const dir = temp();
+  const extract = require("../core/extract.js");
+  const policy = path.join(dir, "org.json");
+  fs.writeFileSync(policy, JSON.stringify({
+    filing: {
+      fields: { client: { values: ["Acme Logistics GmbH"] }, ref: { pattern: "INV-\\d{4,}" } },
+      rules: [{ id: "invoice", label: "Supplier invoice", when: { keywords: ["invoice"] }, name: "[[date]]_[[client]]_invoice_[[ref]]", folder: path.join(dir, "Invoices", "[[year]]") }],
+      fallback: { name: "[[date]]_[[original]]" },
+    },
+  }));
+  const inbox = path.join(dir, "inbox");
+  fs.mkdirSync(inbox);
+  const docx = path.join(inbox, "scan 12.docx");
+  fs.writeFileSync(docx, extract.zipArchive({ "word/document.xml": "<w:document><w:body><w:p><w:r><w:t>INVOICE INV-20481 Acme Logistics GmbH 21.10.2026</w:t></w:r></w:p></w:body></w:document>" }));
+  const pdf = path.join(inbox, "Invoice_77.pdf");
+  fs.writeFileSync(pdf, "%PDF");
+  const photo = path.join(inbox, "photo.jpg");
+  fs.writeFileSync(photo, "jpeg");
+  const dry = cli(["file", docx, pdf, photo, path.join(inbox, "missing.txt"), "--policy", policy]);
+  assert.equal(dry.code, 1, "an unreadable document is reported");
+  assert.match(dry.out, /rule:\s+Supplier invoice \(matched invoice\)\n\s+name:\s+2026-10-21_Acme_Logistics_GmbH_invoice_INV-20481\.docx/);
+  assert.match(dry.out, /Invoice_77\.pdf\n\s+rule:\s+Supplier invoice \(matched invoice; file name only \(pdf is not read\)\)[\s\S]*missing: client, ref/);
+  assert.match(dry.out, /photo\.jpg\n\s+rule:\s+Other documents \(no rule matched; file name only \(jpg is not read\)\)/);
+  assert.match(dry.err, /missing\.txt: ENOENT/);
+  assert.ok(fs.existsSync(docx), "nothing moved without --apply");
+  const applied = cli(["file", docx, pdf, "--policy", policy, "--apply"]);
+  assert.equal(applied.code, 1, "the pdf with missing blanks is not filed");
+  assert.match(applied.out, /not applied: blanks missing/);
+  assert.ok(fs.existsSync(path.join(dir, "Invoices", "2026", "2026-10-21_Acme_Logistics_GmbH_invoice_INV-20481.docx")));
+  assert.ok(!fs.existsSync(docx));
+  assert.ok(fs.existsSync(pdf));
+  fs.writeFileSync(docx, extract.zipArchive({ "word/document.xml": "<w:document><w:body><w:p><w:r><w:t>INVOICE INV-20481 Acme Logistics GmbH 21.10.2026</w:t></w:r></w:p></w:body></w:document>" }));
+  const again = cli(["file", docx, "--policy", policy, "--apply"]);
+  assert.equal(again.code, 0, again.err);
+  assert.ok(fs.existsSync(path.join(dir, "Invoices", "2026", "2026-10-21_Acme_Logistics_GmbH_invoice_INV-20481 (2).docx")), "a second copy never overwrites the first");
+  assert.equal(cli(["file", docx, "--policy", policy]).code, 1, "the moved file is gone");
+  assert.equal(cli(["file", "--policy", policy]).code, 1);
+  assert.equal(cli(["file", photo]).code, 1);
+  fs.writeFileSync(path.join(dir, "empty.json"), "{}");
+  assert.match(cli(["file", photo, "--policy", path.join(dir, "empty.json")]).err, /no filing rules/);
+  assert.match(cli(["validate", policy]).out, /filing rules:\s+invoice, \(fallback\)/);
+});
+
 test("usage and argument errors exit non-zero", () => {
   assert.equal(cli([]).code, 2);
   assert.equal(cli(["help"]).code, 0);

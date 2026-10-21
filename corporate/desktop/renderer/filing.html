@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
+  <title>File this document</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="popover">
+  <h1 id="title">File this document</h1>
+  <p class="path" id="source"></p>
+  <p class="path" id="why"></p>
+  <form id="form">
+    <label><span>Name</span><input type="text" id="name" autocomplete="off" spellcheck="false"></label>
+    <div id="blanks"></div>
+    <p class="path" id="folder"></p>
+  </form>
+  <p class="hint" id="error" role="alert"></p>
+  <div class="actions">
+    <button class="plain" type="button" id="never">Never for this folder</button>
+    <button class="plain" type="button" id="skip">Skip</button>
+    <button class="primary" type="submit" form="form" id="file">File it</button>
+  </div>
+  <script src="filing.js"></script>
+</body>
+</html>

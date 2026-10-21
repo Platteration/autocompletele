@@ -22,6 +22,7 @@ const FILES = Object.freeze({
   policyCacheDir: "policy-cache",
   corpusKey: "corpus.key",
   suggestions: "suggestions.json",
+  filing: "filing-index.json",
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -32,6 +33,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   startWithSystem: false,
   installId: null,            // random id that lets an administrator count a desk's reports once
   paletteShortcut: "CommandOrControl+Shift+Space", // global hotkey for the search palette; "" turns it off
+  watchFolders: [],           // the person's own folders to file from, same shape as policy.filing.watch
+  ignoredFolders: [],         // policy watch folders the person turned off ("Never for this folder")
 });
 
 function createStore(dir) {
@@ -154,6 +157,8 @@ function createStore(dir) {
     out.captureApps = Array.isArray(out.captureApps) ? out.captureApps : [];
     out.installId = typeof out.installId === "string" && out.installId ? out.installId : null;
     out.paletteShortcut = typeof out.paletteShortcut === "string" ? out.paletteShortcut.trim() : DEFAULT_SETTINGS.paletteShortcut;
+    out.watchFolders = Array.isArray(out.watchFolders) ? out.watchFolders : [];
+    out.ignoredFolders = Array.isArray(out.ignoredFolders) ? out.ignoredFolders.map(String) : [];
     return out;
   }
 
@@ -353,6 +358,16 @@ function createStore(dir) {
     writeJson(FILES.suggestions, { queued: Array.isArray(queued) ? queued : [] });
   }
 
+  /** Filed documents: names, paths and the values found, never document text. */
+  function loadFilingIndex() {
+    const data = readJson(FILES.filing, { version: 1, entries: [] });
+    return { version: 1, entries: Array.isArray(data.entries) ? data.entries : [] };
+  }
+
+  function saveFilingIndex(index) {
+    writeJson(FILES.filing, { version: 1, entries: Array.isArray(index && index.entries) ? index.entries : [] });
+  }
+
   function exportLibraryJson() {
     return JSON.stringify({ version: 1, shorthands: loadLibrary() }, null, 2) + "\n";
   }
@@ -419,6 +434,8 @@ function createStore(dir) {
     loadAudit,
     loadSuggestions,
     saveSuggestions,
+    loadFilingIndex,
+    saveFilingIndex,
   };
 }
 

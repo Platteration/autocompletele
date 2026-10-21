@@ -17,6 +17,7 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `organization` | Name shown on the dashboard. |
 | `typing.charsPerMinute` | Typing-speed assumption behind "time saved" (default 200, which is 40 words per minute). Changing it re-estimates history. |
 | `typing.secondsPerAttachment` | Time credited for each document attached through a shortcut (default 20). |
+| `typing.secondsPerFiling` | Time credited for each document named and filed by a filing rule (default 45). |
 | `capture.defaultMode` | `off`, `triggers` (default) or `learn` for applications no rule names. |
 | `capture.apps[]` | Per-application rules, first match wins. `match.process` (one name or a list; `.exe` and paths are ignored), `match.bundleId` (macOS) and `match.title` (regular expression, case-insensitive) identify the window. `mode` is as above. |
 | `library` | The shared shortcut library in the personal `shorthands.json` format (`shared/SPEC.md` at the repository root). A person's own shortcut with the same trigger wins. |
@@ -25,6 +26,11 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `keywordRules[].detect` | Built-in detectors that must also fire. `card-number` finds a card number that passes the Luhn check. A rule may have `detect` instead of `keywords`. |
 | `keywordRules[].unless` | Phrases that stop the rule when any of them appears in the field (case and spacing ignored), for example the disclaimer itself. What is seen is the text typed in the field, or inserted by actle, since the field last got the focus, up to the last 4,000 characters. Opening actle's search palette or dashboard counts as leaving the field. A mail client's automatic signature, pasted text and text further back are not seen, so the warning can appear although the phrase is there. |
 | `documents.shortcuts[]` | `trigger` (for example `/sld`), `label`, and `documents[]` with `title`, `path` (file path or URL), optional `tags` and `description`. Triggers follow the same boundary rule as text shortcuts and lose to a text shortcut with the same trigger. |
+| `filing.watch[]` | Folders where new documents land: `path` (a leading `~` is the person's home folder), optional `label`, `recursive` (default false). A person can turn a policy folder off on their desk and add folders of their own. |
+| `filing.fields` | Values a naming rule can use, by blank name: `values` (the organisation's spellings, matched as whole words, case-insensitive), `aliases` (`{ "ACME": "Acme Logistics GmbH" }`), `pattern` (regular expression, first match; `group` picks a capture group). The built-in blanks `date`, `year`, `month`, `day`, `original` (the old name without extension) and `ext` cannot be redefined. |
+| `filing.rules[]` | In order, first match wins: `id`, `label`, `when` (`keywords` with `match` `any` (default) or `all`, matched in the document's text and its file name; `extensions` to limit the rule to some file types; one of the two is required), `name` (a `[[blank]]` template; no path separators) and `folder` (a template too; empty renames in place; a relative folder is relative to the document's own folder). |
+| `filing.fallback` | `name`, `folder`, `label` for documents no rule matches. Without it, such documents are left alone. |
+| `filing.dateOrder` | `dmy` (default) or `mdy`: how `21/10/2026`-style dates are read. ISO dates and written months are unambiguous. |
 | `learning.minCount` | Distinct messages a text must recur in before it is proposed (default 3, minimum 2). |
 | `learning.minLength`, `learning.minWords` | Smallest text worth proposing (defaults 20 characters, 4 words). |
 | `reporting.team` | Team name written into each desk's usage report. |
@@ -113,6 +119,31 @@ Each text counts once per desk (newest file wins); texts already in the
 policy library are left out; the trigger most desks chose is kept unless the
 library already uses it. `--out` writes a `shorthands.json`-format file to
 review and then add to the policy's `library` before signing.
+
+## Document filing
+
+A desk watches the folders in `filing.watch` (plus the person's own). When a
+file appears and has stopped growing, the desk reads it locally (plain text,
+`.docx` and `.xlsx`; a PDF or image is judged by its file name only), picks
+the first rule whose keywords appear, fills the rule's `name` and `folder`
+templates from the text, and shows a popover: the name (editable), any blank
+the text did not fill, and the folder. Enter files it; Esc leaves the file
+untouched; "Never for this folder" turns that folder off on this desk. A
+document is never overwritten (a second copy gets ` (2)`), a name with an
+unfilled blank is refused, and every filing can be undone from the Filing tab.
+
+What is kept: `filing-index.json` in the data folder holds each filed
+document's new name and path, old name and path, the rule and the values
+found (a client, a reference), so the search palette finds "acme invoice"
+from any application. The document's text is read in memory and never
+stored. `audit.jsonl` records each filing and undo with the two paths.
+
+Test rules on sample documents without the desktop app:
+
+```
+node admin/actle-admin.js file samples/*.pdf samples/*.docx --policy org.json          # dry run
+node admin/actle-admin.js file samples/*.docx --policy org.json --apply                 # rename and move
+```
 
 ## Capture modes
 

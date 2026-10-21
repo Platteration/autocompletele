@@ -10,8 +10,8 @@ function preview(text) {
   return String(text == null ? "" : text).replace(/\{cursor\}/gi, "").replace(/\s+/g, " ").trim().slice(0, 140);
 }
 
-/** Items a palette can list, in library order, then document sets. */
-function items(library, documents) {
+/** Items a palette can list, in library order, then document sets, then filed documents. */
+function items(library, documents, filingIndex) {
   const out = [];
   for (const sh of Array.isArray(library) ? library : []) {
     out.push({
@@ -34,6 +34,18 @@ function items(library, documents) {
       source: "organization",
       needsInput: false,
       preview: set.label + ": " + titles,
+    });
+  }
+  const filed = filingIndex && Array.isArray(filingIndex.entries) ? filingIndex.entries : [];
+  for (const entry of filed) {
+    out.push({
+      kind: "file",
+      trigger: entry.name,
+      expansion: [entry.ruleLabel, entry.originalName, entry.folder, ...Object.values(entry.values || {})].filter(Boolean).join(" "),
+      source: "organization",
+      needsInput: false,
+      preview: (entry.ruleLabel ? entry.ruleLabel + ": " : "") + (entry.folder || entry.path),
+      path: entry.path,
     });
   }
   return out;

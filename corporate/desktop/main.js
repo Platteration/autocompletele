@@ -1,6 +1,7 @@
 // Electron main process: tray icon, the dashboard window, popovers for
-// templates, documents and keyword offers, and the wiring between the input
-// listener, the headless assistant and the text sender.
+// templates, documents, keyword offers and document filing, and the wiring
+// between the input listener, the folder watcher, the headless assistant and
+// the text sender.
 "use strict";
 
 const path = require("node:path");
@@ -8,6 +9,7 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, shell, nativeImage, 
 const { createAssistant } = require("./assistant.js");
 const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
+const { createFolderWatcher } = require("./filer.js");
 const { personal } = require("../core/index.js");
 
 const SINGLE = app.requestSingleInstanceLock();
@@ -30,6 +32,10 @@ let dashboardFocused = false;
 let lastContext = {};
 let paletteWindow = null;
 let paletteStatus = { accelerator: "", registered: false, error: null };
+let folderWatcher = null;
+// Documents waiting for their filing popover: one at a time, in arrival order.
+const filingQueue = [];
+let filingStatus = { watching: 0, folders: [] };
 
 function notify(body) {
   if (Notification.isSupported()) new Notification({ title: "actle", body }).show();
@@ -121,7 +127,7 @@ function showPopover(name, state, size) {
   popover.on("blur", () => { setOwnWindow(false); if (state.kind === "keyword") closePopover(); });
   // A window closed while focused may not emit "blur" first; never leave the
   // engine believing actle's own window has the focus.
-  popover.on("closed", () => { popover = null; popoverState = null; setOwnWindow(!!BrowserWindow.getFocusedWindow()); });
+  popover.on("closed", () => { popover = null; popoverState = null; setOwnWindow(!!BrowserWindow.getFocusedWindow()); setTimeout(nextFiling, 0); });
 }
 
 function closePopover() {
@@ -140,6 +146,8 @@ function handleAction(action) {
       return showPopover("template", Object.assign({ kind: "template" }, action), { width: 420, height: 120 + 72 * (action.fields.length + action.variables.length) });
     case "documents":
       return showPopover("documents", Object.assign({ kind: "documents" }, action), { width: 460, height: 160 + 44 * action.documents.length });
+    case "filing":
+      return showPopover("filing", { kind: "filing", proposal: action.proposal }, { width: 540, height: 250 + 62 * action.proposal.missing.length });
     case "keyword":
     case "warning":
       return showPopover("keyword", { kind: "keyword", warning: action.type === "warning", hits: action.hits.map((hit) => ({ rule: hit.rule, matched: hit.matched })) }, { width: 380, height: 90 + 72 * action.hits.length, focusable: false });
@@ -150,6 +158,7 @@ function handleAction(action) {
 
 async function submitPopover(payload) {
   const state = popoverState;
+  if (state && state.kind === "filing") return submitFiling(state, payload);
   closePopover();
   if (!state || !payload) return { ok: false };
   if (state.kind === "template") {
@@ -198,6 +207,56 @@ async function submitPopover(payload) {
   return { ok: true };
 }
 
+// Document filing: new files in watched folders get a popover; the person
+// confirms, edits or skips. A refused filing keeps the popover open with the
+// reason, so a document is never moved under an unfinished name.
+async function submitFiling(state, payload) {
+  if (!payload || payload.action === "skip") {
+    closePopover();
+    return { ok: true };
+  }
+  if (payload.action === "ignoreFolder") {
+    const folder = path.dirname(String(payload.path || state.proposal.path));
+    const match = assistant.filingFolders().policy.find((f) => f.path === folder);
+    if (match) assistant.filingIgnoreFolder(match.raw, true);
+    else assistant.filingRemoveFolder((assistant.filingFolders().own.find((f) => f.path === folder) || { raw: folder }).raw);
+    closePopover();
+    startWatching();
+    broadcast({ settings: true, filing: true });
+    return { ok: true };
+  }
+  const result = assistant.applyFiling({ path: state.proposal.path, name: payload.name, answers: payload.answers });
+  if (!result.ok) return result;
+  closePopover();
+  notify("Filed as " + result.name + (result.folder !== path.dirname(result.from) ? " in " + result.folder : ""));
+  broadcast({ metrics: true, filing: true });
+  return result;
+}
+
+function enqueueFiling(file) {
+  if (filingQueue.includes(file)) return;
+  filingQueue.push(file);
+  nextFiling();
+}
+
+function nextFiling() {
+  if (popover || !filingQueue.length || !assistant) return;
+  const file = filingQueue.shift();
+  const proposal = assistant.filingProposal(file);
+  if (!proposal) return nextFiling();
+  handleAction({ type: "filing", proposal });
+}
+
+function startWatching() {
+  if (!folderWatcher) {
+    folderWatcher = createFolderWatcher({ onFile: enqueueFiling, log: (line) => assistant.log(line) });
+  }
+  const info = assistant.filingInfo();
+  const folders = info.enabled ? info.folders.active : [];
+  const watching = folderWatcher.start(folders);
+  filingStatus = { watching, folders: folders.map((f) => f.path), enabled: info.enabled };
+}
+
 // Signed policy layers are fetched at start and then every refreshMinutes.
 // A failed fetch keeps the last good copy (the assistant warns and audits it).
 let refreshTimer = null;
@@ -214,6 +273,7 @@ async function refreshPolicy() {
     const message = assistant.policyInfo().paused.message;
     notify(assistant.paused ? "Paused by your organisation" + (message ? ": " + message : ".") : "Your organisation resumed actle.");
   }
+  startWatching();
   updateTray();
   broadcast({ settings: true, status: true, policy: true });
   return result;
@@ -314,7 +374,31 @@ function registerIpc() {
   handle("policy:refresh", () => refreshPolicy());
   handle("policy:audit", () => assistant.audit(100));
   handle("settings:get", () => assistant.settings());
-  handle("settings:save", (next) => { const r = assistant.saveSettings(next || {}); updateTray(); broadcast({ settings: true }); return r; });
+  handle("settings:save", (next) => { const r = assistant.saveSettings(next || {}); updateTray(); startWatching(); broadcast({ settings: true }); return r; });
+  handle("filing:info", () => Object.assign(assistant.filingInfo(), { status: filingStatus }));
+  handle("filing:recent", (limit) => assistant.filingRecent(limit));
+  handle("filing:undo", (id) => { const r = assistant.undoFiling(String(id || "")); broadcast({ filing: true }); return r; });
+  handle("filing:search", (q) => assistant.filingSearch(String(q == null ? "" : q), 50));
+  handle("filing:clear", () => { const r = assistant.filingClear(); broadcast({ filing: true }); return r; });
+  handle("filing:addFolder", async () => {
+    const picked = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+    if (picked.canceled || !picked.filePaths.length) return { ok: false, canceled: true };
+    const r = assistant.filingAddFolder(picked.filePaths[0]);
+    startWatching();
+    broadcast({ settings: true, filing: true });
+    return r;
+  });
+  handle("filing:removeFolder", (raw) => { const r = assistant.filingRemoveFolder(String(raw || "")); startWatching(); broadcast({ settings: true, filing: true }); return r; });
+  handle("filing:ignoreFolder", (q) => { const r = assistant.filingIgnoreFolder(String((q && q.path) || ""), !(q && q.ignore === false)); startWatching(); broadcast({ settings: true, filing: true }); return r; });
+  handle("filing:rescan", (folder) => {
+    const target = String(folder || "");
+    const known = assistant.filingFolders().active.find((f) => f.path === target);
+    if (!known || !folderWatcher) return { ok: false, error: "Not a watched folder." };
+    const files = folderWatcher.listFiles(known.path, known.recursive);
+    for (const file of files) enqueueFiling(file);
+    return { ok: true, queued: files.length };
+  });
+  handle("filing:reveal", (p) => { if (p) shell.showItemInFolder(String(p)); return { ok: true }; });
   handle("settings:enabled", (value) => { const r = assistant.setEnabled(value !== false); updateTray(); broadcast({ settings: true }); return r; });
   handle("learning:candidates", () => assistant.candidates());
   handle("learning:accept", (c) => { const r = assistant.acceptCandidate(c || {}); broadcast({ library: true, learning: true }); return r; });
@@ -342,6 +426,7 @@ function registerIpc() {
     paused: assistant.paused,
     pausedMessage: assistant.policyInfo().paused.message,
     palette: paletteStatus,
+    filing: filingStatus,
     context: lastContext,
     version: app.getVersion(),
   }));
@@ -388,6 +473,7 @@ function start() {
   for (const warning of assistant.warnings()) notify(warning);
   schedulePolicyRefresh();
   registerPaletteShortcut();
+  startWatching();
   updateTray();
   openDashboard();
 }
@@ -404,6 +490,7 @@ app.on("will-quit", () => globalShortcut.unregisterAll());
 
 app.on("before-quit", () => {
   if (refreshTimer) clearInterval(refreshTimer);
+  if (folderWatcher) folderWatcher.stop();
   if (listener) listener.stop();
   if (assistant) assistant.endSession();
 });

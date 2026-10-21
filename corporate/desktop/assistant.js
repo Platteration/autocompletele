@@ -5,6 +5,8 @@
 "use strict";
 
 const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const crypto = require("node:crypto");
 const core = require("../core/index.js");
 const learning = require("./learning.js");
@@ -109,6 +111,7 @@ function createAssistant(options) {
 
   let cachedCandidates = null;
   const listeners = { session: [], candidates: [] };
+  let filingIndex = core.filer.normalizeIndex(store.loadFilingIndex());
 
   function audit(entry) {
     store.appendAudit(Object.assign({ at: settings.now() }, entry));
@@ -309,7 +312,7 @@ function createAssistant(options) {
   // remembering its trigger.
   function paletteSearch(query, limit) {
     if (policy.paused.active) return [];
-    const items = core.paletteSearch.items(engine.library, policy.documents);
+    const items = core.paletteSearch.items(engine.library, policy.documents, filingIndex);
     return core.paletteSearch.search(items, query, limit).map((item) => ({
       kind: item.kind, trigger: item.trigger, source: item.source, needsInput: item.needsInput, preview: item.preview,
     }));
@@ -322,6 +325,12 @@ function createAssistant(options) {
     if (choice.kind === "documents") {
       const set = policy.documents.shortcuts.find((s) => s.trigger === choice.trigger);
       return set ? { type: "documents", trigger: set.trigger, label: set.label, documents: set.documents.slice(), backspaces: 0, via: "palette" } : null;
+    }
+    if (choice.kind === "file") {
+      // A filed document is offered like a one-file document set, so the
+      // same popover copies or reveals it. It is not an organisation shortcut.
+      const entry = filingIndex.entries.find((e) => e.name === choice.trigger);
+      return entry ? { type: "documents", trigger: "", label: entry.ruleLabel || "Filed document", documents: [{ title: entry.name, path: entry.path, tags: [], description: entry.folder }], backspaces: 0, via: "palette" } : null;
     }
     const sh = engine.library.find((item) => item.trigger === choice.trigger);
     if (!sh) return null;
@@ -395,6 +404,200 @@ function createAssistant(options) {
     });
   }
 
+  // ---- Document filing ---------------------------------------------------
+
+  function expandHome(folder) {
+    return String(folder == null ? "" : folder).replace(/^~(?=$|[\\/])/, os.homedir());
+  }
+
+  function saveFilingIndex() {
+    store.saveFilingIndex(filingIndex);
+  }
+
+  /** Folders watched for new documents: the policy's (unless the person turned one off) and the person's own. */
+  function filingFolders() {
+    const ignored = new Set(userSettings.ignoredFolders);
+    const fromPolicy = policy.filing.watch.map((w) => ({ path: expandHome(w.path), raw: w.path, label: w.label, recursive: w.recursive, source: "organization", ignored: ignored.has(w.path) }));
+    const own = userSettings.watchFolders.map((w) => (w && typeof w === "object" ? w : { path: w })).filter((w) => typeof w.path === "string" && w.path.trim())
+      .map((w) => ({ path: expandHome(w.path.trim()), raw: w.path.trim(), label: w.label || w.path.trim(), recursive: w.recursive === true, source: "personal", ignored: false }));
+    return { policy: fromPolicy, own, active: fromPolicy.filter((f) => !f.ignored).concat(own) };
+  }
+
+  function filingInfo() {
+    return {
+      enabled: !policy.paused.active && (policy.filing.rules.length > 0 || !!policy.filing.fallback),
+      rules: policy.filing.rules.map((r) => ({ id: r.id, label: r.label, keywords: r.when.keywords, match: r.when.match, extensions: r.when.extensions, name: r.name, folder: r.folder })),
+      fallback: policy.filing.fallback ? { id: "fallback", label: policy.filing.fallback.label, name: policy.filing.fallback.name, folder: policy.filing.fallback.folder } : null,
+      indexed: filingIndex.entries.length,
+      secondsPerFiling: policy.typing.secondsPerFiling,
+      folders: filingFolders(),
+    };
+  }
+
+  /**
+   * What the policy would call a file and where it would put it. Null when
+   * nothing applies, the file cannot be read, or it was filed already.
+   */
+  function filingProposal(filePath, answers) {
+    if (policy.paused.active) return null;
+    if (!policy.filing.rules.length && !policy.filing.fallback) return null;
+    const file = path.resolve(String(filePath == null ? "" : filePath));
+    if (filingIndex.entries.some((e) => e.path === file)) return null;
+    let stat;
+    try {
+      stat = fs.statSync(file);
+    } catch (error) {
+      return null;
+    }
+    if (!stat.isFile()) return null;
+    const read = core.extract.extractText(file);
+    const proposal = core.filer.propose({ name: path.basename(file), ext: read.ext, text: read.text, modified: stat.mtimeMs }, policy.filing, answers);
+    if (!proposal) return null;
+    // A relative folder in a rule is relative to where the document is.
+    const folder = proposal.folder ? path.resolve(path.dirname(file), expandHome(proposal.folder)) : path.dirname(file);
+    return Object.assign({}, proposal, {
+      path: file,
+      fileName: path.basename(file),
+      ext: read.ext,
+      folder,
+      folderTemplate: proposal.folderTemplate,
+      inPlace: !proposal.folder,
+      read: { kind: read.kind, unsupported: read.unsupported, truncated: read.truncated, error: read.error },
+    });
+  }
+
+  function moveFile(from, to) {
+    try {
+      fs.renameSync(from, to);
+    } catch (error) {
+      if (error.code !== "EXDEV") throw error;
+      // Another drive or share: copy without overwriting, then remove the original.
+      fs.copyFileSync(from, to, fs.constants.COPYFILE_EXCL);
+      fs.unlinkSync(from);
+    }
+  }
+
+  /**
+   * Rename and move a document as proposed. `request` is {path, answers,
+   * name}: answers fill blanks the text did not; an edited name may still
+   * carry blanks, which the answers fill. A name with blanks left is refused
+   * so a file is never called "[[client]]". Never overwrites.
+   */
+  function applyFiling(request) {
+    const data = request && typeof request === "object" ? request : {};
+    const proposal = filingProposal(data.path, data.answers);
+    if (!proposal) return { ok: false, error: "No filing rule applies to this file, or it was filed already." };
+    let name = proposal.name;
+    let missing = proposal.missing.slice();
+    const edited = typeof data.name === "string" ? data.name.trim() : "";
+    if (edited) {
+      const filled = core.filer.fillTemplate(edited, proposal.values);
+      missing = core.filer.blanksOf(filled);
+      name = missing.length ? filled : core.filer.safeName(filled.replace(/\.[^.]*$/, (ext) => (ext.slice(1).toLowerCase() === proposal.ext ? "" : ext)), proposal.ext);
+    }
+    if (missing.length) return { ok: false, error: "Fill in: " + missing.join(", "), missing };
+    const folder = proposal.folder;
+    try {
+      fs.mkdirSync(folder, { recursive: true });
+    } catch (error) {
+      return { ok: false, error: "The folder " + folder + " cannot be created: " + error.message };
+    }
+    const finalName = core.filer.uniqueName(name, (candidate) => fs.existsSync(path.join(folder, candidate)));
+    const target = path.join(folder, finalName);
+    if (target === proposal.path) return { ok: false, error: "The file already has this name." };
+    try {
+      moveFile(proposal.path, target);
+    } catch (error) {
+      return { ok: false, error: "Could not move the file: " + error.message };
+    }
+    const entry = {
+      id: crypto.randomUUID(),
+      path: target,
+      name: finalName,
+      folder,
+      originalPath: proposal.path,
+      originalName: proposal.fileName,
+      rule: proposal.rule.id,
+      ruleLabel: proposal.rule.label,
+      values: proposal.values,
+      filedAt: settings.now(),
+      ext: proposal.ext,
+    };
+    filingIndex = core.filer.addEntry(filingIndex, entry);
+    saveFilingIndex();
+    audit({ event: "document-filed", rule: proposal.rule.id, from: proposal.path, to: target });
+    engine.recordInsert({ kind: "filed", trigger: proposal.rule.id });
+    return { ok: true, id: entry.id, from: proposal.path, to: target, name: finalName, folder, rule: proposal.rule };
+  }
+
+  /** Put a filed document back where it came from, under its old name. */
+  function undoFiling(id) {
+    const entry = filingIndex.entries.find((e) => e.id === id);
+    if (!entry) return { ok: false, error: "This filing is no longer in the index." };
+    if (!fs.existsSync(entry.path)) {
+      filingIndex = core.filer.removeEntry(filingIndex, id);
+      saveFilingIndex();
+      return { ok: false, error: "The file is no longer at " + entry.path + "; it was removed from the index." };
+    }
+    const originalDir = entry.originalPath ? path.dirname(entry.originalPath) : entry.folder;
+    const originalName = entry.originalName || path.basename(entry.originalPath || entry.name);
+    try {
+      fs.mkdirSync(originalDir, { recursive: true });
+      const name = core.filer.uniqueName(originalName, (candidate) => fs.existsSync(path.join(originalDir, candidate)));
+      const target = path.join(originalDir, name);
+      moveFile(entry.path, target);
+      filingIndex = core.filer.removeEntry(filingIndex, id);
+      saveFilingIndex();
+      audit({ event: "document-unfiled", rule: entry.rule, from: entry.path, to: target });
+      return { ok: true, from: entry.path, to: target };
+    } catch (error) {
+      return { ok: false, error: "Could not move the file back: " + error.message };
+    }
+  }
+
+  function filingRecent(limit) {
+    const count = Math.floor(Number(limit)) || 50;
+    // Newest first; filings made in the same instant keep reverse index order.
+    return filingIndex.entries.map((e, i) => [e, i]).sort((a, b) => b[0].filedAt - a[0].filedAt || b[1] - a[1])
+      .slice(0, count).map(([e]) => Object.assign({}, e, { values: Object.assign({}, e.values) }));
+  }
+
+  function filingSearch(query, limit) {
+    return core.filer.search(query, filingIndex, limit).map((r) => Object.assign({ score: r.score }, r.entry, { values: Object.assign({}, r.entry.values) }));
+  }
+
+  function filingClear() {
+    const count = filingIndex.entries.length;
+    filingIndex = core.filer.normalizeIndex(null);
+    saveFilingIndex();
+    audit({ event: "filing-index-cleared", entries: count });
+    return { ok: true, removed: count };
+  }
+
+  function filingAddFolder(folder) {
+    const value = String(folder == null ? "" : folder).trim();
+    if (!value) return { ok: false, error: "No folder given." };
+    const own = userSettings.watchFolders.filter((w) => (w && typeof w === "object" ? w.path : w) !== value);
+    own.push({ path: value });
+    saveSettings({ watchFolders: own });
+    return { ok: true, folders: filingFolders() };
+  }
+
+  function filingRemoveFolder(folder) {
+    const value = String(folder == null ? "" : folder).trim();
+    saveSettings({ watchFolders: userSettings.watchFolders.filter((w) => (w && typeof w === "object" ? w.path : w) !== value) });
+    return { ok: true, folders: filingFolders() };
+  }
+
+  /** Turn a policy watch folder off on this desk, or on again. */
+  function filingIgnoreFolder(rawPath, ignore) {
+    const value = String(rawPath == null ? "" : rawPath).trim();
+    const list = userSettings.ignoredFolders.filter((p) => p !== value);
+    if (ignore !== false) list.push(value);
+    saveSettings({ ignoredFolders: list });
+    return { ok: true, folders: filingFolders() };
+  }
+
   function policyInfo() {
     return {
       organization: policy.organization,
@@ -452,6 +655,17 @@ function createAssistant(options) {
     paletteSearch,
     paletteChoose,
     paletteInserted,
+    filingInfo,
+    filingFolders,
+    filingProposal,
+    applyFiling,
+    undoFiling,
+    filingRecent,
+    filingSearch,
+    filingClear,
+    filingAddFolder,
+    filingRemoveFolder,
+    filingIgnoreFolder,
     suggest,
     unsuggest,
     suggestions: () => store.loadSuggestions(),

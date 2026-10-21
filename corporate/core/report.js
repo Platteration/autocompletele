@@ -216,6 +216,8 @@ function organizationShortcuts(policy) {
   for (const sh of policy.library || []) out.push({ trigger: sh.trigger, kind: null });
   for (const doc of (policy.documents && policy.documents.shortcuts) || []) out.push({ trigger: doc.trigger, kind: "document" });
   for (const rule of policy.keywordRules || []) out.push({ trigger: rule.id, kind: "keyword" });
+  const filing = policy.filing || {};
+  for (const rule of (filing.rules || []).concat(filing.fallback ? [filing.fallback] : [])) out.push({ trigger: rule.id, kind: "filed" });
   return out;
 }
 
