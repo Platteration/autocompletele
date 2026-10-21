@@ -80,8 +80,23 @@ test("normalizeReplies keeps usable parts and explains what it dropped", () => {
 test("ownPart drops quoted lines and the thread below a reply header", () => {
   assert.equal(reply.ownPart("Thanks!\n> old text\nMore\n-----Original Message-----\nFrom: x"), "Thanks!\nMore");
   assert.equal(reply.ownPart("Hello\r\nOn Tue, 2 Oct 2026, Ann wrote:\r\nold"), "Hello");
+  assert.equal(reply.ownPart("Thanks.\nOn Mon, 12 Oct 2026 at 10:00, Sam <sam@example.com>\nwrote:\n> old"), "Thanks.", "a header wrapped onto two lines");
+  assert.equal(reply.ownPart("Will do.\n\nBest regards,\nAnn Lee\n\nFrom: Bob\nSent: Monday\nTo: Ann\nSubject: order 555555 refund\n\nI want a refund"), "Will do.\n\nBest regards,\nAnn Lee", "an Outlook header block without the dashes");
+  assert.equal(reply.ownPart("From: our side, we agree.\nThanks"), "From: our side, we agree.\nThanks", "a lone From: line in the body is not a header");
+  assert.equal(reply.ownPart("On Monday I called.\nI wrote: nothing"), "On Monday I called.\nI wrote: nothing");
   assert.equal(reply.ownPart(null), "");
-  assert.equal(reply.ownPart("x".repeat(reply.DEFAULTS.maxChars + 5)).length, reply.DEFAULTS.maxChars);
+  const long = reply.ownPart("Hi Sam,\n" + "x".repeat(reply.DEFAULTS.maxChars) + "\nKind regards,\nJane Doe");
+  assert.equal(long.length, reply.DEFAULTS.maxChars);
+  assert.equal(long.startsWith("Hi Sam,\nxxx"), true, "the first characters are kept, so a sign-off past the limit is lost");
+  assert.equal(reply.extractValues("Hi Sam,\n" + "x".repeat(reply.DEFAULTS.maxChars) + "\nKind regards,\nJane Doe", {}).name, undefined);
+});
+
+test("names: the sign-off is read from the bottom, the greeting from the first lines", () => {
+  const values = reply.extractValues("Hi Sam,\n\nThanks Sam\n\nMy order 123456 is late.\n\nKind regards,\nJane Doe", {});
+  assert.deepEqual(values, { greeted: "Sam", name: "Jane Doe", firstName: "Jane", order: "123456" }, "a thank-you to the recipient is not the sender");
+  assert.equal(reply.extractValues("Subject: late order\nHi Sam,\nmy order 123456 is late", {}).greeted, "Sam", "a copied Subject: line above the greeting");
+  assert.equal(reply.extractValues("Subject: x\nRe: y\nFwd: z\nHi Sam,\nlate", {}).greeted, undefined, "only the first three lines are looked at");
+  assert.equal(reply.extractValues("Hi Sam,\nThanks Sam", {}).name, "Sam", "without a sign-off below, the thank-you line is what there is");
 });
 
 test("extractValues finds each built-in kind in the latest message only", () => {
@@ -109,6 +124,9 @@ test("extractValues: names, references, dates and amounts in other spellings", (
   assert.equal(get("Order no. 55120 is wrong").order, "55120");
   assert.equal(get("order number: ORD-0042-B arrived").order, "ORD-0042-B");
   assert.equal(get("I ordered 3 items, order 3 is wrong").order, undefined, "fewer than three digits is not a reference");
+  assert.equal(get("In order 2026-10-03 we shipped order 777123.").order, "777123", "a date after \"order\" is skipped for the next reference");
+  assert.equal(get("order 12-10-2026 is late").order, undefined);
+  assert.equal(get("invoice 2026-10-03").reference, undefined);
   assert.equal(get("Re case #778812").reference, "778812");
   assert.equal(get("I asked for a refund 220 times").reference, undefined, "refund is not ref");
   assert.equal(get("Invoice INV-2026-0099 attached").reference, "INV-2026-0099");
@@ -131,6 +149,24 @@ test("policy extractors: pattern with group, after a label, and they win over bu
   assert.equal(values.name, "Ms Ito", "a policy extractor replaces the built-in when it finds a value");
   assert.equal(values.order, "123456", "the built-in stays when the policy extractor finds nothing");
   assert.equal(values.firstName, "Ken", "firstName still comes from the built-in sign-off");
+  assert.equal(reply.extractValues("Customer ID:\nC-778\nThanks, Bo", extract).customer, undefined, "`after` reads the label's own line only");
+});
+
+test("a section extractor keeps its override of a built-in when a reply has extractors of its own", () => {
+  const cfg = reply.normalizeReplies({
+    extract: { name: { pattern: "Dear ([^,]+),", group: 1 } },
+    replies: [
+      { id: "plain", keywords: ["parcel"], text: "Hello [[name]]" },
+      { id: "own", keywords: ["parcel"], text: "Hello [[name]] [[tracking]]", extract: { tracking: { pattern: "1Z[A-Z0-9]+" } } },
+      { id: "shadow", keywords: ["parcel"], text: "Hello [[name]]", extract: { name: { pattern: "zzz" } } },
+    ],
+  });
+  const ranked = reply.rank("Dear Ms Ito,\nmy parcel 1ZABC is late.\nBest, Ken Ito", cfg, []);
+  assert.deepEqual(ranked.map((c) => [c.reply.id, c.values]), [
+    ["plain", { name: "Ms Ito" }],
+    ["own", { name: "Ms Ito", tracking: "1ZABC" }],
+    ["shadow", { name: "Ms Ito" }],
+  ], "the reply's extractors are layered on; neither the built-ins nor the section extractors run again");
 });
 
 test("rank orders by keyword hits, keeps policy order on ties and fills blanks", () => {
@@ -205,4 +241,39 @@ test("stats count offered, inserted and edited per reply without mutating the in
   const proto = reply.recordStat({}, "__proto__", "offered");
   assert.equal(Object.getPrototypeOf(proto), Object.prototype);
   assert.deepEqual(Object.keys(proto), ["__proto__"]);
+});
+
+test("bodyOf: a reply's own text, or its shorthand's expansion from the library", () => {
+  assert.equal(reply.bodyOf(config.replies[0], LIBRARY), config.replies[0].text);
+  assert.equal(reply.bodyOf(config.replies[2], LIBRARY), LIBRARY[0].expansion);
+  assert.equal(reply.bodyOf(config.replies[4], LIBRARY), null, "a shorthand that is not in the library has no body");
+  assert.equal(reply.bodyOf(config.replies[2], null), null);
+  assert.equal(reply.bodyOf(null, LIBRARY), null);
+});
+
+test("fill: answers close the open blanks, stay literal, and an empty answer leaves the blank open", () => {
+  const body = "Dear [[firstName]],\n\norder [[order]] by [[promise]]. {cursor}\nBye";
+  const values = { firstName: "Lea" };
+  const open = reply.fill(body, values, {});
+  assert.deepEqual(open.missing, ["order", "promise"]);
+  assert.equal(open.text, "Dear Lea,\n\norder [[order]] by [[promise]]. \nBye", "unanswered blanks stay visible, {cursor} is rendered");
+  const done = reply.fill(body, values, { order: " A-1 ", promise: "{clipboard} [[x]]", firstName: "" });
+  assert.deepEqual(done.missing, []);
+  assert.equal(done.text, "Dear Lea,\n\norder A-1 by {clipboard} [[x]]. \nBye", "answers are trimmed and never rendered");
+  assert.equal(done.cursorOffset, "Dear Lea,\n\norder A-1 by {clipboard} [[x]]. ".length);
+  assert.deepEqual(done.values, { firstName: "Lea", order: "A-1", promise: "{clipboard} [[x]]" });
+  assert.equal(reply.fill(body, values, { firstName: "Ms Roth" }).text.startsWith("Dear Ms Roth,"), true, "a typed answer replaces a found value");
+  assert.deepEqual(reply.fill(body, values, { order: "   " }).missing, ["order", "promise"], "blank answers do not count");
+  assert.deepEqual(reply.fill("No blanks {date}", null, null, { now: new Date(2026, 9, 21) }), { text: "No blanks 2026-10-21", cursorOffset: 20, values: {}, missing: [] });
+  assert.deepEqual(reply.fill(null, null, null).text, "");
+});
+
+test("organizationItems names every reply for usage reports, and report.js picks them up", () => {
+  assert.deepEqual(reply.organizationItems(config), config.replies.map((r) => ({ trigger: r.id, kind: "reply" })));
+  assert.deepEqual(reply.organizationItems(null), []);
+  assert.deepEqual(reply.organizationItems({ replies: [{ id: "" }, "x", { id: "ok" }] }), [{ trigger: "ok", kind: "reply" }]);
+  const orgPolicy = require("../core/org-policy.js");
+  const report = require("../core/report.js");
+  const parsed = orgPolicy.parse({ reply: { replies: [{ id: "late", keywords: ["late"], text: "x" }] } });
+  assert.ok(report.organizationShortcuts(parsed).some((item) => item.trigger === "late" && item.kind === "reply"));
 });

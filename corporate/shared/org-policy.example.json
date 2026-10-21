@@ -66,6 +66,427 @@
     ],
     "fallback": { "label": "Other documents", "name": "[[date]]_[[original]]", "folder": "" }
   },
+  "reply": {
+    "max": 3,
+    "dateOrder": "dmy",
+    "extract": {
+      "customer": {
+        "after": "Customer ID"
+      }
+    },
+    "replies": [
+      {
+        "id": "late-delivery",
+        "label": "Late delivery",
+        "keywords": [
+          "not arrived",
+          "late",
+          "delayed",
+          "still waiting"
+        ],
+        "match": "any",
+        "text": "Dear [[firstName]],\n\nThank you for your message. I am sorry that order [[order]] has not reached you yet. I have asked the carrier for an update and will come back to you by [[promise]].\n\n{cursor}\n\nKind regards,\nExample Logistics Ltd"
+      },
+      {
+        "id": "invoice-copy",
+        "label": "Invoice copy",
+        "keywords": [
+          "invoice"
+        ],
+        "text": "Dear [[firstName]],\n\nPlease find attached a copy of invoice [[reference]] for order [[order]].\n\nKind regards,\nExample Logistics Ltd"
+      },
+      {
+        "id": "returns",
+        "label": "Returns and refunds",
+        "keywords": [
+          "return",
+          "returns",
+          "refund",
+          "money back"
+        ],
+        "shorthand": "ret/"
+      },
+      {
+        "id": "tracking",
+        "label": "Tracking number",
+        "keywords": [
+          "tracking",
+          "track my parcel",
+          "where is my parcel"
+        ],
+        "text": "Dear [[firstName]],\n\nYou can follow parcel [[tracking]] at https://track.example.com/[[tracking]] (customer [[customer]]).\n\nKind regards,\nExample Logistics Ltd",
+        "extract": {
+          "tracking": {
+            "pattern": "\\b1Z[A-Z0-9]{16}\\b"
+          }
+        }
+      }
+    ]
+  },
+  "sheets": {
+    "vocabularies": {
+      "customers": {
+        "values": [
+          "Acme Logistics GmbH",
+          "Birch & Co",
+          "Northern Acme Ltd",
+          "Zed Transport"
+        ],
+        "aliases": {
+          "ACME": "Acme Logistics GmbH",
+          "Birch": "Birch & Co",
+          "NAL": "Northern Acme Ltd"
+        }
+      },
+      "costCentres": {
+        "values": [
+          "CC-100 Logistics",
+          "CC-200 Sales",
+          "CC-300 Warehouse"
+        ],
+        "aliases": {
+          "Sales": "CC-200 Sales"
+        }
+      }
+    },
+    "columns": [
+      {
+        "match": {
+          "header": "^(customer|client)",
+          "sheet": "^Orders"
+        },
+        "vocabulary": "customers"
+      },
+      {
+        "match": {
+          "header": "^cost cent"
+        },
+        "vocabulary": "costCentres"
+      },
+      {
+        "match": {
+          "header": "notes?$"
+        },
+        "kind": "notes"
+      }
+    ],
+    "blocks": [
+      {
+        "trigger": "/exp",
+        "label": "Expense rows",
+        "rows": [
+          [
+            "Date",
+            "Amount",
+            "Cost centre"
+          ],
+          [
+            "",
+            0,
+            ""
+          ]
+        ]
+      },
+      {
+        "trigger": "/vat",
+        "label": "VAT at 19%",
+        "formula": "=ROUND(B2*0.19, 2)"
+      }
+    ]
+  },
+  "forms": {
+    "records": [
+      {
+        "id": "refund-case",
+        "label": "Refund case",
+        "trigger": "refund/",
+        "fields": {
+          "category": "Refund",
+          "priority": "P2",
+          "sla": "48",
+          "notes": "Hi [[customer]], the refund for order [[orderRef]] is on its way. [[reason]]"
+        }
+      },
+      {
+        "id": "complaint",
+        "label": "Complaint",
+        "trigger": "cmp/",
+        "fields": {
+          "category": "Complaint",
+          "priority": "P1",
+          "sla": "24",
+          "notes": "Complaint from [[customer]] about order [[orderRef]]: [[summary]]"
+        }
+      },
+      {
+        "id": "address-change",
+        "label": "Address change",
+        "fields": {
+          "category": "Account",
+          "priority": "P3",
+          "notes": "New delivery address for [[customer]]: [[address]]"
+        }
+      }
+    ],
+    "lookups": [
+      {
+        "id": "orders",
+        "key": "orderRef",
+        "keyPattern": "A-\\d{5}",
+        "rows": [
+          {
+            "orderRef": "A-12345",
+            "customer": "Mary Jones",
+            "email": "mary.jones@example.com"
+          },
+          {
+            "orderRef": "A-54321",
+            "customer": "John Smith",
+            "email": "john.smith@example.com"
+          },
+          {
+            "orderRef": "A-10021",
+            "customer": "Priya Nair",
+            "email": "priya.nair@example.com"
+          }
+        ]
+      }
+    ],
+    "forms": [
+      {
+        "id": "ticket",
+        "label": "Support ticket",
+        "match": {
+          "process": [
+            "zendesk",
+            "chrome"
+          ],
+          "title": "new ticket"
+        },
+        "fields": [
+          {
+            "name": "category",
+            "label": "Category",
+            "selector": "combobox:Category"
+          },
+          {
+            "name": "priority",
+            "label": "Priority",
+            "selector": "combobox:Priority"
+          },
+          {
+            "name": "customer",
+            "label": "Requester",
+            "selector": "edit:Requester"
+          },
+          {
+            "name": "email",
+            "label": "E-mail",
+            "selector": "edit:Email"
+          },
+          {
+            "name": "sla",
+            "label": "SLA hours",
+            "selector": "edit:SLA"
+          },
+          {
+            "name": "notes",
+            "label": "Internal note",
+            "selector": "document:Internal note"
+          }
+        ]
+      }
+    ]
+  },
+  "guard": {
+    "assumeExternal": false,
+    "internalDomains": [
+      "example.com"
+    ],
+    "internalCodes": [
+      "\\bPRJ-[A-Z]{3,8}\\b"
+    ],
+    "packs": [
+      {
+        "id": "pci",
+        "label": "Card data (PCI DSS)",
+        "rules": [
+          {
+            "id": "card-number",
+            "label": "Card number in a message",
+            "detect": [
+              "card-number"
+            ],
+            "severity": "block",
+            "message": "A payment card number is in this message. Card data may only be entered in the payment system.",
+            "fix": {
+              "kind": "remove",
+              "with": "[card number removed]"
+            }
+          }
+        ]
+      },
+      {
+        "id": "gdpr",
+        "label": "Personal data (GDPR)",
+        "rules": [
+          {
+            "id": "national-id",
+            "label": "National ID number to an outside recipient",
+            "detect": [
+              "national-id"
+            ],
+            "countries": [
+              "GB",
+              "ES",
+              "FR"
+            ],
+            "recipients": "external",
+            "message": "A national identification number is going to someone outside the organisation.",
+            "fix": {
+              "kind": "remove"
+            }
+          },
+          {
+            "id": "secrets",
+            "label": "Password or token in a message",
+            "detect": [
+              "secret"
+            ],
+            "severity": "block",
+            "message": "Never send passwords or tokens in a message. Use the password manager's sharing feature."
+          }
+        ]
+      },
+      {
+        "id": "legal",
+        "label": "Legal",
+        "rules": [
+          {
+            "id": "contract-disclaimer",
+            "label": "Contract without the confidentiality notice",
+            "keywords": [
+              "contract",
+              "agreement"
+            ],
+            "unless": [
+              "This message is confidential"
+            ],
+            "message": "You are writing about a contract without the confidentiality notice.",
+            "fix": {
+              "kind": "text",
+              "text": "This message is confidential and intended for the addressee only."
+            }
+          },
+          {
+            "id": "no-guarantees",
+            "label": "Forbidden promise",
+            "detect": [
+              "forbidden-phrase"
+            ],
+            "phrases": [
+              "guaranteed",
+              "100% safe",
+              "risk-free"
+            ],
+            "severity": "info",
+            "message": "Do not promise guarantees; the terms of service say what we commit to.",
+            "fix": {
+              "kind": "remove"
+            }
+          },
+          {
+            "id": "project-codes",
+            "label": "Internal project code to an outside recipient",
+            "detect": [
+              "internal-code"
+            ],
+            "recipients": "external",
+            "message": "An internal project code is going outside the organisation.",
+            "fix": {
+              "kind": "remove",
+              "with": "[project]"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "notes": {
+    "author": "author",
+    "dateOrder": "dmy",
+    "actions": {
+      "heading": "Action items",
+      "patterns": [
+        "TODO",
+        "ACTION"
+      ],
+      "empty": "None"
+    },
+    "documents": [
+      {
+        "id": "minutes",
+        "trigger": "/mins",
+        "label": "Meeting minutes",
+        "title": "Minutes – [[meeting]]",
+        "sections": [
+          {
+            "heading": "Details",
+            "body": [
+              "{weekday} {date}",
+              "Minute taker: [[author]]"
+            ]
+          },
+          {
+            "heading": "Attendees",
+            "body": "- [[attendees]]"
+          },
+          {
+            "heading": "Discussion",
+            "body": "{cursor}"
+          },
+          {
+            "heading": "Decisions"
+          }
+        ]
+      },
+      {
+        "id": "handover",
+        "trigger": "/handover",
+        "label": "Shift handover",
+        "title": "Handover – {weekday} {date}",
+        "sections": [
+          {
+            "heading": "Handing over",
+            "body": "[[author]] to [[incoming]]"
+          },
+          {
+            "heading": "Open items",
+            "body": "{cursor}"
+          },
+          {
+            "heading": "For the next shift"
+          }
+        ],
+        "actions": {
+          "heading": "Follow-ups"
+        }
+      },
+      {
+        "id": "shift-log",
+        "trigger": "/shift",
+        "label": "Shift log",
+        "title": "Shift log – {date}",
+        "sections": [
+          {
+            "heading": "Entries",
+            "body": "{time} [[author]]: {cursor}"
+          }
+        ],
+        "actions": false
+      }
+    ]
+  },
   "learning": { "minCount": 3, "minLength": 20, "minWords": 4 },
   "retention": { "metricsDays": 365, "corpusDays": 90 }
 }

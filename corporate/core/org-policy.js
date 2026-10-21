@@ -12,8 +12,7 @@ const documents = require("./documents.js");
 const metrics = require("./metrics.js");
 const miner = require("./phrase-miner.js");
 const filer = require("./filer.js");
-// Suite modules (work in progress): each parses its own policy section; the
-// shell does not use them yet.
+// Suite modules: each parses its own policy section.
 const SUITE = Object.freeze({
   reply: { module: require("./reply.js"), normalize: "normalizeReplies", lists: ["replies"], maps: ["extract"] },
   sheets: { module: require("./sheets.js"), normalize: "normalizeSheets", lists: ["columns", "blocks"], maps: ["vocabularies"], listKeys: { blocks: "trigger" } },
@@ -146,6 +145,29 @@ function merge(layers) {
   return out;
 }
 
+/**
+ * Typed triggers live in one namespace on a desk: the library, document sets,
+ * forms records and notes documents. The engine tries them in that order, so
+ * a shared trigger silently hides the later owner; say so.
+ */
+function triggerClashes(policy) {
+  const owners = new Map();
+  const claim = (trigger, what) => {
+    if (!trigger) return;
+    if (!owners.has(trigger)) owners.set(trigger, []);
+    owners.get(trigger).push(what);
+  };
+  for (const sh of policy.library) claim(sh.trigger, "library shortcut " + sh.trigger);
+  for (const set of policy.documents.shortcuts) claim(set.trigger, "document set " + set.trigger);
+  for (const record of (policy.forms && policy.forms.records) || []) claim(record.trigger, "forms record " + record.id);
+  for (const doc of (policy.notes && policy.notes.documents) || []) claim(doc.trigger, "notes document " + doc.id);
+  const warnings = [];
+  for (const [trigger, list] of owners) {
+    if (list.length > 1) warnings.push("trigger " + trigger + " is claimed by " + list.join(", ") + "; only the first is reachable by typing");
+  }
+  return warnings;
+}
+
 function pausedOf(value) {
   if (value === true) return { active: true, message: "" };
   if (isObject(value) && value.active !== false) {
@@ -245,6 +267,8 @@ function parse(input) {
   const retention = source.retention && typeof source.retention === "object" ? source.retention : {};
   policy.retention.metricsDays = Math.floor(positive(retention.metricsDays, policy.retention.metricsDays));
   policy.retention.corpusDays = Math.floor(positive(retention.corpusDays, policy.retention.corpusDays));
+  // Last, once every trigger owner is known.
+  policy.warnings.push(...triggerClashes(policy));
   return policy;
 }
 

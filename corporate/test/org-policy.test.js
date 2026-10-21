@@ -47,6 +47,22 @@ test("the filing section is parsed with warnings and merged across layers", () =
   assert.equal(orgPolicy.merge([{ library: [] }]).filing, undefined);
 });
 
+test("a trigger shared by the library, a document set, a forms record or a notes document is warned about", () => {
+  const policy = orgPolicy.parse({
+    library: [{ trigger: "/mins", expansion: "shortcut" }],
+    documents: { shortcuts: [{ trigger: "/sld", documents: [{ path: "x" }] }] },
+    forms: { records: [{ id: "refund", trigger: "/sld", fields: { a: "b" } }, { id: "memo", trigger: "memo/", fields: { a: "b" } }] },
+    notes: { documents: [{ id: "minutes", trigger: "/mins", sections: ["A"] }, { id: "handover", trigger: "memo/", sections: ["B"] }] },
+  });
+  const clashes = policy.warnings.filter((w) => /is claimed by/.test(w));
+  assert.deepEqual(clashes, [
+    "trigger /mins is claimed by library shortcut /mins, notes document minutes; only the first is reachable by typing",
+    "trigger /sld is claimed by document set /sld, forms record refund; only the first is reachable by typing",
+    "trigger memo/ is claimed by forms record memo, notes document handover; only the first is reachable by typing",
+  ]);
+  assert.deepEqual(orgPolicy.parse({ forms: { records: [{ id: "a", trigger: "a/", fields: { x: "y" } }] }, notes: { documents: [{ id: "b", trigger: "b/", sections: ["S"] }] } }).warnings, []);
+});
+
 test("an empty or missing policy is valid and uses defaults", () => {
   for (const input of [undefined, null, {}, "{}"]) {
     const policy = orgPolicy.parse(input);

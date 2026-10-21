@@ -50,7 +50,11 @@ that shows which parts of similar messages change and turns them into
 when certain words are written; document shortcuts such as `/sld` that
 list the files an organisation designates for a job; and document filing,
 which names new files in watched folders from the organisation's naming rule
-and moves them where they belong, after the person confirms. Everything is driven by
+and moves them where they belong, after the person confirms; and five
+dedicated apps on the same desk: Reply (prewritten replies filled from the
+copied message), Sheets (column-aware completion in Excel and Google Sheets),
+Forms (fill a whole form from a record), Guard (compliance warnings with
+masked findings) and Notes (minutes and logs in a house style). Everything is driven by
 one organisation policy file (`corporate/shared/ORG-POLICY.md`). See
 [corporate/README.md](corporate/README.md) for the assessment, architecture
 and current status. Rules for which edition a change touches are in

@@ -256,3 +256,37 @@ test("auditEntry and summarise keep counts only", () => {
   assert.equal(summary.skipped, 4);
   assert.deepEqual(guard.summarise(undefined), { total: { raised: 0, accepted: 0, dismissed: 0, unanswered: 0 }, byPack: [], byRule: [], skipped: 0 });
 });
+
+test("assumeExternal lets external rules fire when no recipient is known; known recipients still decide", () => {
+  const section = { internalDomains: ["example.com"], assumeExternal: true, packs: [{ id: "p", rules: [{ id: "e", keywords: ["contract"], message: "m", recipients: "external" }] }] };
+  const assumed = guard.normalizeGuard(section);
+  assert.equal(assumed.assumeExternal, true);
+  assert.deepEqual(assumed.warnings, []);
+  assert.deepEqual(ids(guard.check("the contract", {}, assumed)), ["e"], "no recipients known: assumed external");
+  assert.deepEqual(ids(guard.check("the contract", { recipients: [] }, assumed)), ["e"]);
+  assert.deepEqual(ids(guard.check("the contract", { recipients: ["a@example.com"] }, assumed)), [], "known internal recipients win over the assumption");
+  assert.deepEqual(ids(guard.check("the contract", { recipients: ["a@customer.test"] }, assumed)), ["e"]);
+  assert.equal(guard.normalizeGuard(Object.assign({}, section, { assumeExternal: undefined })).assumeExternal, false, "off by default");
+  assert.equal(config.assumeExternal, false);
+  assert.deepEqual(ids(guard.check("the contract", {}, config)), [], "off: no recipients known means no external warning");
+  const odd = guard.normalizeGuard(Object.assign({}, section, { assumeExternal: "yes" }));
+  assert.equal(odd.assumeExternal, false);
+  assert.deepEqual(odd.warnings, ["guard assumeExternal must be true or false; using false"]);
+  assert.equal(guard.treatAsExternal([], assumed), true);
+  assert.equal(guard.treatAsExternal(undefined, config), false);
+  assert.equal(guard.treatAsExternal(["Team chat"], config), true, "an unreadable recipient counts as external");
+  assert.equal(guard.treatAsExternal(["x@corp.example.org"], GUARD), false, "a raw section is normalised on the way");
+});
+
+test("organizationItems names every rule with kind guard", () => {
+  assert.deepEqual(guard.organizationItems(config), [
+    { trigger: "card", kind: "guard" }, { trigger: "ids", kind: "guard" }, { trigger: "ids-and-phones", kind: "guard" },
+    { trigger: "contract", kind: "guard" }, { trigger: "promises", kind: "guard" }, { trigger: "codes", kind: "guard" }, { trigger: "secrets", kind: "guard" },
+    { trigger: "promises-dup", kind: "guard" }, { trigger: "emptyfix", kind: "guard" }, { trigger: "notrigger", kind: "guard" },
+  ]);
+  assert.deepEqual(guard.organizationItems(null), []);
+  assert.deepEqual(guard.organizationItems({ packs: [{ id: "p", rules: [{ id: "k", keywords: ["x"], message: "m" }] }] }), [{ trigger: "k", kind: "guard" }], "a raw section works too");
+  const report = require("../core/report.js");
+  const policy = require("../core/org-policy.js").parse({ guard: { packs: [{ id: "p", rules: [{ id: "k", keywords: ["x"], message: "m" }] }] } });
+  assert.deepEqual(report.organizationShortcuts(policy).filter((item) => item.kind === "guard"), [{ trigger: "k", kind: "guard" }]);
+});

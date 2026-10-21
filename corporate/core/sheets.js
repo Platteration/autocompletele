@@ -1,5 +1,5 @@
-// actle Sheets core (work in progress): column-aware completion for
-// spreadsheet cells. A column bound to a controlled vocabulary (customers,
+// actle Sheets core: column-aware completion for spreadsheet cells. A
+// column bound to a controlled vocabulary (customers,
 // cost centres, product codes) completes to the organisation's one spelling;
 // other columns complete from their own values, notes columns from recurring
 // sentences; a `/` trigger inserts an approved formula or block of rows. Pure:
@@ -377,4 +377,61 @@ function importCsv(text) {
   return Object.assign(builder.done(), { warnings });
 }
 
-module.exports = { KINDS, DEFAULTS, normalizeSheets, columnFor, createColumnProfile, complete, blockFor, importCsv, formulaLike };
+/**
+ * Everything the add-in and the dashboard's "Try it" need for one cell: the
+ * column rule, the column's learned profile (counts only), the completions
+ * for the text typed, and the block or formula whose trigger ends at the
+ * caret. input: { header, sheet, text, values (a list, or text one per line), limit }
+ */
+function suggest(input, config) {
+  const given = isObject(input) ? input : {};
+  const values = Array.isArray(given.values) ? given.values : String(given.values == null ? "" : given.values).split(/\r?\n/);
+  const column = columnFor(given.header, given.sheet, config);
+  const profile = createColumnProfile(values);
+  const text = String(given.text == null ? "" : given.text);
+  const context = { profile, config, limit: given.limit };
+  if (column) context[column.vocabulary ? "vocabulary" : "kind"] = column.vocabulary || column.kind;
+  const hit = blockFor(text, config);
+  return {
+    column,
+    profile: { kind: profile.kind, total: profile.total, counts: profile.counts, distinct: profile.distinct.length, sentences: profile.sentences.length },
+    completions: complete(text, context),
+    block: hit ? Object.assign({ start: hit.start }, hit.block) : null,
+  };
+}
+
+/** The section as the add-in takes it: the three lists and nothing else. A parsed section comes back unchanged. */
+function exportConfig(section) {
+  const config = normalizeSheets(section);
+  return JSON.parse(JSON.stringify({ vocabularies: config.vocabularies, columns: config.columns, blocks: config.blocks }));
+}
+
+/**
+ * Read a configuration pasted into the add-in: an exported section, a whole
+ * policy file (its `sheets` section is used), or the JSON text of either.
+ * Bad JSON is a warning and an empty configuration, never a throw.
+ */
+function parseConfig(input) {
+  const warnings = [];
+  let source = input;
+  if (typeof input === "string") {
+    try {
+      source = input.trim() ? JSON.parse(input) : undefined;
+    } catch (error) {
+      warnings.push("configuration is not valid JSON: " + error.message);
+      source = undefined;
+    }
+  }
+  if (isObject(source) && isObject(source.sheets) && !["vocabularies", "columns", "blocks"].some((key) => key in source)) source = source.sheets;
+  const config = normalizeSheets(source);
+  warnings.push(...config.warnings);
+  delete config.warnings;
+  return { config, warnings };
+}
+
+/** Organisation items a usage report may name: the block and formula triggers. */
+function organizationItems(section) {
+  return (section && Array.isArray(section.blocks) ? section.blocks : []).map((block) => ({ trigger: block.trigger, kind: "block" }));
+}
+
+module.exports = { KINDS, DEFAULTS, normalizeSheets, columnFor, createColumnProfile, complete, blockFor, importCsv, formulaLike, suggest, exportConfig, parseConfig, organizationItems };

@@ -17,6 +17,17 @@
 //     simulate(sim),                      // optional headless walk-through for desktop/simulate.js
 //   }
 //
+// Conventions the five apps share (keep them when adding an app):
+// * A typed trigger is removed from the engine's field and session text at
+//   the hit, so recordInsert gets typed: "" and the trigger's length goes in
+//   spentKeystrokes (when backspaces > 0). From the palette nothing was typed.
+// * A popover closes before the paste: shell.closePopover(), then await
+//   shell.settle() (gives the focus back), then shell.sender.replace(...).
+// * Blank answers travel as { answers: { name: value } } from inputs named
+//   "answer:<name>" (Notes still uses { values } and "value:<name>").
+// * Audit entries hold ids and counts only. Reply, Forms, Notes and Sheets
+//   write "<app>-<verb>" events; Guard writes event "guard" with an outcome.
+//
 // The host handed to createApp:
 //   { store, engine, ledger, policy: () => policy, settings: () => settings, saveSettings(next),
 //     audit(entry), now(), log(line), recordInsert(event), dataDir }

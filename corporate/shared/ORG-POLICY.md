@@ -39,15 +39,137 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `reporting.includeApps` | `true` adds per-application totals to usage reports (default `false`). |
 | `retention.metricsDays` | Days of statistics kept on disk (default 365). |
 | `retention.corpusDays` | Days of learning text kept on disk (default 90). |
+| `reply.replies[]` | One prewritten reply: `id` (defaults to its position; a duplicate gets `-dup`), `label` (defaults to the id), `keywords` (list, required; whole words in the copied message, case-insensitive unless `caseSensitive` is true), `match` (`any` default, or `all`), and exactly one of `text` (may carry `[[blanks]]`, `{cursor}` and the other placeholders) or `shorthand` (a trigger from the merged library; a reply whose shorthand is not in the library is never offered and is listed as a warning on the Reply tab). |
+| `reply.replies[].extract` | Extractors for this reply only, same shape as `reply.extract`, layered on top of the section's values: one with the same name wins over the section extractor or the built-in blank when it finds a value. The built-ins and the section extractors are not run again for the reply, so a section extractor's override of a built-in stays. |
+| `reply.extract` | How blanks are filled from the message, by blank name: `{ "pattern": "regex", "group": n }` (first match, case-insensitive; `group` defaults to 0, the whole match) or `{ "after": "Label" }` (what follows the label on the same line, without the separator, at the first occurrence where something follows it; a value on the line below the label is not found); a bare string is a pattern. A policy extractor wins over the built-in blank of the same name when it finds a value. Built-in blanks: `name` and `firstName` (from the last sign-off line, such as "Kind regards," followed by the name), `greeted` (from a greeting in the first three lines), `order`, `reference` (ticket, case, ref, invoice; at least three digits, never a date), `date` (first date, ISO), `amount` (first amount with a currency). |
+| `reply.max` | How many replies the popover lists (default 3, 1 to 10). |
+| `reply.dateOrder` | `dmy` (default) or `mdy`: how `3/4/2026`-style dates in the message are read. |
+| `sheets.vocabularies` | Object of name → `{ values: [...], aliases: { alias: value } }`, or a plain list of values. A vocabulary without a usable values list, or with no usable value, is skipped with a warning. |
+| `sheets.vocabularies.<name>.values` | The organisation's one spelling of each value. Compared case-insensitively: the first spelling is kept and a different one is warned about; empty values and values a cell would read as a formula (leading `=`, `+`, `-`, `@`, tab or CR, unless a plain signed number) are skipped. |
+| `sheets.vocabularies.<name>.aliases` | alias → value. The value must be in the vocabulary; an alias that is itself another value, or already means another value, is skipped. Typing an alias completes to the value. |
+| `sheets.columns` | List of rules tried in policy order; the first whose patterns hold decides how a column completes. Each needs a `match` object and exactly one of `vocabulary` or `kind`. |
+| `sheets.columns[].match.header`, `.sheet` | Case-insensitive regular expressions tested against the column header (row 1) and the sheet name; at least one is required, an omitted one matches anything; an invalid pattern skips the rule. |
+| `sheets.columns[].vocabulary` | Name of a vocabulary above (unknown names skip the rule). The column offers the vocabulary's values first, then its own values; column spellings and aliases of a vocabulary value count towards it and are not offered themselves. A vocabulary column whose values look like numbers or dates still completes from the vocabulary. |
+| `sheets.columns[].kind` | `label`, `notes`, `number` or `date`. `label` or `notes` override what the column's values suggest (`notes` completes only the sentence being typed, from sentences that recur in at least 2 cells); `number` or `date` switch completion off for the column, since a rule with a kind has no vocabulary. |
+| `sheets.blocks` | List of `{ trigger, label, rows }` or `{ trigger, label, formula }`. The trigger starts with `/`, has no spaces and is unique; it fires only when it ends at the caret after a word boundary. `label` defaults to the trigger. |
+| `sheets.blocks[].rows` | Rows of text, numbers or booleans written as a rectangle from the selected cell (ragged rows are padded with `""`; text cells get the text format, numbers and booleans the general one); at most 10,000 cells. |
+| `sheets.blocks[].formula` | Starts with `=`; written into the selected cell as a formula. A block with both `rows` and `formula` is skipped. |
+| `forms.records[]` | Named field sets. `id` (a repeated id is renamed with `-dup` and warned), `label` (default: the id), `trigger` (optional; typed to open the record; a trigger another record already has is dropped with a warning and the record stays palette-only; at typing time a library shortcut or document set with the same trigger wins), `fields` (field name → text; numbers and booleans are written as text, other values are dropped with a warning; a record without fields is dropped). Values may hold `[[blank]]` templates, filled from a lookup row or the person's answers. |
+| `forms.lookups[]` | Local lists that fill fields from a key. `id`, `key` (required: the column that holds the key), `keyPattern` (optional regular expression; a key is also found inside longer text, such as a copied subject line, where it stands as a whole word; an invalid pattern is dropped with a warning and exact matching stays), `rows[]` (objects; a row without the key column, or repeating a key case-insensitively, is dropped with a warning; non-text values are dropped). A lookup without usable rows is dropped. The row's columns fill form fields and record blanks of the same name. |
+| `forms.forms[]` | Windows that are forms. `id`, `label`, `match.process` (one name or a list; paths and `.exe` are ignored) and/or `match.title` (regular expression, case-insensitive): a form needs at least one of them, and the first form whose conditions all hold is used. `fields[]`: `name`, `label` (default: the name), `selector` (required), listed in the application's Tab order. The form decides which fields are filled and in which order; a repeated field name and a field without name or selector are dropped with a warning; a form without fields is dropped. The desktop shell shows selectors but does not use them: the caret has to be in the form's first field, and the values are typed in Tab order with a Tab pressed for every field in between that has no value. |
+| `guard.assumeExternal` | `true` treats a message whose recipients are unknown as going outside the organisation, so rules with `recipients: "external"` fire while typing (the desktop shell cannot read recipients). Default `false`: those rules then fire only in the dashboard's "Try it" box, where recipients are typed in. Known recipients always decide. Anything but `true` or `false` warns and uses `false`. |
+| `guard.internalDomains[]` | Domain names whose addresses count as inside the organisation (a leading `@`, `*` or `.` is dropped, case ignored, subdomains included). A recipient without a readable `@domain` counts as external. An entry that is not a domain name is skipped with a warning. Without any, every known recipient counts as external, warned when a rule needs it. |
+| `guard.internalCodes[]` | Regular expressions for internal project codes, used by the `internal-code` detector. An invalid pattern is skipped with a warning; a rule with `detect: ["internal-code"]` is skipped when the list is empty. |
+| `guard.packs[]` | Rule packs: `id` (default `pack-<n>`, a duplicate gets `-dup`), `label`, `rules[]`. A pack without a usable rule, or that is not an object, is skipped with a warning. |
+| `guard.packs[].rules[]` | `id` (default `<pack>-<n>`, a duplicate gets `-dup`), `label`, `message` (required), `keywords` with `match` `any` (default) or `all` and `caseSensitive` (default false), `detect` (detectors below), `unless` phrases that silence the rule when one appears anywhere in the field text (case and spacing ignored), `apps` (process names the rule is limited to; the "Try it" box needs the application typed in to try them), `severity` `warn` (default), `info` or `block` (a label: nothing is blocked), `recipients` `any` (default) or `external`. A rule needs keywords or detectors and a message, else it is skipped with a warning; an unreadable severity or recipients value warns and uses the default. Each rule fires once per field until the focus moves. |
+| `guard.packs[].rules[].detect` | `card-number` (Luhn check), `iban` (mod 97), `email`, `phone`, `national-id` (with `countries` from US, GB, ES, FR; all four by default; unknown countries warned, a rule with none supported skipped), `forbidden-phrase` (needs `phrases`), `internal-code` (needs `internalCodes`), `secret` (labelled passwords and tokens, long tokens). Findings are shown masked; a secret shows only its label and stars. |
+| `guard.packs[].rules[].fix` | `{ "kind": "text", "text": "…", "position": "end" (default) or "start" }`, `{ "kind": "shorthand", "trigger": "…" }` or `{ "kind": "remove", "with": "…" }` (a plain string is a text fix). Text at the end and a shortcut are typed at the caret and counted as a `guard` insert; a `remove` fix and a text fix at the start put a corrected copy of what was typed in the field on the clipboard, and are refused when the field holds 4,000 characters or more (the engine keeps only the last 4,000). Every fix is refused once the focus moved since the warning was raised. A shorthand fix uses the policy library's shortcut (the person's own only when the policy has none with that trigger) and refuses a shortcut with `[[blanks]]`. An unusable fix is dropped with a warning; the rule stays, without a Fix button. |
+| `notes.author` | Name of the blank that is prefilled with the person's name and remembered after each insert (default `author`). Must be a blank name (`author` or `[[author]]`, no brackets or line breaks inside), else it is ignored with a warning. |
+| `notes.dateOrder` | `dmy` (default) or `mdy`: how `3/11/2026`-style dates in due phrases are read. ISO dates and written months are unambiguous. Anything else is ignored with a warning. |
+| `notes.actions` | The action block: `heading` (default `Action items`), `patterns` (words that make a sentence an action item, default `TODO`, `ACTION`; empty entries are dropped with a warning), `empty` (the line written when there are no items, default `None`). `false` switches the block off by default; a document with its own `actions` object switches it back on for that document. A value that is not an object or `false` is ignored with a warning. |
+| `notes.documents[]` | `id` (defaults to `notes-<index>`; a duplicate gets `-dup`), `trigger` (required and unique; the same boundary rule as shortcuts; a library shortcut or a document set with the same trigger wins), `label` (defaults to the id), `title` (a template written as `# title`), `sections[]` and optional `actions` (the document's own `heading`/`patterns`/`empty`, or `false` to switch the block off for this document; an invalid value inherits the policy's). A document without a trigger, with a duplicate trigger or without a usable section is dropped with a warning. |
+| `notes.documents[].sections[]` | A string (a heading) or `{ "heading", "body", "repeat" }`; `body` is a string or a list of lines. Text may hold `[[blank]]`, `{date}`, `{time}`, `{datetime}`, `{weekday}` and `{cursor}`. A list line holding one blank alone (`- [[attendees]]`) is written once per value; `repeat: true` writes the section once per value of its list blanks, and a list blank with fewer values than copies stays open in the later copies (the popover says how many values it needs; one plain value is written into every copy). A section with neither heading nor body is dropped with a warning. |
 
-## Suite sections (work in progress)
+## The suite
 
-`reply`, `sheets`, `forms`, `guard` and `notes` are read by the parser for
-the other apps of the business suite (see the corporate README, "The
-suite"). Invalid parts are reported as warnings like every other section,
-and layers merge their lists by id. Nothing in the desktop app acts on them
-yet, and their shapes are drafts: the module headers in `core/` describe
-them until they are settled and documented here.
+actle Filer (document filing, above) and the five apps below share one engine,
+one policy file and one desk: each reads its own section of the policy
+(invalid parts are warnings, never a refusal; layers merge lists by id),
+registers its tab, popovers, tray and palette entries through
+`desktop/apps/`, and counts what it inserts in the same statistics and usage
+reports (metric kinds `reply`, `form`, `guard`, `notes`). A typed trigger is
+one namespace across the library, document sets, forms records and notes
+documents; a shared trigger is a warning and only the first owner (in that
+order) can be typed.
+
+## actle Reply
+
+The desk cannot read the compose window, so the person copies the message
+they are answering and chooses "Reply to the copied message…" in the tray
+menu or "Reply to copied message" in the search palette. Quoted lines and
+everything below "On … wrote:" (one line or wrapped onto two), "-----Original
+Message-----" or a From:/Sent:/To:/Subject: header block are dropped; the
+first 20,000 characters of the rest are used. The replies whose keywords
+appear are listed best fit first, at most `reply.max`, with their blanks
+filled from the message. Blanks the message does not answer are asked in the
+popover; a reply is never pasted while one is open, and typed answers and
+found values are inserted literally. Enter closes the popover, then pastes
+the text through the clipboard where the person was writing; a paste the
+desk cannot perform is reported by actle's own notification and counts
+nothing. Nothing is offered when the clipboard is empty, no reply fits, the
+policy has no replies, or actle is paused.
+
+Stored on the desk: `apps/reply.json` with offered and inserted counts per
+reply id; one metrics line per paste (kind `reply`, the reply id, keystrokes
+saved = the reply's length minus the palette query and what was typed into
+the blanks); one audit line per paste or counts reset with the reply id, how
+many candidates were listed and how many blanks were answered. Never stored:
+the copied message, the values found in it, the answers typed or the pasted
+text. The "Try it" box ranks a pasted message without counting or storing
+anything. Usage reports name reply ids as organisation items (kind `reply`).
+
+## actle Sheets
+
+Column-aware completion in Excel and Google Sheets from the `sheets` section. The
+desk cannot see cells: its **Sheets** tab shows the section (vocabularies, column
+rules, blocks), tries a completion against pasted column values and exports the
+section as `apps/sheets-config.json` for the add-in in `corporate/sheets-addin/`,
+whose Settings take that file. An export that cannot be written is reported, never thrown.
+
+In a spreadsheet, the selected cell's displayed text, its header (row 1) and the
+column's displayed values (first 5,000 rows, minus the cell's own row) are read;
+vocabulary values come first (an alias or another spelling completes to the
+organisation's one spelling), then the column's own values by frequency, prefix
+before substring matches, 8 at most, never the text typed. A completion is written
+as text (number format `@`); a notes cell whose typed start looks like a formula
+(`=`, `+`, `-`, `@`) is left alone with a message. A `/` trigger typed in the pane
+inserts the block's rows or formula at the selected cell.
+
+Stored: the configuration in the workbook's document settings (Excel) or the
+spreadsheet's document properties (Google, pieces of at most 8,192 UTF-8 bytes,
+count written last), plus a copy in the browser's localStorage; on the desk,
+`apps/sheets-config.json` and the last export's time and counts (`apps/sheets.json`);
+the audit gets `sheets-config-exported` with counts only. Never stored or sent: cell
+contents, what is typed in the pane or in "Try it". No data leaves the spreadsheet
+(the Excel pane loads Office.js from Microsoft's CDN; nothing else is fetched). No
+metrics are recorded for Sheets, because the desk never inserts text for it.
+
+## actle Forms
+
+Fill a whole form at once from a named record. Section `forms` (`records`, `lookups`, `forms`), parsed by `core/forms.js` and run by `desktop/apps/forms/`.
+
+On a desk: with the caret in the form's first field, typing a record's trigger, or picking the record in the search palette (a record without a trigger is listed as `form:<id>`), opens the plan popover. It names the form matched to the window that had the focus; with no match the record's fields are filled in record order. The Reference box runs the lookups (exact key, or a key pattern inside longer text); when the popover opens the clipboard is tried once and a key found there pre-fills the reference. The row's columns fill form fields of the same name and the record's `[[blanks]]`; blanks still open are asked in the popover, which also lists the fields Tab will pass over. Fill is refused, with the popover kept open, while a blank is open or the form has none of the record's fields. Otherwise the popover closes first, so the keys reach the form and not actle's own window; the Electron shell then waits 150 ms for the focus to return, each value is pasted in Tab order with one Tab per form field between two values, and the first paste deletes the typed trigger (on its own when the first value belongs to a later field). Selectors are shown, not used. A key that fails stops the fill: a notification names the field it stopped at, nothing is counted or stored, and there is no retry from the popover. A complete fill is one `form` insert named by the record id (an own record's fill: `own-record`), with the typed trigger, a typed reference and typed answers subtracted. A paused policy offers no record.
+
+Stored in `apps/forms.json`: own records accepted from proposals (id `own-` + 8 hex characters of the proposal digest, label, trigger, fields, the form learned on, when); fills made on a matched form as the form id and the field values, at most 500 (oldest dropped); dismissed proposals as `sha256:` digests. The file is plain JSON, so names and e-mail addresses from lookup rows are readable on the desk (the learning corpus, by contrast, is encrypted). The audit file gets `form-filled`, `form-record-accepted`, `form-proposal-dismissed`, `form-record-deleted` and `form-sessions-cleared` with ids and counts.
+
+Never stored: the value of a field whose name contains, as a whole word (split at case changes, digits and punctuation), password, passwd, passcode, passphrase, pwd, PIN, secret, token, OTP or API key (`userPin`, `api-key` and `password2` count; `secretary`, `tokenizer` and `pinned` do not); a value the capture scrubber would mask (card numbers, labelled secrets); a fill made without a matched form; the clipboard text (only a key found in it travels, in the popover state); a value, reference or answer in the audit file.
+
+Learning: field sets filled together in at least 3 fills of one form with at least 2 constant fields are proposed; text that differs from fill to fill becomes a blank. A proposal whose fields equal an existing record (policy or own), or one that was dismissed, is not shown. Accepting needs a trigger of at most 40 characters without spaces that no record, library shortcut, document set or notes document uses; without a label the proposal's own label is kept. A policy record with an own record's id hides the own record (warned on the tab); one with its trigger takes the trigger and the own record stays palette-only.
+
+Limits: nothing is read from the form, so the caret must be in the form's first field when the trigger is typed and a form's fields must be listed in the application's Tab order; the Forms tab shows the first 20 rows of a lookup; there is no tray entry.
+
+## Guard
+
+actle Guard checks what a person types against the organisation's rule packs (policy section `guard`, parsed by `core/guard.js`, desktop app `desktop/apps/guard/`). At every word end the engine hands the text typed or inserted in the current field since it got the focus (the last 4,000 characters, held in memory only, and only while the policy has rule packs) to the core. A rule that fires opens the "Before you send" window, which never takes the focus, with the rule's label, a severity tag, the message, the findings masked (a card number shows its last four digits, a secret only its label and stars), a Fix button when the rule has one, and Dismiss. The shell shows one such window at a time: a warning or offer that fires at a later word end replaces it, and the warnings left in it count as unanswered. Each rule fires once per field until the focus moves. A severity is a label; nothing is blocked.
+
+Fixes: a text fix at the end and a shorthand fix are typed at the caret and counted as a `guard` insert (keystrokes saved = the inserted text). A `remove` fix and a text fix at the start cannot edit text already in the field, because the shell only types at the caret: a corrected copy of what actle saw typed in the field goes to the clipboard with a notification saying it covers only that text, to paste over it; nothing is counted. When the field holds 4,000 characters or more the copy would start mid-word, so the clipboard fix is refused with a message to correct by hand. Every fix is refused once the focus moved since the warning was raised (the window stays open across applications), so nothing is ever typed into another application; Dismiss still answers it. A shorthand fix uses the policy library's shortcut (the person's own only when the policy has none with that trigger) and refuses a shortcut with `[[blanks]]`, telling the person to type the trigger. While a fix is pasting, the window takes no other answer.
+
+Recipients: the shell cannot read them, so rules with `recipients: "external"` fire while typing only when `guard.assumeExternal` is `true`. The Guard tab's "Try it" box runs the same check on a pasted text with recipients (comma-separated) and, optionally, an application typed in, and counts and audits nothing.
+
+Stored: one line per outcome in `audit.jsonl` (`event: "guard"`, rule id, pack id, `raised`, `fixed` or `dismissed`, time), and for a typed fix one metrics entry (kind `guard`, rule id, source `organization`), which usage reports name per rule. Never stored: the field text, recipients, findings (not even masked), the Try-it text.
+
+Limits: Fix closes the window, so other warnings shown with it count as unanswered; so do warnings whose window was replaced by a later one or was still open when actle quit. Pasted text, a mail client's signature and text typed before the field got the focus are not seen and are not in a clipboard copy. While the organisation pauses actle, nothing is typed into the engine and nothing is checked.
+
+## actle Notes
+
+Minutes, handovers and logs in the organisation's house style. Policy section `notes`; desktop app `desktop/apps/notes/`.
+
+* **Insert a document.** Type its `trigger` in any application (same boundary rule as shortcuts; a library shortcut or a document set with the same trigger wins), or pick the document in the search palette. A popover asks for the document's blanks: one input each, the `author` blank prefilled from the person's own setting, a list blank (a list line of its own such as `- [[attendees]]`, or a blank used only in `repeat` sections) as one comma-separated line. Insert renders the title, the sections, `{date}`, `{time}`, `{weekday}` and the answers, closes the popover so the editor has the focus again, deletes the typed trigger and pastes the note; the caret goes to `{cursor}`, else the first empty section, else the end of the sections. A document whose `actions` are on gets an empty action block at the end unless one of its sections already carries that heading. Nothing is inserted while a blank is empty: the popover names the missing ones, and a list blank of a `repeat` section with fewer values than the section has copies is named with its counts (`owner (2 of 3 values)`). A paste the sender could not do is reported by a notification; a fault while counting an insert that already reached the editor is logged and notified, never shown as a failed insert.
+* **Action items.** The editor cannot be read, so the person copies the whole note and chooses "Update action items in the copied note" in the tray menu (or the palette entry). Sentences with an owner (`@name`, or a capitalised name followed by "will" or "to"), a due phrase ("by Friday", "tomorrow", "by 3 November 2026", "next week") or one of `actions.patterns` are collected under `actions.heading`, with due dates written as ISO where a weekday or date was given. The block is replaced where it stands or appended; lines typed into it by hand are kept; running it twice changes nothing. The result goes back to the clipboard with a notification and the person pastes over the note. A document's own `actions.heading` is used when the note holds a block under it, else the policy's. When no items are found and the note has no block, the clipboard is left alone.
+* **Statistics.** An inserted note is counted under kind `notes` with the document `id` (source organisation): the pasted length minus the typed trigger, the palette query and the answers typed into the blanks (a prefilled author is not typed). Clipboard updates count nothing: actle typed nothing. Usage reports name documents by `id`.
+* **Stored.** `settings.json`: `notesAuthor`, the author last inserted with or saved on the Notes tab. `apps/notes.json`: inserts per document id and the number of clipboard updates. `audit.jsonl`: `notes-inserted` (document id, via, number of blanks answered, keystrokes saved) and `notes-actions-updated` (via, number of items).
+* **Never stored.** The note, its headings, the answers and the clipboard text are written nowhere by actle; the dashboard's "Try it" box works on the pasted text in memory only.
+* **Limits.** The document a copied note came from is not known: only its block heading is matched. Dates in due phrases follow `dateOrder`. `paused` stops the triggers and palette items (engine and assistant) and the tray entry and Insert (the app). A document without blanks still opens the popover (Enter inserts it). Closing the popover gives the editor the focus back on Windows and Linux; on macOS only the shell can hide actle's own windows, which the app cannot do. Phrasings from earlier notes (`core/notes.js` `phrasings`) are not offered: no corpus of notes is kept.
 
 ## Central distribution (signed policies)
 

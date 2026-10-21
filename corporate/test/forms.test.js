@@ -173,3 +173,9 @@ test("learnFieldSets proposes the fields filled together, with varying text as b
   assert.deepEqual(fromProposal.warnings, [], "a proposal is a valid record");
   assert.deepEqual(forms.plan(fromProposal.records[0], config.forms[0], { values: { name: "Mary" } }).ready, true);
 });
+
+test("organizationItems names every record by id as a form item, so usage reports can list unused records", () => {
+  assert.deepEqual(forms.organizationItems(config), [{ trigger: "refund", kind: "form" }, { trigger: "complaint", kind: "form" }, { trigger: "refund-dup", kind: "form" }]);
+  assert.deepEqual(forms.organizationItems(null), []);
+  assert.deepEqual(forms.organizationItems({ records: [{ id: "" }, null, { id: "x", fields: {} }] }), [{ trigger: "x", kind: "form" }]);
+});

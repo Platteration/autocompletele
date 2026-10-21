@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  actle Sheets: Office task-pane add-in manifest for Excel.
+  Placeholders to replace before sideloading or publishing:
+    - Id: 7b1f6c9a-0000-4000-8000-000000000001 is a placeholder GUID; generate your own.
+    - https://localhost:3000 is where `taskpane.html`, `pane.js`, `pane.css`, `dist/sheets-core.js`
+      and the icons must be served over HTTPS (any static server with a certificate Excel trusts).
+    - The icon URLs point at files this folder does not ship (assets/icon-16.png, 32, 64, 80).
+-->
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+  <Id>7b1f6c9a-0000-4000-8000-000000000001</Id>
+  <Version>0.1.0.0</Version>
+  <ProviderName>actle</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="actle Sheets"/>
+  <Description DefaultValue="Column-aware completion from your organisation's vocabularies, and blocks and formulas by trigger."/>
+  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://localhost:3000/README.md"/>
+  <AppDomains>
+    <AppDomain>https://localhost:3000</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="ExcelApi" MinVersion="1.7"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="actle.Group">
+                <Label resid="actle.Group.Label"/>
+                <Icon>
+                  <bt:Image size="16" resid="actle.Icon.16"/>
+                  <bt:Image size="32" resid="actle.Icon.32"/>
+                  <bt:Image size="80" resid="actle.Icon.80"/>
+                </Icon>
+                <Control xsi:type="Button" id="actle.OpenPane">
+                  <Label resid="actle.OpenPane.Label"/>
+                  <Supertip>
+                    <Title resid="actle.OpenPane.Label"/>
+                    <Description resid="actle.OpenPane.Tip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="actle.Icon.16"/>
+                    <bt:Image size="32" resid="actle.Icon.32"/>
+                    <bt:Image size="80" resid="actle.Icon.80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>actle.Pane</TaskpaneId>
+                    <SourceLocation resid="actle.Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="actle.Icon.16" DefaultValue="https://localhost:3000/assets/icon-16.png"/>
+        <bt:Image id="actle.Icon.32" DefaultValue="https://localhost:3000/assets/icon-32.png"/>
+        <bt:Image id="actle.Icon.80" DefaultValue="https://localhost:3000/assets/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="actle.Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="actle.Group.Label" DefaultValue="actle"/>
+        <bt:String id="actle.OpenPane.Label" DefaultValue="Sheets"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="actle.OpenPane.Tip" DefaultValue="Complete cells from your organisation's vocabularies and insert blocks or formulas by trigger."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

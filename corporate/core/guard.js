@@ -1,4 +1,4 @@
-// actle Guard (work in progress): compliance checks on what a person is about
+// actle Guard: compliance checks on what a person is about
 // to send, in any application. Administrators ship rule packs per regulation
 // in the policy; a rule combines keywords and detectors (card numbers, IBANs,
 // national ID numbers, internal project codes, forbidden promises, secrets),
@@ -221,9 +221,13 @@ function normalizeRule(raw, pack, index, guard, ids) {
 /** Validate the `guard` policy section. Unusable parts are dropped with a warning; the section is never refused. */
 function normalizeGuard(raw) {
   const warnings = [];
-  const guard = { packs: [], internalDomains: [], internalCodes: [], warnings };
+  const guard = { packs: [], internalDomains: [], internalCodes: [], assumeExternal: false, warnings };
   if (raw != null && !isObject(raw)) warnings.push("guard section ignored: not an object");
   const source = isObject(raw) ? raw : {};
+  // The desktop shell cannot read a message's recipients. This flag lets
+  // "external" rules fire anyway when none are known; off, they stay silent.
+  if (source.assumeExternal !== undefined && typeof source.assumeExternal !== "boolean") warnings.push("guard assumeExternal must be true or false; using false");
+  guard.assumeExternal = source.assumeExternal === true;
   for (const entry of list(source.internalDomains)) {
     const domain = entry.toLowerCase().replace(/^[@*.]+/, "");
     if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(domain)) warnings.push("guard internal domain " + entry + " ignored: not a domain name");
@@ -265,6 +269,13 @@ function hasExternalRecipient(recipients, internalDomains) {
   });
 }
 
+/** Whether "external" rules apply: known recipients decide; none known falls back to the section's assumeExternal. */
+function treatAsExternal(recipients, config) {
+  const guard = NORMALISED.has(config) ? config : normalizeGuard(config);
+  if (Array.isArray(recipients) && recipients.length) return hasExternalRecipient(recipients, guard.internalDomains);
+  return guard.assumeExternal === true;
+}
+
 /** Keyword and detector spans when the rule's conditions hold in `text`, else null. */
 function ruleSpans(text, rule) {
   const keywordSpans = [];
@@ -284,7 +295,7 @@ function ruleSpans(text, rule) {
 /**
  * Rules that fire on `text` for `context` ({recipients, app, title}). A rule
  * with recipients "external" needs at least one recipient outside
- * internalDomains (no recipients known: it does not fire); `unless` phrases
+ * internalDomains (no recipients known: it fires only with assumeExternal); `unless` phrases
  * anywhere in the text suppress it; with a `state` (createState) each rule
  * fires once until the state is reset.
  * @returns {Array<{rule, severity, message, findings, fix}>}
@@ -293,7 +304,7 @@ function check(text, context, config, state) {
   const guard = NORMALISED.has(config) ? config : normalizeGuard(config);
   const source = String(text == null ? "" : text);
   const ctx = isObject(context) ? context : {};
-  const external = hasExternalRecipient(ctx.recipients, guard.internalDomains);
+  const external = treatAsExternal(ctx.recipients, guard);
   const app = baseName(ctx.app);
   const offered = state && state.offered;
   let whole = null;
@@ -392,7 +403,13 @@ function summarise(auditEntries) {
   };
 }
 
+/** Every rule id as an organisation item of kind "guard", so usage reports may name them (core/report.js). */
+function organizationItems(section) {
+  const guard = NORMALISED.has(section) ? section : normalizeGuard(section);
+  return guard.packs.flatMap((pack) => pack.rules.map((rule) => ({ trigger: rule.id, kind: "guard" })));
+}
+
 module.exports = {
   SEVERITIES, RECIPIENTS, FIX_KINDS, OUTCOMES, COUNTRIES, DETECTORS,
-  mask, normalizeGuard, hasExternalRecipient, createState, check, applyFix, auditEntry, summarise,
+  mask, normalizeGuard, hasExternalRecipient, treatAsExternal, createState, check, applyFix, auditEntry, summarise, organizationItems,
 };

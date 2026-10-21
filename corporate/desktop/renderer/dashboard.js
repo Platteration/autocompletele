@@ -55,7 +55,7 @@
     }
   }
   const helpers = { api, el, text, announce, seconds, preview: (value) => String(value || "").replace(/\s+/g, " ").slice(0, 140) };
-  async function renderApps(change) {
+  async function renderSuiteTabs(change) {
     for (const app of appList) {
       if (!app.tab) continue;
       const section = $("tab-" + app.id);
@@ -620,7 +620,7 @@
     if (what.settings) await renderApps();
     if (what.settings || what.policy) await renderPolicy();
     if (what.settings || what.policy || what.filing) await renderFiling();
-    await renderApps(what);
+    await renderSuiteTabs(what);
   }
 
   api.onChange((change) => { renderAll(change).catch(console.error); });

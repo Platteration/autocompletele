@@ -335,4 +335,11 @@ function learnFieldSets(sessions, options) {
     .map((p, i) => Object.assign({ id: "learned-" + (i + 1) }, p));
 }
 
-module.exports = { DEFAULTS, normalizeForms, findRecord, findForm, lookup, plan, learnFieldSets };
+/** The policy items usage reports name: one "form" item per record, by id (a fill is counted against the record, not its trigger). */
+function organizationItems(section) {
+  return (section && Array.isArray(section.records) ? section.records : [])
+    .filter((record) => record && typeof record.id === "string" && record.id)
+    .map((record) => ({ trigger: record.id, kind: "form" }));
+}
+
+module.exports = { DEFAULTS, normalizeForms, findRecord, findForm, lookup, plan, learnFieldSets, organizationItems };

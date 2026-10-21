@@ -49,6 +49,19 @@ test("an app trigger fires after the library and document shortcuts, with backsp
   assert.equal(typeAll(swallowing, "/h")[0].backspaces, 1, "a swallowed trigger key is not deleted");
 });
 
+test("an app trigger is taken out of the learning session once; the app then counts it as spent, not as typed", () => {
+  const engine = createEngine({ library: [], policy: orgPolicy.parse({ capture: { defaultMode: "learn" } }), minSessionLength: 1 });
+  engine.setExtensions([{ id: "forms", trigger: (text) => (text.endsWith("refund/") ? { trigger: "refund/", action: { popover: "plan" } } : null) }]);
+  engine.focusChanged({ process: "portal" });
+  const actions = typeAll(engine, "hello there refund/");
+  assert.equal(actions[0].type, "app");
+  // The convention every app follows (desktop/apps/index.js): typed "" and the trigger as spent keystrokes.
+  const entry = engine.recordInsert({ kind: "form", trigger: "refund", inserted: "Refund\nP2", typed: "", spentKeystrokes: "refund/".length });
+  assert.equal(entry.keystrokesSaved, "Refund\nP2".length - "refund/".length);
+  const ended = engine.endSession();
+  assert.equal(ended.text, "hello there \n\n", "the text typed before the trigger survives; the insert leaves a paragraph break");
+});
+
 test("an app check runs when a word ends, sees the field text, and is reset when the focus moves", () => {
   const engine = createEngine({ library: [], policy: orgPolicy.parse({}) });
   const calls = [];

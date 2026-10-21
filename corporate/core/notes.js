@@ -27,6 +27,8 @@ const LEADING_OWNER = /^(\p{Lu}[\p{L}'’-]*(?:\s+\p{Lu}[\p{L}'’-]*)?)\s+(?:wi
 const NOT_NAMES = new Set(["i", "we", "you", "they", "he", "she", "it", "this", "that", "these", "those", "the", "a", "an", "everyone", "someone", "somebody", "nobody", "all", "both", "who", "what", "when", "where", "why", "how", "there", "here", "back", "due", "next", "need", "needs", "time", "plan", "want", "wanted", "agreed", "decided", "going", "also", "then", "today", "tomorrow"]);
 const LIST_MARKER = /^\s*(?:[-*•]|\d+[.)])\s+(?:\[[ xX]?\]\s+)?|^\s*\[[ xX]?\]\s+/;
 const CURSOR = /(?<!\{)\{cursor\}(?!\})/i;
+// A list line holding one blank and nothing else; mirrors expandListLines.
+const LIST_BLANK = /^[ \t]*[-*•][ \t]+\[\[\s*([^\[\]\r\n]+?)\s*\]\][ \t]*$/gm;
 
 function asText(value) {
   return String(value == null ? "" : value).trim();
@@ -150,11 +152,14 @@ function expandListLines(text, arrays, answers) {
 /**
  * Render a document for insertion. Values with only whitespace count as
  * missing so the blank stays visible. A `repeat` section is written once per
- * item of the longest array among its blanks. The caret goes to the first
+ * item of the longest array among its blanks; a shorter array leaves its blank
+ * open in the later copies and is listed in `short` with the counts, so a
+ * form can say how many values the blank needs. The caret goes to the first
  * {cursor}, else the first empty section, else the end of the last section.
- * @returns {{text:string, fields:string[], caret:number, ready:boolean}}
+ * @returns {{text:string, fields:string[], short:Object<string,{given:number, needed:number}>, caret:number, ready:boolean}}
  */
 function render(doc, values, now) {
+  const short = {};
   const scalars = {};
   const arrays = {};
   for (const [key, value] of Object.entries(values || {})) {
@@ -176,7 +181,9 @@ function render(doc, values, now) {
     for (let i = 0; i < copies; i++) {
       const answers = Object.assign({}, section.repeat ? scalars : joined);
       for (const [name, items] of Object.entries(arrays)) {
-        if (section.repeat && items[i] != null) answers[name] = items[i];
+        if (!section.repeat || !used.includes(name)) continue;
+        if (items[i] != null) answers[name] = items[i];
+        else short[name] = { given: items.length, needed: copies };
       }
       const text = section.repeat ? source : expandListLines(source, arrays, answers);
       pieces.push({ text, answers, empty: !!section.heading && !section.body.trim() });
@@ -202,7 +209,7 @@ function render(doc, values, now) {
     if (!piece.block) sectionsEnd = text.length;
   }
   const caret = cursorCaret != null ? cursorCaret : emptyCaret != null ? emptyCaret : sectionsEnd;
-  return { text: text + "\n", fields: missing, caret, ready: missing.length === 0 };
+  return { text: text + "\n", fields: missing, short, caret, ready: missing.length === 0 };
 }
 
 function actionsOf(config) {
@@ -337,4 +344,32 @@ function phrasings(earlierNotes, config, options) {
   return phraseMiner.mine(prose, settings);
 }
 
-module.exports = { DEFAULT_ACTIONS, normalizeNotes, findDocument, render, collectActions, updateActionBlock, phrasings };
+/**
+ * The blanks a document asks for, in order of first use. A blank is a list
+ * when a list line holds it alone ("- [[attendees]]") or it is used only in
+ * repeat sections; a form then takes several values for it.
+ * @returns {Array<{name:string, list:boolean}>}
+ */
+function blanks(doc) {
+  const seen = new Map();
+  const note = (name, where) => {
+    const entry = seen.get(name) || { name, plain: false, repeat: false, listLine: false };
+    entry[where] = true;
+    seen.set(name, entry);
+  };
+  if (doc && doc.title) for (const field of template.fields(doc.title)) note(field.name, "plain");
+  for (const section of doc && Array.isArray(doc.sections) ? doc.sections : []) {
+    const body = String(section.body == null ? "" : section.body);
+    for (const field of template.fields(String(section.heading == null ? "" : section.heading) + "\n" + body)) note(field.name, section.repeat ? "repeat" : "plain");
+    for (const line of body.matchAll(LIST_BLANK)) note(line[1], "listLine");
+  }
+  return [...seen.values()].map((entry) => ({ name: entry.name, list: entry.listLine || (entry.repeat && !entry.plain) }));
+}
+
+/** The policy items a usage report may name: one per document, counted under kind "notes". */
+function organizationItems(section) {
+  const list = section && Array.isArray(section.documents) ? section.documents : [];
+  return list.filter((doc) => doc && typeof doc.id === "string" && doc.id).map((doc) => ({ trigger: doc.id, kind: "notes" }));
+}
+
+module.exports = { DEFAULT_ACTIONS, normalizeNotes, findDocument, blanks, render, collectActions, updateActionBlock, phrasings, organizationItems };

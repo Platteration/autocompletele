@@ -94,7 +94,7 @@ function summary(policy) {
   const suite = [["reply", (policy.reply.replies || []).length, "replies"], ["sheets", Object.keys(policy.sheets.vocabularies || {}).length, "vocabularies"],
     ["forms", (policy.forms.records || []).length, "records"], ["guard", (policy.guard.packs || []).length, "packs"], ["notes", (policy.notes.documents || []).length, "documents"]]
     .filter(([, count]) => count > 0).map(([name, count, what]) => name + " (" + count + " " + what + ")");
-  if (suite.length) lines.push("suite (WIP):      " + suite.join(", "));
+  if (suite.length) lines.push("suite apps:       " + suite.join(", "));
   lines.push("typing speed:     " + policy.typing.charsPerMinute + " characters per minute");
   return lines.join("\n");
 }

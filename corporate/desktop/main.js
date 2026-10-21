@@ -239,6 +239,13 @@ function shellApi() {
     handleAction,
     showItemInFolder: (p) => shell.showItemInFolder(String(p)),
     openDashboard,
+    // After a popover closes, give the focus back to the application the
+    // person was writing in before the paste keystroke goes out (the palette
+    // takes the same pause; macOS also needs the app hidden).
+    settle: async () => {
+      if (process.platform === "darwin") app.hide();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    },
   };
 }
 

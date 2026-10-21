@@ -217,3 +217,57 @@ test("formulaLike stops values a cell would evaluate, but not plain numbers", ()
   for (const value of ["=1", "+A1", "-A1", "@SUM(A1)", "\tx", "\rx", "+49 30 1234"]) assert.equal(sheets.formulaLike(value), true, value);
   for (const value of ["-5", "+3.5", "Acme", "a=b", "CC-100"]) assert.equal(sheets.formulaLike(value), false, value);
 });
+
+test("suggest gathers the column rule, a counts-only profile, completions and a block hit for one cell", () => {
+  const values = "Acme Zebra Freight\nacme logistics gmbh\nACME\n\n21.10.2026";
+  const result = sheets.suggest({ header: "Customer", sheet: "Orders 2026", text: "acm", values }, config);
+  assert.equal(result.column.vocabulary, "customers");
+  assert.deepEqual(result.profile, { kind: "label", total: 4, counts: { number: 0, date: 1, label: 3, notes: 0 }, distinct: 4, sentences: 0 }, "values come one per line; no value list crosses the IPC");
+  assert.deepEqual(result.completions.map((c) => [c.value, c.source]), [["Acme Logistics GmbH", "vocabulary"], ["Northern Acme Ltd", "vocabulary"], ["Acme Zebra Freight", "column"]]);
+  assert.equal(result.completions[0].count, 2, "the column's spelling and alias count towards the canonical value");
+  assert.equal(result.block, null);
+  const notes = sheets.suggest({ header: "Delivery notes", text: "Parcel damaged. Cust", values: ["Customer called about the late delivery.", "Customer called about the late delivery. Fine."] }, config);
+  assert.equal(notes.column.kind, "notes");
+  assert.deepEqual(notes.completions.map((c) => [c.value, c.start]), [["Customer called about the late delivery.", 16]]);
+  const block = sheets.suggest({ header: "Amount", text: "total /vat", values: [] }, config);
+  assert.equal(block.column, null);
+  assert.deepEqual(block.block, { start: 6, trigger: "/vat", label: "VAT at 19%", formula: "=ROUND(B2*0.19, 2)" });
+  assert.deepEqual(block.completions, [], "nothing to complete in an empty column without a rule");
+  assert.deepEqual(sheets.suggest(undefined, config), { column: null, profile: { kind: "empty", total: 0, counts: { number: 0, date: 0, label: 0, notes: 0 }, distinct: 0, sentences: 0 }, completions: [], block: null });
+  assert.deepEqual(sheets.suggest({ text: "acm" }, undefined).completions, []);
+  assert.equal(sheets.suggest({ header: "Customer", sheet: "Orders", text: "acm", values: [], limit: 1 }, config).completions.length, 1);
+});
+
+test("exportConfig keeps the three lists only, and a parsed section exports unchanged", () => {
+  const exported = sheets.exportConfig(config);
+  assert.deepEqual(Object.keys(exported), ["vocabularies", "columns", "blocks"]);
+  assert.deepEqual(exported, { vocabularies: config.vocabularies, columns: config.columns, blocks: config.blocks });
+  assert.notEqual(exported.blocks, config.blocks, "a copy, so the add-in file cannot alias the policy");
+  assert.deepEqual(sheets.normalizeSheets(exported).warnings, [], "nothing is dropped when it is read again");
+  assert.deepEqual(sheets.exportConfig(SHEETS), exported, "a raw section is normalised the same way");
+  assert.deepEqual(sheets.exportConfig(undefined), { vocabularies: {}, columns: [], blocks: [] });
+});
+
+test("parseConfig reads an exported section, a whole policy, or their JSON text; bad JSON is a warning", () => {
+  const exported = sheets.exportConfig(config);
+  const fromObject = sheets.parseConfig(exported);
+  assert.deepEqual(fromObject, { config: exported, warnings: [] });
+  assert.deepEqual(sheets.parseConfig(JSON.stringify(exported)).config, exported);
+  assert.deepEqual(sheets.parseConfig(JSON.stringify({ version: 1, organization: "Org", sheets: exported })).config, exported, "a whole policy file: its sheets section");
+  assert.deepEqual(sheets.parseConfig({ sheets: exported, columns: [] }).config.columns, [], "a section that has its own lists is not unwrapped");
+  const bad = sheets.parseConfig("{not json");
+  assert.deepEqual(bad.config, { vocabularies: {}, columns: [], blocks: [] });
+  assert.equal(bad.warnings.length, 1);
+  assert.match(bad.warnings[0], /^configuration is not valid JSON: /);
+  assert.deepEqual(sheets.parseConfig("   "), { config: { vocabularies: {}, columns: [], blocks: [] }, warnings: [] }, "blank means no configuration, not an error");
+  const lossy = sheets.parseConfig(JSON.stringify(SHEETS));
+  assert.deepEqual(Object.keys(lossy.config.vocabularies), ["customers", "costCentres"]);
+  assert.equal(lossy.warnings.length, 22, "the section's own warnings are passed on");
+  assert.equal("warnings" in lossy.config, false);
+});
+
+test("organizationItems names the block and formula triggers for usage reports", () => {
+  assert.deepEqual(sheets.organizationItems(config), [{ trigger: "/exp", kind: "block" }, { trigger: "/vat", kind: "block" }]);
+  assert.deepEqual(sheets.organizationItems(undefined), []);
+  assert.deepEqual(sheets.organizationItems({}), []);
+});

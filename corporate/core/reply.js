@@ -1,4 +1,4 @@
-// actle Reply (work in progress): reads the message a person is answering and
+// actle Reply: reads the message a person is answering and
 // offers the prewritten replies from the organisation library that fit, with
 // their [[blanks]] filled from that message (sender name, order and ticket
 // references, the first date, an amount). Local rules only: keywords pick the
@@ -18,8 +18,13 @@ const NAME = /^\p{Lu}[\p{L}'’.-]*(?:\s+\p{Lu}[\p{L}'’.-]*){0,3}$/u;
 const GREETING = /^(dear|hi|hello|hey|good\s+(?:morning|afternoon|evening))\s+([^,!:]+?)\s*(?:[,!:]|$)/i;
 const SIGN_OFF = /^((?:best|kind|warm|many|with)?\s*(?:regards|wishes|thanks)|best|thanks|thank you|cheers|sincerely|yours sincerely|yours truly|all the best|mit freundlichen grüßen|viele grüße)\s*[,.!]?\s*(.*)$/i;
 const QUOTE_START = /^(?:-{2,}\s*original message\s*-{2,}|on\s.+\swrote:)$/i;
-// A reference has at least three digits in a row, so "order 3 items" is not one.
-const ID = "(?:no\\.?|number|nr\\.?)?\\s*[:#]?\\s*(?=[A-Z0-9-]*\\d{3})([A-Z0-9][A-Z0-9-]*)";
+// Outlook quotes without the dashes: a "From:" line followed closely by one of these.
+const HEADER_LINE = /^(?:sent|date|to|cc|subject):\s/i;
+// The greeting opens a message, but a copied "Subject:" line may sit above it.
+const GREETING_LINES = 3;
+// A reference has at least three digits in a row, so "order 3 items" is not one, and is never a date ("order 2026-10-03").
+const NOT_A_DATE = "(?!\\d{4}-\\d{2}-\\d{2}\\b|\\d{1,2}-\\d{1,2}-\\d{2,4}\\b)";
+const ID = "(?:no\\.?|number|nr\\.?)?\\s*[:#]?\\s*(?=[A-Z0-9-]*\\d{3})" + NOT_A_DATE + "([A-Z0-9][A-Z0-9-]*)";
 const ORDER = new RegExp("\\border(?!\\p{L})\\s*" + ID, "iu");
 const REFERENCE = new RegExp("\\b(?:ticket|case|ref(?:erence)?|invoice)(?!\\p{L})\\s*" + ID, "iu");
 const CURRENCY = "(?:[$€£¥]|\\b(?:USD|EUR|GBP|CHF|JPY|CAD|AUD)\\b)";
@@ -144,17 +149,26 @@ function normalizeReplies(raw) {
   return out;
 }
 
+/** Where quoted history starts: "On ... wrote:" on one line or wrapped onto two, the dashed Outlook line, or a From:/Sent:/To:/Subject: block. */
+function startsQuote(lines, i) {
+  const line = lines[i].trim();
+  if (QUOTE_START.test(line)) return true;
+  if (/^on\s/i.test(line) && QUOTE_START.test(line + " " + (lines[i + 1] || "").trim())) return true;
+  return /^from:\s/i.test(line) && lines.slice(i + 1, i + 4).some((next) => HEADER_LINE.test(next.trim()));
+}
+
 /**
  * The part of the incoming text written by its latest sender: quoted lines
- * ("> ...") and everything from "On ... wrote:" or "-----Original Message-----"
- * on are dropped, so an old thread cannot pick the reply or fill its blanks.
+ * ("> ...") and everything from the start of quoted history on (startsQuote)
+ * are dropped, so an old thread cannot pick the reply or fill its blanks.
+ * Only the first DEFAULTS.maxChars characters are kept.
  */
 function ownPart(text) {
   const lines = String(text == null ? "" : text).replace(/\r\n?/g, "\n").split("\n");
   const kept = [];
-  for (const line of lines) {
-    if (QUOTE_START.test(line.trim())) break;
-    if (!/^\s*>/.test(line)) kept.push(line);
+  for (let i = 0; i < lines.length; i++) {
+    if (startsQuote(lines, i)) break;
+    if (!/^\s*>/.test(lines[i])) kept.push(lines[i]);
   }
   const own = kept.join("\n").trim();
   return own.length > DEFAULTS.maxChars ? own.slice(0, DEFAULTS.maxChars) : own;
@@ -164,9 +178,15 @@ function ownPart(text) {
 function findNames(text) {
   const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
   const out = {};
-  const greeting = lines.length ? GREETING.exec(lines[0]) : null;
-  if (greeting && NAME.test(greeting[2])) out.greeted = greeting[2];
-  for (let i = 0; i < lines.length && !out.name; i++) {
+  for (const line of lines.slice(0, GREETING_LINES)) {
+    const greeting = GREETING.exec(line);
+    if (greeting && NAME.test(greeting[2])) {
+      out.greeted = greeting[2];
+      break;
+    }
+  }
+  // The sign-off is the last such line: read from the bottom, a "Thanks Sam" in the body is not the sender.
+  for (let i = lines.length - 1; i >= 0 && !out.name; i--) {
     const signOff = SIGN_OFF.exec(lines[i]);
     if (!signOff) continue;
     const candidate = signOff[2] ? signOff[2].replace(/^[,\s]+/, "") : lines[i + 1] || "";
@@ -190,6 +210,16 @@ function runExtractor(text, extractor) {
   return "";
 }
 
+/** The values the given policy extractors find in `text` (already the own part); absent ones are left out. */
+function runExtractors(text, extractors) {
+  const values = {};
+  for (const extractor of Object.values(isObject(extractors) ? extractors : {})) {
+    const value = runExtractor(text, extractor);
+    if (value) values[extractor.name] = value;
+  }
+  return values;
+}
+
 /**
  * Values for blanks found in the incoming message: the built-in ones
  * (BUILTIN_VALUES) and then each policy extractor, which wins over a
@@ -207,14 +237,12 @@ function extractValues(incomingText, extractors, options) {
   if (date) values.date = date.iso;
   const amount = AMOUNT.exec(text);
   if (amount) values.amount = amount[0];
-  for (const extractor of Object.values(isObject(extractors) ? extractors : {})) {
-    const value = runExtractor(text, extractor);
-    if (value) values[extractor.name] = value;
-  }
-  return values;
+  return Object.assign(values, runExtractors(text, extractors));
 }
 
+/** A reply's text: its own, or the expansion of the shorthand it names in the library (null when that is absent). */
 function bodyOf(reply, library) {
+  if (!isObject(reply)) return null;
   if (reply.text != null) return reply.text;
   const found = expander.sanitizeList(library).find((entry) => entry.trigger === reply.shorthand);
   return found ? found.expansion : null;
@@ -248,9 +276,8 @@ function rank(incomingText, config, library, options) {
     if (!(reply.match === "all" ? matched.length === reply.keywords.length : matched.length > 0)) return;
     const body = bodyOf(reply, library);
     if (body == null) return;
-    const values = Object.keys(reply.extract).length
-      ? Object.assign({}, shared, extractValues(text, reply.extract, { dateOrder: config.dateOrder }))
-      : shared;
+    // Only the reply's own extractors are layered on: running the built-ins again would undo a section extractor's override.
+    const values = Object.keys(reply.extract).length ? Object.assign({}, shared, runExtractors(text, reply.extract)) : shared;
     const blanks = template.fields(body).map((field) => field.name);
     const used = Object.fromEntries(blanks.filter((name) => Object.hasOwn(values, name)).map((name) => [name, values[name]]));
     const rendered = template.render(body, used, settings.now);
@@ -262,6 +289,35 @@ function rank(incomingText, config, library, options) {
   hits.sort((a, b) => b.candidate.score - a.candidate.score || a.position - b.position);
   const max = Number.isInteger(settings.max) && settings.max >= 1 ? settings.max : config.max || DEFAULTS.max;
   return hits.slice(0, max).map((hit) => hit.candidate);
+}
+
+/**
+ * The text to insert for a chosen reply: `answers` (typed by the person) fill
+ * the blanks the message did not and may replace a found value; an empty
+ * answer counts as none. Answers and values stay literal (template.render
+ * never renders placeholders in them), so "{clipboard}" typed into a blank is
+ * inserted as typed. `missing` lists the blanks still open; the shell refuses
+ * to insert while it is not empty, so no mail goes out with [[name]] in it.
+ * @returns {{text:string, cursorOffset:number, values:object, missing:string[]}}
+ */
+function fill(body, values, answers, options) {
+  const source = String(body == null ? "" : body);
+  const blanks = template.fields(source).map((field) => field.name);
+  const merged = {};
+  for (const name of blanks) {
+    const answer = isObject(answers) && Object.hasOwn(answers, name) ? asText(answers[name]) : "";
+    if (answer) merged[name] = answer;
+    else if (isObject(values) && Object.hasOwn(values, name)) merged[name] = asText(values[name]);
+  }
+  const rendered = template.render(source, merged, (options && options.now) || new Date());
+  return { text: rendered.text, cursorOffset: rendered.cursorOffset, values: merged, missing: blanks.filter((name) => !Object.hasOwn(merged, name)) };
+}
+
+/** Organisation items a usage report may name: one per reply, kind "reply" (core/report.js). */
+function organizationItems(section) {
+  return (section && Array.isArray(section.replies) ? section.replies : [])
+    .filter((reply) => isObject(reply) && typeof reply.id === "string" && reply.id)
+    .map((reply) => ({ trigger: reply.id, kind: "reply" }));
 }
 
 // ---- Per-reply counts ----------------------------------------------------
@@ -306,8 +362,11 @@ module.exports = {
   normalizeReplies,
   ownPart,
   extractValues,
+  bodyOf,
   checkLibrary,
   rank,
+  fill,
+  organizationItems,
   normalizeStats,
   recordStat,
 };

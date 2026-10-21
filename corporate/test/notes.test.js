@@ -201,3 +201,40 @@ test("phrasings mines prose from earlier notes, not headings, template text or t
   assert.equal(found[0].sessions, 3);
   assert.deepEqual(notes.phrasings(undefined, undefined), []);
 });
+
+test("blanks lists a document's blanks once, in order, and marks list lines and repeat-only blanks as lists", () => {
+  assert.deepEqual(notes.blanks(minutes), [{ name: "meeting", list: false }, { name: "author", list: false }, { name: "attendees", list: true }, { name: "topic", list: true }]);
+  assert.deepEqual(notes.blanks(handover), []);
+  const mixed = notes.normalizeNotes({ documents: [{ trigger: "/x", title: "[[author]]", sections: [
+    { heading: "Item: [[topic]]", body: "Owner: [[author]]", repeat: true },
+    { heading: "Risks", body: "Risks: [[risks]]\n  *   [[ risks ]]  \n- [[topic]] and more" },
+  ] }] }).documents[0];
+  assert.deepEqual(notes.blanks(mixed), [{ name: "author", list: false }, { name: "topic", list: false }, { name: "risks", list: true }],
+    "a blank also used in a plain section (even on a list line with more text) stays a scalar; a list line of its own makes a list");
+  assert.deepEqual(notes.blanks({ sections: [] }), []);
+  assert.deepEqual(notes.blanks(null), []);
+});
+
+test("render leaves a short list of a repeat section open in its later copies and says how many values it needs", () => {
+  const doc = notes.normalizeNotes({ documents: [{ trigger: "/r", sections: [{ heading: "Item: [[topic]]", body: "Owner: [[owner]]", repeat: true }, { heading: "All", body: "- [[topic]]" }] }] }).documents[0];
+  assert.deepEqual(notes.blanks(doc), [{ name: "topic", list: true }, { name: "owner", list: true }]);
+  const out = notes.render(doc, { topic: ["A", "B", "C"], owner: ["Ann", "Bob"] }, NOW);
+  assert.deepEqual(out.fields, ["owner"], "the blank is open, not misreported as unanswered elsewhere");
+  assert.deepEqual(out.short, { owner: { given: 2, needed: 3 } });
+  assert.equal(out.ready, false);
+  assert.match(out.text, /## Item: B\nOwner: Bob\n\n## Item: C\nOwner: \[\[owner\]\]/, "the copies with a value are filled; the last one stays open");
+  const full = notes.render(doc, { topic: ["A", "B"], owner: ["Ann", "Bob"] }, NOW);
+  assert.deepEqual([full.fields, full.short, full.ready], [[], {}, true]);
+  const scalar = notes.render(doc, { topic: ["A", "B"], owner: "Ann" }, NOW);
+  assert.equal(scalar.ready, true, "one plain value is written into every copy");
+  assert.match(scalar.text, /## Item: A\nOwner: Ann\n\n## Item: B\nOwner: Ann/);
+  const none = notes.render(doc, { topic: ["A", "B"] }, NOW);
+  assert.deepEqual([none.fields, none.short], [["owner"], {}], "a list with no values at all is missing, not short");
+  assert.deepEqual(notes.render(minutes, { attendees: ["Ann"] }, NOW).short, {}, "a plain section never reports a short list");
+});
+
+test("organizationItems names every document under kind notes for usage reports", () => {
+  assert.deepEqual(notes.organizationItems(config), [{ trigger: "minutes", kind: "notes" }, { trigger: "handover", kind: "notes" }, { trigger: "minutes-dup", kind: "notes" }]);
+  assert.deepEqual(notes.organizationItems(null), []);
+  assert.deepEqual(notes.organizationItems({ documents: [{ id: "" }, "junk", { id: "ok" }] }), [{ trigger: "ok", kind: "notes" }]);
+});

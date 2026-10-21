@@ -45,6 +45,41 @@ Filing tab lists watched folders (a policy folder can be turned off on this
 desk), the rules, and filed documents with Undo. "File existing documents…"
 proposes a filing for each document already in a folder, one at a time.
 
+## Reply
+Copy the message you are answering, then choose "Reply to the copied message…" in the tray menu
+or "Reply to copied message" in the search palette. A popover lists the organisation's replies
+whose keywords appear in the message, best fit first, blanks filled from it; ↑ ↓ or a click picks
+one, blanks the message did not answer are asked right there, Enter closes the popover and pastes
+the text where you were writing (never with an open blank). The Reply tab shows the replies with
+offered/inserted counts, the extractors and a "Try it" box that ranks a pasted message without
+counting anything; counts live in `apps/reply.json`, the message is never stored.
+
+## Sheets
+
+The **Sheets** tab shows the organisation's vocabularies, column rules and `/` blocks from the policy's `sheets` section. The assistant cannot see spreadsheet cells, so completing happens in the Excel task pane or Google Sheets sidebar from `corporate/sheets-addin/` (its README covers build, sideload, deploy and tests).
+**Try it**: enter a column header (and sheet name), paste the column's values one per line and type what the cell would hold or a `/` trigger to see what the add-in would offer.
+**Export add-in configuration** writes the section to `apps/sheets-config.json` in the data folder and shows the path (or why it could not be written); paste that file's contents into the add-in's Settings. **Show file** opens the folder.
+The export is logged in the audit (counts only); nothing from the tab is typed into other applications or counted in the statistics.
+
+## Forms
+
+Put the caret in the first field of a form and type a record's trigger (or pick the record in the search palette). A popover shows the form matched to the window, the values about to be typed, the fields Tab will pass over, and the blanks still open. Copy an order or customer reference first and the lookup row fills the customer fields; or type it into the Reference box. Enter closes the popover and fills the form: the trigger is deleted, each value is pasted and Tab moves on, once per field in between. Selectors from the policy are shown but not used, so the form's fields must be in Tab order. If a key fails, a notification names the field it stopped at and nothing is counted.
+
+The Forms tab lists the organisation's records, lookups (first 20 rows) and forms, your own records (Delete), the proposals learned from your fills (Accept with a trigger of your choice, or Dismiss), a box to try a reference, and Clear for the stored fills. Fills are stored only when a form matched; values of fields named with the word password, PIN, secret, token, OTP or API key, and anything the scrubber masks, are never stored.
+
+## Guard
+
+When a compliance rule of your organisation fires on what you type, a small "Before you send" window appears beside your work without taking the focus: each warning shows the rule, its severity, the message and what was found, masked. **Add the text** or **Insert …** types the fix where the caret is. **Copy corrected text** puts a corrected copy of what you typed in this field on the clipboard, because actle cannot change what is already in the field: select that text and paste over it (refused for messages of 4,000 characters or more). **Dismiss** records that you saw the warnings. A later warning or offer replaces the window, and a fix clicked after you moved to another window is refused: type it by hand. Rules for outside recipients only warn while typing when the policy says so (`assumeExternal`), since the recipients of a message cannot be read.
+
+The Guard tab in the dashboard lists the rule packs, counts the warnings raised, fixed, dismissed and left unanswered per rule, and has a "Try it" box to check a text with recipients and an application typed in. Only rule ids and outcomes are recorded; what you typed never is.
+
+## Notes
+
+Type a note document's trigger from the policy (for example `/mins`) in any application, or pick the document in the search palette: a popover asks for its blanks (your name is prefilled from the last note you inserted or saved on the Notes tab; a list such as attendees takes comma-separated values), and Enter closes the popover and pastes the note with the date and weekday filled and the caret where the document says. Nothing is pasted while a blank is empty; a list of a repeated section that needs more values is named with its counts.
+To collect action items, copy the whole note, choose "Update action items in the copied note" in the tray menu (or the palette entry), then paste over the note: the action block is rebuilt on the clipboard, lines you typed into it are kept, and nothing is counted in the statistics.
+The Notes tab lists the documents, keeps your author name and has a "Try it" box that shows the action items found in a pasted note and the rebuilt note.
+Data: `settings.json` gains `notesAuthor`; `apps/notes.json` holds counts only (inserts per document, clipboard updates); note text and answers are never written.
+
 ## Where data lives
 
 Everything is in Electron's `userData` folder for the app
@@ -63,6 +98,7 @@ Everything is in Electron's `userData` folder for the app
 | `learned.json`    | SHA-256 digests of proposals the person dismissed (no readable text) |
 | `suggestions.json` | Proposals the person chose to suggest to the organisation, readable, until exported, removed or deleted with the learned text |
 | `filing-index.json` | Documents filed by the filing rules: new and old name and path, rule, values found (a client, a reference); never document text |
+| `apps/<app>.json`  | The suite's per-app data: reply counts, forms fill sessions and own records, the notes author, the last Sheets export; `apps/sheets-config.json` is the exported add-in configuration |
 | `deployment.json` | Managed desks only: signed policy sources and pinned public keys, written by IT |
 | `policy-cache/`   | Last good copy of each signed policy layer                     |
 | `policy-state.json` | Hash of the policy last applied and each source's status     |

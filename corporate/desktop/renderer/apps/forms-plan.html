@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
+  <title>Fill the form</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="popover">
+  <h1 id="title">Fill the form</h1>
+  <p class="path" id="matched"></p>
+  <p class="path" id="selectors"></p>
+  <form id="plan-form">
+    <label><span>Reference (an order, ticket or customer key from a lookup list)</span><input type="text" id="reference" autocomplete="off" spellcheck="false"></label>
+    <p class="path" id="lookup"></p>
+    <ul id="steps" aria-label="Fields to fill"></ul>
+    <p class="path" id="skipped"></p>
+    <div id="blanks"></div>
+  </form>
+  <p class="hint" id="error" role="alert"></p>
+  <div class="actions">
+    <button class="plain" type="button" id="cancel">Cancel</button>
+    <button class="primary" type="submit" form="plan-form" id="fill">Fill</button>
+  </div>
+  <script src="forms-plan.js"></script>
+</body>
+</html>

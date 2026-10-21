@@ -220,7 +220,7 @@ function organizationShortcuts(policy) {
   for (const rule of (filing.rules || []).concat(filing.fallback ? [filing.fallback] : [])) out.push({ trigger: rule.id, kind: "filed" });
   // Suite modules name their own organisation items (a reply id, a record id, a
   // guard rule id, a notes document id) through an optional organizationItems().
-  for (const name of ["reply", "forms", "guard", "notes"]) {
+  for (const name of ["reply", "sheets", "forms", "guard", "notes"]) {
     const mod = require("./" + name + ".js");
     if (typeof mod.organizationItems === "function" && policy[name]) {
       for (const item of mod.organizationItems(policy[name]) || []) {

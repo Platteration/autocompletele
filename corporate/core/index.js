@@ -15,7 +15,7 @@ module.exports = {
   extract: require("./extract.js"),
   filer: require("./filer.js"),
   paletteSearch: require("./palette-search.js"),
-  // Suite modules (work in progress; parsed from the policy, not yet used by the shell).
+  // Suite modules: Reply, Sheets, Forms, Guard and Notes (desktop/apps/ holds their shells).
   reply: require("./reply.js"),
   sheets: require("./sheets.js"),
   forms: require("./forms.js"),
