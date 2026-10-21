@@ -503,7 +503,9 @@ function createAssistant(options) {
     if (filingIndex.entries.some((e) => e.path === file)) return null;
     let stat;
     try {
-      stat = fs.statSync(file);
+      // lstat: a symbolic link dropped in a watched folder is never followed,
+      // so its target is neither read nor copied out by a filing.
+      stat = fs.lstatSync(file);
     } catch (error) {
       return null;
     }
@@ -525,6 +527,7 @@ function createAssistant(options) {
   }
 
   function moveFile(from, to) {
+    if (fs.lstatSync(from).isSymbolicLink()) throw new Error("symbolic links are not filed");
     try {
       fs.renameSync(from, to);
     } catch (error) {

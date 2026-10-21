@@ -124,6 +124,19 @@ test("propose builds a safe name and folder, flags missing blanks, and lets answ
   assert.equal(filer.propose({ name: "a", ext: "", text: "" }, filer.normalizeFiling({})), null);
 });
 
+test("a blank named like an Object member is simply missing, and a value the scrubber would mask never becomes a name", () => {
+  const section = filer.normalizeFiling({
+    fields: { secret: { pattern: "card\\s*(?:no|number)?:?\\s*([0-9 ]{13,19})", group: 1 }, long: { pattern: "ref ([A-Z0-9]+)", group: 1 } },
+    rules: [{ id: "proto", when: { keywords: ["doc"] }, name: "[[constructor]]_[[hasOwnProperty]]_[[secret]]_[[long]]" }],
+  });
+  const proposal = filer.propose({ name: "doc.txt", ext: "txt", text: "doc card number: 4111 1111 1111 1111 ref " + "A".repeat(200) }, section);
+  assert.deepEqual(proposal.missing, ["constructor", "hasOwnProperty", "secret"], "the prototype names and the card number are blanks to answer, not values");
+  assert.equal(proposal.values.long.length, 80, "a detected value is capped");
+  const answered = filer.propose({ name: "doc.txt", ext: "txt", text: "doc" }, section, { secret: "password: hunter2", constructor: "fine", hasOwnProperty: "ok", long: "L" });
+  assert.deepEqual(answered.missing, ["secret"], "an answer the scrubber would mask is refused too");
+  assert.equal(answered.values.constructor, "fine");
+});
+
 test("safeName removes every banned character, caps the length and keeps the extension", () => {
   assert.equal(filer.safeName('a\\b/c:d*e?f"g<h>i|j\u0001k', "pdf"), "abcdefghijk.pdf");
   assert.equal(filer.safeName("  spaced   out name . ", ".DocX"), "spaced_out_name.docx");

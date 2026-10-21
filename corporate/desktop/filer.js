@@ -36,7 +36,7 @@ function createFolderWatcher(options) {
   function arm(file) {
     let stat;
     try {
-      stat = fs.statSync(file);
+      stat = fs.lstatSync(file); // never follow a link into another folder
     } catch (error) {
       clearPending(file);
       return;
@@ -59,7 +59,7 @@ function createFolderWatcher(options) {
     if (!entry) return;
     let stat;
     try {
-      stat = fs.statSync(file);
+      stat = fs.lstatSync(file);
     } catch (error) {
       clearPending(file);
       return;

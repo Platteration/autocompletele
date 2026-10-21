@@ -10,7 +10,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
 
-const LIMITS = Object.freeze({ maxBytes: 20 * 1024 * 1024, maxChars: 200000 });
+// maxInflatedBytes bounds what one ZIP entry may inflate to: a small .docx that
+// inflates to gigabytes (a decompression bomb) must fail as an unreadable file,
+// not take the desk down.
+const LIMITS = Object.freeze({ maxBytes: 20 * 1024 * 1024, maxChars: 200000, maxInflatedBytes: 32 * 1024 * 1024 });
 const PLAIN = Object.freeze(["txt", "md", "csv", "json", "log", "text"]);
 const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
 
@@ -41,7 +44,8 @@ function tidy(text) {
  * need: stored or deflated entries, no encryption, no ZIP64. Returns a Map of
  * entry name to a function that inflates it on demand.
  */
-function readZip(buffer) {
+function readZip(buffer, maxInflatedBytes) {
+  const inflateLimit = Number.isFinite(Number(maxInflatedBytes)) && Number(maxInflatedBytes) > 0 ? Math.floor(Number(maxInflatedBytes)) : LIMITS.maxInflatedBytes;
   const SIG_EOCD = 0x06054b50;
   const SIG_CENTRAL = 0x02014b50;
   const SIG_LOCAL = 0x04034b50;
@@ -75,7 +79,7 @@ function readZip(buffer) {
       const start = localOffset + 30 + localName + localExtra;
       const data = buffer.subarray(start, start + compressedSize);
       if (method === 0) return data;
-      if (method === 8) return zlib.inflateRawSync(data);
+      if (method === 8) return zlib.inflateRawSync(data, { maxOutputLength: inflateLimit });
       throw new Error("unsupported zip compression " + method + " in " + name);
     });
     position += 46 + nameLength + extraLength + commentLength;
@@ -239,7 +243,7 @@ function extractText(filePath, limits) {
     const buffer = fs.readFileSync(filePath);
     if (kind === "text") text = buffer.toString("utf8");
     else {
-      const entries = readZip(buffer);
+      const entries = readZip(buffer, settings.maxInflatedBytes);
       text = kind === "docx" ? docxText(entries) : xlsxText(entries);
     }
   } catch (error) {

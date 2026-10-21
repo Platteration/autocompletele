@@ -160,6 +160,27 @@ test("undo puts the document back under its original name and removes it from th
   assert.deepEqual(assistant.filingClear(), { ok: true, removed: 0 });
 });
 
+test("a symbolic link in a watched folder is never read, proposed or moved", () => {
+  const { assistant, inbox, root } = desk();
+  const target = path.join(root, "outside.txt");
+  fs.writeFileSync(target, "INVOICE INV-20481 from ACME, 21.10.2026");
+  const link = path.join(inbox, "invoice-link.txt");
+  fs.symlinkSync(target, link);
+  assert.equal(assistant.filingProposal(link), null);
+  const refused = assistant.applyFiling({ path: link });
+  assert.equal(refused.ok, false);
+  assert.ok(fs.existsSync(target) && fs.lstatSync(link).isSymbolicLink(), "nothing moved");
+  const { createFolderWatcher } = require("../desktop/filer.js");
+  const seen = [];
+  const watcher = createFolderWatcher({ onFile: (f) => seen.push(f), settleMs: 30 });
+  watcher.start([{ path: inbox }]);
+  fs.symlinkSync(target, path.join(inbox, "another-link.txt"));
+  return new Promise((resolve) => setTimeout(resolve, 200)).then(() => {
+    watcher.stop();
+    assert.deepEqual(seen, [], "the watcher does not report links");
+  });
+});
+
 test("relative rule folders resolve next to the document, and moving across a boundary falls back to copy", () => {
   const { assistant, inbox } = desk();
   const file = path.join(inbox, "notes.txt");

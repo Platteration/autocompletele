@@ -96,6 +96,19 @@ test("PDF and unknown types are unsupported with empty text; bad files report an
   assert.match(tooBig.error, /larger than 50 bytes/);
 });
 
+test("an entry that inflates past the cap is an unreadable file, never a crash (decompression bomb)", () => {
+  const dir = temp();
+  const file = path.join(dir, "bomb.docx");
+  const big = "<w:document><w:body><w:p><w:r><w:t>" + "a".repeat(10000) + "</w:t></w:r></w:p></w:body></w:document>";
+  fs.writeFileSync(file, extract.zipArchive({ "word/document.xml": big }));
+  const capped = extract.extractText(file, { maxInflatedBytes: 1024 });
+  assert.equal(capped.text, "");
+  assert.match(capped.error, /could not read docx/);
+  assert.equal(extract.extractText(file).text.length, 10000, "under the default cap the same file reads normally");
+  assert.equal(extract.LIMITS.maxInflatedBytes, 32 * 1024 * 1024);
+  assert.throws(() => extract.readZip(extract.zipArchive({ "a.txt": "x".repeat(5000) }), 100).get("a.txt")(), /ERR_BUFFER_TOO_LARGE|maxOutputLength|too large/i);
+});
+
 test("entities and tags are decoded safely", () => {
   assert.equal(extract.decodeEntities("a &amp; b &lt;c&gt; &#65;&#x42; &unknown; &#0;"), "a & b <c> AB &unknown; ");
   assert.equal(extract.stripTags("<p>Hi <b>there</b></p>"), "Hi there");

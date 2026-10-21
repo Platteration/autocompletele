@@ -47,6 +47,24 @@ test("the filing section is parsed with warnings and merged across layers", () =
   assert.equal(orgPolicy.merge([{ library: [] }]).filing, undefined);
 });
 
+test("a suite normaliser that throws costs its section and a warning, never the policy", () => {
+  const sheets = require("../core/sheets.js");
+  const original = sheets.normalizeSheets;
+  sheets.normalizeSheets = (raw) => {
+    if (raw && raw.boom) throw new RangeError("Maximum call stack size exceeded");
+    return original(raw);
+  };
+  try {
+    const policy = orgPolicy.parse({ organization: "Org", sheets: { boom: true }, library: [{ trigger: "a/", expansion: "A" }] });
+    assert.equal(policy.organization, "Org");
+    assert.equal(policy.library.length, 1);
+    assert.deepEqual(policy.sheets.blocks, []);
+    assert.ok(policy.warnings.some((w) => /^sheets section ignored: Maximum call stack/.test(w)), policy.warnings.join("; "));
+  } finally {
+    sheets.normalizeSheets = original;
+  }
+});
+
 test("a trigger shared by the library, a document set, a forms record or a notes document is warned about", () => {
   const policy = orgPolicy.parse({
     library: [{ trigger: "/mins", expansion: "shortcut" }],

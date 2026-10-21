@@ -9,10 +9,12 @@
 
 const { template } = require("./personal.js");
 const { keywordPattern, MATCH } = require("./keyword-rules.js");
+const capture = require("./capture-policy.js");
 
 const BUILTIN_FIELDS = Object.freeze(["date", "year", "month", "day", "original", "ext"]);
 const DATE_ORDERS = Object.freeze(["dmy", "mdy"]);
 const MAX_NAME = 150;
+const MAX_VALUE = 80;
 const RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 
@@ -254,14 +256,19 @@ function detectFields(file, filing, rule) {
   const missing = [];
   for (const name of wanted) {
     if (Object.hasOwn(values, name)) continue;
-    const field = filing && filing.fields ? filing.fields[name] : null;
+    // Only fields the policy defined: a blank named like an Object member
+    // ([[constructor]]) must not find the prototype's function.
+    const field = filing && filing.fields && Object.hasOwn(filing.fields, name) ? filing.fields[name] : null;
     let value = null;
     if (field) {
       if (field.values.length || Object.keys(field.aliases).length) value = findListValue(haystack, field);
       if (value == null && field.pattern) value = findPatternValue(haystack, field);
     }
-    if (value != null && cleanValue(value)) {
-      values[name] = cleanValue(value);
+    // A value the scrubber would mask (a card number, a labelled secret, a
+    // token) never becomes part of a file name, the index or the audit log:
+    // the blank is left for the person to answer.
+    if (value != null && cleanValue(value) && capture.scrub(String(value)).redactions === 0) {
+      values[name] = cleanValue(value).slice(0, MAX_VALUE);
       sources[name] = "text";
     } else {
       missing.push(name);
@@ -319,7 +326,7 @@ function propose(file, filing, answers) {
   const detected = detectFields(file, filing, rule);
   const values = Object.assign({}, detected.values);
   for (const [key, value] of Object.entries(answers || {})) {
-    if (cleanValue(value)) values[key] = cleanValue(value);
+    if (cleanValue(value) && capture.scrub(String(value)).redactions === 0) values[key] = cleanValue(value).slice(0, MAX_VALUE);
   }
   const missing = template.fields(rule.name).concat(template.fields(rule.folder || "")).map((f) => f.name).filter((name, index, all) => !Object.hasOwn(values, name) && all.indexOf(name) === index);
   const ext = String(file && file.ext != null ? file.ext : "");

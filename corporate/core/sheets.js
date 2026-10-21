@@ -137,7 +137,11 @@ function normalizeBlock(raw, index, seen, warnings) {
   }
   const rows = Array.isArray(raw.rows) ? raw.rows.filter(Array.isArray) : [];
   if (!rows.length || (raw.rows.length !== rows.length)) return warnings.push(where + " ignored: rows must be a list of rows (lists of cells)"), null;
-  const width = Math.max(...rows.map((row) => row.length));
+  // More rows than cells allowed is refused before any row is looked at, and the
+  // width is folded rather than spread: a block of a few hundred thousand rows
+  // must become a warning, not a RangeError that stops the policy from loading.
+  if (rows.length > DEFAULTS.maxBlockCells) return warnings.push(where + " ignored: more than " + DEFAULTS.maxBlockCells + " cells"), null;
+  const width = rows.reduce((max, row) => Math.max(max, row.length), 0);
   if (!width || rows.length * width > DEFAULTS.maxBlockCells) return warnings.push(where + " ignored: " + (width ? "more than " + DEFAULTS.maxBlockCells + " cells" : "every row is empty")), null;
   if (rows.some((row) => row.some((cell) => cell != null && !["string", "number", "boolean"].includes(typeof cell)))) return warnings.push(where + " ignored: cells must be text, numbers or booleans"), null;
   seen.add(trigger);

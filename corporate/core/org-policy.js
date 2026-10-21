@@ -218,7 +218,15 @@ function parse(input) {
   policy.warnings.push(...filing.warnings);
 
   for (const [name, spec] of Object.entries(SUITE)) {
-    const normalized = spec.module[spec.normalize](source[name]);
+    let normalized;
+    try {
+      normalized = spec.module[spec.normalize](source[name]);
+    } catch (error) {
+      // A section that makes its normaliser throw is dropped with a warning:
+      // the desk must start from a signed policy whatever one section holds.
+      policy.warnings.push(name + " section ignored: " + error.message);
+      normalized = spec.module[spec.normalize](undefined);
+    }
     policy.warnings.push(...normalized.warnings);
     delete normalized.warnings;
     policy[name] = normalized;

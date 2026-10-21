@@ -1,4 +1,13 @@
 const test = require("node:test");
+const assertStrict = require("node:assert/strict");
+
+test("a block with far more rows than the cell cap is a warning, not a RangeError", () => {
+  const sheets = require("../core/sheets.js");
+  const rows = Array.from({ length: 200000 }, () => ["x"]);
+  const out = sheets.normalizeSheets({ blocks: [{ trigger: "/huge", rows }] });
+  assertStrict.deepEqual(out.blocks, []);
+  assertStrict.ok(out.warnings.some((w) => /\/huge ignored: more than/.test(w)), out.warnings.join("; "));
+});
 const assert = require("node:assert/strict");
 const sheets = require("../core/sheets.js");
 

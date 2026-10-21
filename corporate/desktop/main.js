@@ -305,18 +305,33 @@ async function submitFiling(state, payload) {
   return result;
 }
 
+const filingQueued = new Set();
 function enqueueFiling(file) {
-  if (filingQueue.includes(file)) return;
+  if (filingQueued.has(file)) return;
+  filingQueued.add(file);
   filingQueue.push(file);
   nextFiling();
 }
 
+// One popover at a time. A loop, not a recursion: a rescan of a large folder
+// where most files get no proposal must not grow the stack, and a proposal
+// that throws must not escape the timer that called this.
 function nextFiling() {
-  if (popover || !filingQueue.length || !assistant) return;
-  const file = filingQueue.shift();
-  const proposal = assistant.filingProposal(file);
-  if (!proposal) return nextFiling();
-  handleAction({ type: "filing", proposal });
+  if (!assistant) return;
+  while (!popover && filingQueue.length) {
+    const file = filingQueue.shift();
+    filingQueued.delete(file);
+    let proposal = null;
+    try {
+      proposal = assistant.filingProposal(file);
+    } catch (error) {
+      assistant.log("filing: " + file + ": " + (error && error.message || error));
+    }
+    if (proposal) {
+      handleAction({ type: "filing", proposal });
+      return;
+    }
+  }
 }
 
 function startWatching() {
