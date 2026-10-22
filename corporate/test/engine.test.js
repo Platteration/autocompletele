@@ -49,12 +49,197 @@ test("undo returns the trigger and leaves no trace in the statistics", () => {
   engine.focusChanged({ process: "notepad" });
   engine.type("sig/");
   const [undo] = engine.keyTyped({ isBackspace: true });
-  assert.deepEqual(undo, { type: "undo", trigger: "sig/", charsBeforeCaret: 14, charsAfterCaret: 8 });
+  // "Kind regards,\n" is 14 characters before the caret; the person's own
+  // Backspace (not swallowed by default, as on the uiohook desk) already
+  // removed the last of them, so 13 more are deleted, not 14.
+  assert.deepEqual(undo, { type: "undo", trigger: "sig/", charsBeforeCaret: 13, charsAfterCaret: 8 });
   assert.equal(engine.ledger.size(), 0);
   assert.equal(engine.buffer, "sig/");
   // A second Backspace is an ordinary deletion.
   assert.deepEqual(engine.keyTyped({ isBackspace: true }), []);
   assert.equal(engine.buffer, "sig");
+  // An adapter that swallows the Backspace leaves all 14 to delete.
+  const swallowing = make({ swallowsTriggerKey: true });
+  swallowing.focusChanged({ process: "notepad" });
+  swallowing.type("sig/");
+  assert.deepEqual(swallowing.keyTyped({ isBackspace: true }), [{ type: "undo", trigger: "sig/", charsBeforeCaret: 14, charsAfterCaret: 8 }]);
+});
+
+test("undo and trigger deletion count characters, never UTF-16 units", () => {
+  // Each emoji here is one code point (two UTF-16 units) and one character on screen.
+  const emoji = orgPolicy.parse({
+    library: [
+      { trigger: "ok/", expansion: "👍 Agreed 🙂" },
+      { trigger: "mid/", expansion: "🙂🙂{cursor} end 🎉" },
+      { trigger: "🙂/", expansion: "smile" },
+      { trigger: "top/", expansion: "{cursor}after" },
+    ],
+    documents: { shortcuts: [{ trigger: "🗂/", label: "Files", documents: [{ title: "List", path: "S:/list.pdf" }] }] },
+  });
+  const engine = make({ policy: emoji, library: [] });
+  engine.focusChanged({ process: "notepad" });
+  // 12 UTF-16 units, 10 characters; the person's Backspace took the last one.
+  assert.equal(engine.type("ok/")[0].cursorOffset, 12, "the caret offset stays a string index for the sender");
+  assert.deepEqual(engine.keyTyped({ isBackspace: true }), [{ type: "undo", trigger: "ok/", charsBeforeCaret: 9, charsAfterCaret: 0 }]);
+  engine.focusChanged({ process: "notepad" });
+  engine.type("mid/");
+  assert.deepEqual(engine.keyTyped({ isBackspace: true }), [{ type: "undo", trigger: "mid/", charsBeforeCaret: 1, charsAfterCaret: 6 }]);
+  engine.focusChanged({ process: "notepad" });
+  engine.focusChanged({ process: "notepad" });
+  engine.type("top/");
+  // The caret was at the start: the person's Backspace hit the text before it, nothing of the expansion.
+  assert.deepEqual(engine.keyTyped({ isBackspace: true }), [{ type: "undo", trigger: "top/", charsBeforeCaret: 0, charsAfterCaret: 5 }]);
+  engine.focusChanged({ process: "notepad" });
+  assert.equal(engine.type("say 🙂/")[0].backspaces, 2, "a two-character trigger costs two Backspaces");
+  // Document shortcuts and app triggers count the same way (hygiene: the desk's adapter types ASCII only).
+  engine.setExtensions([{ id: "notes", trigger: (text) => (text.endsWith("📝n/") ? { trigger: "📝n/", action: { popover: "notes" } } : null) }]);
+  assert.deepEqual(engine.type(" 🗂/").map((a) => [a.type, a.backspaces]), [["documents", 2]]);
+  assert.deepEqual(engine.type(" 📝n/").map((a) => [a.type, a.backspaces]), [["app", 3]]);
+  const swallowing = make({ policy: emoji, library: [], swallowsTriggerKey: true });
+  swallowing.focusChanged({ process: "notepad" });
+  assert.equal(swallowing.type("🙂/")[0].backspaces, 1);
+  swallowing.setExtensions(engine.extensions);
+  assert.equal(swallowing.type(" 🗂/")[0].backspaces, 1);
+  assert.equal(swallowing.type(" 📝n/")[0].backspaces, 2);
+  swallowing.focusChanged({ process: "notepad" });
+  swallowing.type("ok/");
+  assert.equal(swallowing.keyTyped({ isBackspace: true })[0].charsBeforeCaret, 10);
+});
+
+test("an expansion with a character made of several code points is never undone by count; the Backspace stays a deletion", () => {
+  // Chromium and macOS remove 👍🏽 with one Backspace, other editors one code
+  // point at a time: any count would delete the person's own text in one of them.
+  const expansions = ["👍🏽 Agreed 🙂", "Thank you 🙏🏽", "Greetings from Berlin 🇩🇪", "Step 1️⃣ done", "Café au lait",
+    "👨‍👩‍👧‍👦".repeat(20), "🇩🇪{cursor} after", "before {cursor}🙏🏽"];
+  for (const expansion of expansions) {
+    const engine = make({ policy: orgPolicy.parse({ library: [{ trigger: "x/", expansion }] }), library: [] });
+    engine.focusChanged({ process: "chrome.exe", title: "Mail - Google Chrome" });
+    assert.equal(engine.type("Dear Anna, x/")[0].type, "expand", expansion);
+    assert.equal(engine.ledger.size(), 0, "still undoable until the next key");
+    assert.deepEqual(engine.keyTyped({ isBackspace: true }), [], JSON.stringify(expansion) + ": no undo is sent");
+    assert.equal(engine.ledger.size(), 1, "the expansion stays, and is counted");
+    assert.equal(engine.buffer, "", "the trigger is not typed back");
+    assert.deepEqual(engine.keyTyped({ isBackspace: true }), [], "a second Backspace is an ordinary one too");
+  }
+  // One code point per character, emoji included: undone as before.
+  const plain = make({ policy: orgPolicy.parse({ library: [{ trigger: "x/", expansion: "Thanks 🙏 and 🎉" }] }), library: [] });
+  plain.focusChanged({ process: "chrome.exe" });
+  plain.type("x/");
+  assert.deepEqual(plain.keyTyped({ isBackspace: true }), [{ type: "undo", trigger: "x/", charsBeforeCaret: 13, charsAfterCaret: 0 }]);
+});
+
+test("Enter, Ctrl+Enter, Tab and a shortcut chord end the word: the value typed last is checked", () => {
+  // Keys as the desk's input adapter produces them (desktop/adapters/input.js).
+  const { buildTable, translate } = require("../desktop/adapters/input.js");
+  const { containsCardNumber } = require("../core/capture-policy.js");
+  const table = buildTable({ Enter: 28, Tab: 15, S: 31, Space: 57, Ctrl: 29, Alt: 56 });
+  const send = {
+    "Enter": translate({ keycode: 28 }, table),
+    "Ctrl+Enter": translate({ keycode: 28, ctrlKey: true }, table),
+    "Tab": translate({ keycode: 15 }, table),
+    "Alt+S": translate({ keycode: 31, altKey: true }, table),
+  };
+  assert.deepEqual(send["Alt+S"], { text: "", isBackspace: false, resetsBuffer: true });
+  const rules = orgPolicy.parse({ keywordRules: [
+    { id: "card", action: "warn", detect: ["card-number"], message: "No card numbers." },
+    { id: "secret", action: "warn", keywords: ["hunter2"], message: "No passwords." },
+  ] });
+  for (const [name, key] of Object.entries(send)) {
+    const engine = make({ policy: rules, library: [] });
+    const checked = [];
+    engine.setExtensions([{ id: "guard", check: (text) => { checked.push(text); return containsCardNumber(text) ? { popover: "warning" } : null; } }]);
+    engine.focusChanged({ process: "slack" });
+    assert.deepEqual(engine.type("my card is 4111 1111 1111 1111"), [], name + ": nothing while the number is typed");
+    const actions = engine.keyTyped(key);
+    assert.deepEqual(actions.map((a) => a.type), ["warning", "app"], name + ": the keyword rule and the app check run");
+    assert.equal(actions[0].hits[0].rule.id, "card");
+    assert.deepEqual(actions.map((a) => a.leftField), [true, true], name + ": marked as raised by a key that may have left the field");
+    assert.equal(checked.at(-1), engine.fieldText, name + ": the app saw the whole field");
+    assert.deepEqual(engine.keyTyped(key), [], name + ": a second key after no word checks nothing");
+  }
+  // A word already ended by a space is not checked again by Enter, and each rule still fires once per field.
+  const engine = make({ policy: rules, library: [] });
+  engine.focusChanged({ process: "slack" });
+  const spaced = engine.type("pw hunter2 ");
+  assert.deepEqual(spaced.map((a) => a.type), ["warning"]);
+  assert.equal(spaced[0].leftField, undefined, "a word ended by a space is not marked");
+  assert.deepEqual(engine.keyTyped(send.Enter), []);
+  engine.type("hunter2");
+  assert.deepEqual(engine.keyTyped(send["Ctrl+Enter"]), [], "once per field");
+});
+
+test("a key that may leave the field (Ctrl+Enter, Alt+Tab, Ctrl+W) raises warnings only, with nothing to insert", () => {
+  // Keys as the desk's input adapter produces them; the example policy's rules.
+  const { buildTable, translate } = require("../desktop/adapters/input.js");
+  const table = buildTable({ Enter: 28, Tab: 15, W: 17, F4: 62, ArrowLeft: 105 });
+  const keys = {
+    "Ctrl+Enter": translate({ keycode: 28, ctrlKey: true }, table),
+    "Alt+Tab": translate({ keycode: 15, altKey: true }, table),
+    "Ctrl+W": translate({ keycode: 17, ctrlKey: true }, table),
+    "Alt+F4": translate({ keycode: 62, altKey: true }, table),
+    "ArrowLeft": translate({ keycode: 105 }, table),
+  };
+  const example = orgPolicy.parse(JSON.parse(require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "shared", "org-policy.example.json"), "utf8")));
+  for (const [name, key] of Object.entries(keys)) {
+    const engine = make({ policy: example, library: [] });
+    engine.focusChanged({ process: "outlook.exe" });
+    assert.deepEqual(engine.type("please sign the contract"), []);
+    const [warning, ...rest] = engine.keyTyped(key);
+    assert.deepEqual(rest, []);
+    assert.equal(warning.type, "warning", name);
+    assert.equal(warning.leftField, true, name);
+    assert.deepEqual(warning.hits.map((hit) => hit.rule.id), ["contract-disclaimer"], name);
+    assert.equal(warning.hits[0].rule.insert, undefined, name + ": the disclaimer is not offered for insertion into whatever has the focus now");
+    assert.equal(warning.hits[0].rule.message, "Messages about contracts need the legal disclaimer.");
+    assert.ok(example.keywordRules.find((rule) => rule.id === "contract-disclaimer").insert, "the policy's rule keeps its insert");
+
+    const offers = make({ policy: example, library: [] });
+    offers.focusChanged({ process: "teams" });
+    assert.deepEqual(offers.type("about the refund"), []);
+    assert.deepEqual(offers.keyTyped(key), [], name + ": no offer at a key that may leave the field");
+    // Still in the same field, the offer comes at the next word typed there, with its insert.
+    const [offer] = offers.type(" today ");
+    assert.deepEqual([offer.type, offer.hits[0].rule.id, offer.leftField], ["keyword", "returns", undefined], name);
+    assert.ok(offer.hits[0].rule.insert);
+  }
+  // A word ended by a space is warned about and offered with the inserts, as before.
+  const engine = make({ policy: example, library: [] });
+  engine.focusChanged({ process: "outlook.exe" });
+  assert.deepEqual(engine.type("the contract and the refund ").map((a) => [a.type, a.hits[0].rule.id, !!a.hits[0].rule.insert, a.leftField]),
+    [["warning", "contract-disclaimer", true, undefined], ["keyword", "returns", true, undefined]]);
+});
+
+test("nothing is held or checked in a terminal, a password manager or a credential prompt; shortcuts still expand", () => {
+  const rules = orgPolicy.parse({
+    library: [{ trigger: "sig/", expansion: "Kind regards" }],
+    keywordRules: [{ id: "contract", action: "warn", keywords: ["contract"], message: "x" }, { id: "card", action: "warn", detect: ["card-number"], message: "y" }],
+  });
+  const contexts = [
+    { process: "/usr/bin/gnome-terminal" },
+    { process: "gnome-terminal-" }, // Linux /proc/<pid>/comm cuts gnome-terminal-server to 15 characters
+    { process: "C:\\Program Files\\1Password\\1Password.exe", title: "1Password" },
+    { process: "chrome.exe", title: "Sign in - Bank - Google Chrome" },
+    { process: "C:\\Program Files\\PuTTY\\putty.exe", title: "build01.corp - PuTTY" },
+    { process: "C:\\Program Files\\Git\\usr\\bin\\mintty.exe", title: "MINGW64:/c/Users/jane" },
+    { process: "C:\\Program Files (x86)\\Mobatek\\MobaXterm\\MobaXterm.exe", title: "build01.corp" },
+    { process: "urxvt", title: "jane@ws: ~" },
+    { process: "polkit-gnome-au", title: "Authenticate" }, // polkit-gnome-authentication-agent-1, cut to 15
+    { process: "pinentry-gnome3", title: "pinentry" },
+    { process: "msedge.exe", title: "Anmelden - Microsoft-Konto - Microsoft Edge" },
+  ];
+  for (const context of contexts) {
+    const engine = make({ policy: rules, library: [] });
+    let checks = 0;
+    engine.setExtensions([{ id: "guard", check: (text) => { checks++; return /contract/.test(text) ? { popover: "warning" } : null; } }]);
+    assert.equal(engine.focusChanged(context).mode, "triggers");
+    const actions = engine.type("sudo -v\nhunter2\nthe contract 4111 1111 1111 1111 ").concat(engine.keyTyped({ text: "\n", resetsBuffer: true }));
+    assert.deepEqual(actions, [], JSON.stringify(context) + ": no keyword or app action");
+    assert.equal(engine.fieldText, "", JSON.stringify(context) + ": no field text is held");
+    assert.equal(checks, 0, JSON.stringify(context) + ": the app check never ran");
+    assert.equal(engine.type("sig/")[0].type, "expand", "shortcuts still work there");
+    engine.focusChanged({ process: "notepad" });
+    assert.deepEqual(engine.type("the contract ").map((a) => a.type), ["warning", "app"], "an ordinary window is checked again");
+  }
 });
 
 test("an expansion is counted once the undo window closes", () => {

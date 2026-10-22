@@ -10,6 +10,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const orgPolicy = require("../core/org-policy.js");
+const signing = require("../core/policy-signing.js");
 const metrics = require("../core/metrics.js");
 const report = require("../core/report.js");
 const { loadApps } = require("../desktop/apps/index.js");
@@ -86,7 +87,7 @@ test("the sample section parses with no warnings and the app loads through the r
   assert.equal(app.extension.id, "forms");
   assert.equal(app.popovers.plan.file, "apps/forms-plan");
   assert.equal(typeof app.popovers.plan.submit, "function");
-  assert.deepEqual(Object.keys(app).filter((key) => typeof app[key] === "function").sort(), ["onFocus", "onStart", "onStop", "simulate"], "nothing exposed beyond the contract");
+  assert.deepEqual(Object.keys(app).filter((key) => typeof app[key] === "function").sort(), ["onClearLearning", "onFocus", "onStart", "onStop", "simulate"], "nothing exposed beyond the contract (onClearLearning: assistant.clearLearning, \"Delete learned text\")");
   assert.ok(fs.existsSync(path.join(__dirname, "..", "desktop", "renderer", "apps", "forms-plan.html")));
   assert.equal(app.trayItems, undefined, "no tray entry: a record has to be chosen first");
 
@@ -189,7 +190,9 @@ test("Fill refuses an open blank, then closes the popover and types the values w
   const auditText = fs.readFileSync(path.join(dataDir, "audit.jsonl"), "utf8");
   assert.equal(auditText.includes("Mary") || auditText.includes("A-12345") || auditText.includes("delay"), false, "no value, reference or answer in the audit file");
   const saved = stored(dataDir);
-  assert.deepEqual(saved, { version: records.DATA_VERSION, records: [], dismissed: [], sessions: [{ form: "ticket", at: NOW, values: { category: "Refund", priority: "P2", customer: "Mary Jones", email: "mary.jones@example.com", sla: "48", notes: "Hi Mary Jones, the refund for order A-12345 is on its way. Sorry for the delay." } }] });
+  // The note carries the typed reason, so the whole note stays off the disk; the record's constants and the lookup row's columns are kept.
+  assert.deepEqual(saved, { version: records.DATA_VERSION, records: [], dismissed: [], sessions: [{ form: "ticket", at: NOW, values: { category: "Refund", priority: "P2", customer: "Mary Jones", email: "mary.jones@example.com", sla: "48" } }] });
+  assert.equal(fs.readFileSync(path.join(dataDir, "apps", "forms.json"), "utf8").includes(REASON), false, "the answer typed into the popover never reaches apps/forms.json");
   assert.deepEqual(assistant.usageReport().byShortcut.map((s) => [s.kind, s.trigger, s.inserts]), [["form", "refund-case", 1]]);
   const merged = report.mergeReports([assistant.usageReport()], { organizationShortcuts: report.organizationShortcuts(assistant.policy()) });
   assert.deepEqual(merged.unused.filter((u) => u.kind === "form").map((u) => u.trigger), ["complaint", "address-change"], "organizationItems names the records never filled");
@@ -304,11 +307,11 @@ test("three similar fills become a proposal; accepted it is an own record with a
     assert.equal(action.reference, reference);
     assert.equal((await submit(state(action), { reference, answers: { reason: REASON } }, shell)).ok, true);
   }
-  assert.deepEqual(assistant.invoke("forms:info").proposals.map((p) => [p.form, p.count, p.constant, p.templated]), [["ticket", 3, ["category", "priority", "sla"], ["email", "notes"]]]);
+  assert.deepEqual(assistant.invoke("forms:info").proposals.map((p) => [p.form, p.count, p.constant, p.templated]), [["ticket", 3, ["category", "priority", "sla"], ["email"]]], "the note held the typed reason, so it was never stored and is not learned");
   const [proposal] = assistant.invoke("forms:info").proposals;
   assert.match(proposal.digest, /^sha256:[0-9a-f]{64}$/);
-  assert.equal(proposal.fields.notes, "Hi [[name]], the refund for order [[reference]] is on its way. Sorry for the delay.");
-  assert.equal(proposal.label, "Refund / P2");
+  assert.deepEqual(proposal.fields, { category: "Refund", priority: "P2", sla: "48", email: "[[email]]" });
+  assert.equal(proposal.label, "Learned record 1 on Support ticket", "a number and the policy's form label, never a learned value");
 
   assert.deepEqual(assistant.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: "" }), { ok: false, error: "Enter a trigger to type for this record." });
   assert.deepEqual(assistant.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: "two words" }), { ok: false, error: "A trigger has no spaces." });
@@ -321,8 +324,8 @@ test("three similar fills become a proposal; accepted it is an own record with a
   assert.equal(stored(dataDir).records.length, 0);
 
   const unlabelled = assistant.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: "r3/" });
-  assert.deepEqual(unlabelled.record, { id: "own-" + proposal.digest.slice(7, 15), label: "Refund / P2", trigger: "r3/" }, "without a label the proposal's own is kept");
-  assert.equal(stored(dataDir).records[0].label, "Refund / P2");
+  assert.deepEqual(unlabelled.record, { id: "own-" + proposal.digest.slice(7, 15), label: "Learned record 1 on Support ticket", trigger: "r3/" }, "without a label the proposal's own is kept");
+  assert.equal(stored(dataDir).records[0].label, "Learned record 1 on Support ticket");
   assert.equal(assistant.invoke("forms:deleteOwnRecord", { id: unlabelled.record.id }).ok, true);
 
   const accepted = assistant.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: " refund2/ ", label: "Refund with apology" });
@@ -330,18 +333,19 @@ test("three similar fills become a proposal; accepted it is an own record with a
   const own = stored(dataDir).records[0];
   assert.deepEqual(own, { id: accepted.record.id, label: "Refund with apology", trigger: "refund2/", fields: proposal.fields, form: "ticket", acceptedAt: NOW });
   assert.deepEqual(assistant.invoke("forms:info").proposals, [], "an accepted proposal is a known record now");
-  assert.deepEqual(assistant.invoke("forms:info").ownRecords.map((r) => [r.id, r.trigger, r.own, r.blanks]), [[own.id, "refund2/", true, ["email", "name", "reference"]]]);
+  assert.deepEqual(assistant.invoke("forms:info").ownRecords.map((r) => [r.id, r.trigger, r.own, r.blanks]), [[own.id, "refund2/", true, ["email"]]]);
   assert.equal(assistant.audit().pop().event, "form-record-accepted");
   const [fired] = open(assistant, TICKET, "see refund2/");
   assert.equal(fired.recordId, own.id);
   assert.equal(fired.backspaces, 8);
-  assert.deepEqual(fired.record, { id: own.id, label: "Refund with apology", own: true, blanks: ["email", "name", "reference"] });
+  assert.deepEqual(fired.record, { id: own.id, label: "Refund with apology", own: true, blanks: ["email"] });
   assert.equal(fired.reference, "A-10021", "the last shell's clipboard");
-  assert.deepEqual(fired.plan.missing, ["name", "reference"], "the row filled the learned email blank");
+  assert.deepEqual(fired.plan.missing, [], "the row filled the learned email blank");
   assert.deepEqual(assistant.paletteSearch("apology").map((i) => [i.trigger, i.source]), [["refund2/", "personal"]]);
   const shell = asyncShell("");
-  const filled = await submit(state(fired), { reference: "A-10021", answers: { name: "Lee", reference: "A-1" } }, shell);
+  const filled = await submit(state(fired), { reference: "A-10021", answers: {} }, shell);
   assert.equal(filled.ok, true);
+  assert.deepEqual(shell.calls.notified, ["Filled 5 fields."], "an own record's label (typed or learned) never reaches a system notification");
   assert.equal(assistant.ledger.entries().pop().trigger, formsApp.OWN_TRIGGER, "an own record's fill is counted under one shared name");
   assert.equal(assistant.ledger.entries().pop().source, "organization", "the engine attributes form inserts to the organisation");
   assert.equal(JSON.stringify(assistant.usageReport()).includes(own.id), false, "no desk-local record id in the usage report");
@@ -402,6 +406,311 @@ test("the records module: data cleaning, the session cap, digests, secret names 
   assert.equal(records.proposals({ sessions, dismissed: [] }, []).length, 1);
   assert.equal(records.proposals({ sessions, dismissed: [] }, [{ id: "k", fields: { b: "2", a: "1" } }]).length, 0, "a known record is not proposed");
   assert.equal(records.proposals({ sessions, dismissed: [records.digest("t", { a: "1", b: "2" })] }, []).length, 0, "a dismissed one neither");
+});
+
+test("the records module: bank, identity and credential names, Guard's value detectors, the policy's own values and retention", () => {
+  for (const name of ["pass", "userPass", "credential", "credentials", "cvv", "cvv2", "cardCvc", "iban", "payeeIBAN", "bic", "ssn", "nino", "dni", "nir"]) assert.equal(records.isSecretField(name), true, name);
+  for (const name of ["passenger", "compass", "bicycle", "nirvana", "notes", "customer"]) assert.equal(records.isSecretField(name), false, name);
+  const values = { a: "Mary Jones", iban: "x", bank: "Pay to DE89 3704 0044 0532 0130 00 today", ssn2: "1", tax: "SSN 078-05-1120", ni: "AB 12 34 56 C", dni: "12345678Z", ref: "ok", card: "4111 1111 1111 1111", note: "token: abc" };
+  assert.deepEqual(records.sessionFrom("f", values, 1).values, { a: "Mary Jones", ref: "ok" });
+  for (const text of ["DE89 3704 0044 0532 0130 00", "078-05-1120", "AB 12 34 56 C", "4111 1111 1111 1111", "password is hunter2"]) assert.equal(records.isSensitiveValue(text), true, text);
+  for (const text of ["Mary Jones", "mary.jones@example.com", "48", "A-12345", "P2"]) assert.equal(records.isSensitiveValue(text), false, text);
+
+  const record = { fields: { category: "Refund", notes: "Hi [[customer]]. [[reason]]", greeting: "Dear [[customer]]", memo: "PIN [[pin]]" } };
+  const steps = [
+    { field: "category", value: "Refund", source: "record" },
+    { field: "notes", value: "Hi Mary. Sorry", source: "record" },
+    { field: "greeting", value: "Dear Mary", source: "record" },
+    { field: "memo", value: "PIN 1234", source: "record" },
+    { field: "customer", value: "Mary", source: "values" },
+    { field: "reason", value: "Sorry", source: "values" },
+  ];
+  assert.deepEqual(records.policyValues(record, steps, { reason: "Sorry" }), { category: "Refund", greeting: "Dear Mary", customer: "Mary" }, "a step with the typed answer goes, so does one built on a secret blank");
+  assert.deepEqual(records.policyValues(record, steps, { reason: "Sorry", customer: "Mary" }), { category: "Refund" });
+  assert.deepEqual(records.policyValues(null, null, null), {});
+
+  const day = 86400000;
+  const list = [{ at: 1000 * day }, { at: 1090 * day }, { at: 1095 * day }, {}];
+  assert.deepEqual(records.pruneSessions(list, 1100 * day, 10), [{ at: 1090 * day }, { at: 1095 * day }], "older than the days, and undated, go");
+  assert.equal(records.pruneSessions(list, 1100 * day, 0), list, "no positive number of days keeps them all");
+  assert.equal(records.pruneSessions(list, 1100 * day, undefined), list);
+});
+
+test("the records module leaves card numbers, labelled secrets and tokens to the scrubber: whatever Guard's card-number or secret detector flags, the scrubber masks", () => {
+  const guard = require("../core/guard.js");
+  const capture = require("../core/capture-policy.js");
+  // Deterministic strings, each one candidate (a card-like digit run, a secret label with a separator and a value, a token-like run of 20 to 30
+  // characters) between harmless words and the characters the patterns look behind and ahead at: one finding per string, so no other part masks it.
+  let seed = 7;
+  // The high bits: an LCG's low bits repeat with a period of 2 or 4, which would leave whole combinations out.
+  const next = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return Math.floor(seed / 65536) % n; };
+  const pick = (list) => list[next(list.length)];
+  const ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
+  const harmless = () => pick(["hunter2", "x", "Mary", "A-12345", "order", "the", " ", "/", "@", ".", "-", "\n", ",", "7"]);
+  const candidates = [
+    () => pick(["4111 1111 1111 1111", "4111-1111-1111-1111", "4111111111111111", "378282246310005", "5500 0000 0000 0004", "4111 1111 1111 1112"]),
+    () => Array.from({ length: 13 + next(7) }, () => String(next(10))).join(pick(["", " ", "-"])),
+    () => pick(["password", "Passwd", "PIN", "pwd", "secret", "token", "api key", "API-KEY", "apikey", "otp", "passcode", "passphrase"]) + pick([": ", "=", " is ", " ", ":", " = ", "-", " - ", "", "\t"]) + pick(["hunter2", "x", "1234", "s3cr3t!", "[x]"]),
+    () => Array.from({ length: 20 + next(11) }, () => ALNUM[next(ALNUM.length)]).join(""),
+  ];
+  let flagged = 0;
+  for (let i = 0; i < 6000; i++) {
+    const around = () => Array.from({ length: next(3) }, harmless).join("");
+    const text = around() + candidates[next(candidates.length)]() + around();
+    if (guard.DETECTORS["card-number"](text, {}).length + guard.DETECTORS.secret(text, {}).length === 0) continue;
+    flagged += 1;
+    assert.ok(capture.scrub(text).redactions > 0, "Guard flags it and the scrubber does not: " + JSON.stringify(text));
+    assert.equal(records.isSensitiveValue(text), true, text);
+  }
+  assert.ok(flagged > 1500, "the strings exercise both detectors (" + flagged + " flagged)");
+});
+
+test("a stored fill keeps only what came from the policy: an answer typed into the popover (for an organisation record or an own one), a typed customer and a note carrying an answer never reach apps/forms.json", async () => {
+  const { assistant, app, dataDir, submit } = desk();
+  const DISCLOSED = "Customer disclosed a diagnosis on the call, marker 4711";
+  const shell = asyncShell(CLIPBOARD);
+  app.onStart(shell);
+  const [refund] = open(assistant, TICKET, "refund/");
+  assert.equal((await submit(state(refund), { reference: "A-12345", answers: { reason: DISCLOSED } }, shell)).ok, true);
+  assert.equal(shell.calls.replaced.pop().text, "Hi Mary Jones, the refund for order A-12345 is on its way. " + DISCLOSED, "the answer is typed into the form");
+  // A customer typed for a blank the lookup row would have filled goes into a form field straight from the answer.
+  const picked = state(app.palette.choose({ kind: "app:forms", trigger: "form:address-change", query: "", spentKeystrokes: 0 }));
+  assert.equal((await submit(picked, { reference: "", answers: { customer: "Lee Park", address: "12 Elm Street" } }, asyncShell(""))).ok, true);
+  const [complaint] = open(assistant, TICKET, "cmp/");
+  assert.equal((await submit(state(complaint), { reference: "A-54321", answers: { summary: "Box dented, she is pregnant" } }, asyncShell(""))).ok, true);
+  const text = fs.readFileSync(path.join(dataDir, "apps", "forms.json"), "utf8");
+  for (const typed of ["4711", "disclosed", "Lee Park", "Elm Street", "pregnant"]) assert.equal(text.includes(typed), false, typed + " was typed into the popover");
+  assert.deepEqual(stored(dataDir).sessions.map((s) => s.values), [
+    { category: "Refund", priority: "P2", customer: "Mary Jones", email: "mary.jones@example.com", sla: "48" },
+    { category: "Account", priority: "P3" },
+    { category: "Complaint", priority: "P1", customer: "John Smith", email: "john.smith@example.com", sla: "24" },
+  ], "the record's constants and the lookup row's columns, which the policy already holds");
+  const tried = assistant.invoke("forms:plan", { recordId: "refund-case", formId: "ticket", reference: "A-12345", answers: { reason: "x" } });
+  assert.equal(Object.hasOwn(tried, "learnable"), false, "what a fill would store is not handed to a page");
+
+  // An own record's blank answered in the popover: typed into the form, never stored.
+  const mine = desk();
+  fs.mkdirSync(path.join(mine.dataDir, "apps"), { recursive: true });
+  fs.writeFileSync(path.join(mine.dataDir, "apps", "forms.json"), JSON.stringify({ records: [{ id: "own-1", label: "Mine", trigger: "mine/", fields: { category: "Refund", priority: "P2", notes: "Called about [[topic]]" } }] }));
+  const ownShell = asyncShell("");
+  mine.app.onStart(ownShell);
+  const [ownAction] = open(mine.assistant, TICKET, "mine/");
+  assert.deepEqual(ownAction.record, { id: "own-1", label: "Mine", own: true, blanks: ["topic"] });
+  assert.equal((await mine.submit(state(ownAction), { reference: "", answers: { topic: "her HIV test result" } }, ownShell)).ok, true);
+  assert.equal(ownShell.calls.replaced.pop().text, "Called about her HIV test result", "the answer is typed into the form");
+  assert.deepEqual(stored(mine.dataDir).sessions.map((s) => s.values), [{ category: "Refund", priority: "P2" }], "the own record's constants only");
+  assert.equal(fs.readFileSync(path.join(mine.dataDir, "apps", "forms.json"), "utf8").includes("HIV"), false);
+});
+
+test("expired fills also go at the first read, and a write that fails there is logged, never thrown out of the keystroke hook, the dashboard or the start", () => {
+  const DAY = 86400000;
+  const parsed = orgPolicy.parse({ forms: SAMPLE });
+  assert.equal(parsed.retention.corpusDays, 90);
+  const file = { sessions: [{ form: "ticket", values: { category: "Old" }, at: NOW - 400 * DAY }, { form: "ticket", values: { category: "Recent" }, at: NOW - DAY }] };
+  const categories = (data) => data.sessions.map((s) => s.values.category);
+  const make = (save) => {
+    const logs = [];
+    const host = { policy: () => parsed, engine: { library: [] }, now: () => NOW, log: (line) => logs.push(line), audit: () => {}, recordInsert: () => ({ keystrokesSaved: 0 }), appData: () => ({ load: () => JSON.parse(JSON.stringify(file)), save }) };
+    return { app: formsApp.createApp(host), logs };
+  };
+  // A desk that can write: the first keystroke's read takes the expired fill out of the file.
+  const written = [];
+  const ok = make((value) => written.push(JSON.parse(JSON.stringify(value))));
+  assert.equal(ok.app.extension.trigger("hello r"), null);
+  assert.deepEqual(written.map(categories), [["Recent"]]);
+  // A full disk: the key goes on, the read works on the pruned list, the log says why, and the next write carries the pruned list.
+  let attempts = 0;
+  const saved = [];
+  const full = make((value) => {
+    attempts += 1;
+    if (attempts === 1) throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+    saved.push(JSON.parse(JSON.stringify(value)));
+  });
+  assert.equal(full.app.extension.trigger("hello r"), null, "no throw out of the keystroke hook");
+  assert.equal(full.app.extension.trigger("hello re"), null);
+  assert.equal(full.app.ipc["forms:info"]().sessions, 1, "the dashboard sees the pruned list");
+  assert.equal(attempts, 1, "tried once, not on every key");
+  assert.deepEqual(full.logs, ["forms: expired stored fills could not be removed from the file: ENOSPC: no space left on device"]);
+  assert.equal(full.app.ipc["forms:dismissProposal"]({ digest: "sha256:0" }).ok, true);
+  assert.deepEqual(saved.map(categories), [["Recent"]], "the next write leaves the expired fill out");
+  // The same at start, and on the dashboard's first read.
+  const readOnly = () => { throw new Error("EROFS: read-only file system"); };
+  const started = make(readOnly);
+  assert.doesNotThrow(() => started.app.onStart({}));
+  assert.equal(started.logs.length, 1);
+  const shown = make(readOnly);
+  assert.equal(shown.app.ipc["forms:info"]().sessions, 1);
+  assert.equal(shown.logs.length, 1);
+});
+
+test("stored fills older than retention.corpusDays go at start and at every fill, and \"Delete learned text\" deletes them", async () => {
+  let clock = NOW;
+  const DAY = 86400000;
+  const { assistant, app, dataDir, submit } = desk({ retention: { corpusDays: 30 } }, { now: () => clock });
+  fs.mkdirSync(path.join(dataDir, "apps"), { recursive: true });
+  const own = { id: "own-1", label: "Mine", trigger: "mine/", fields: { category: "Refund", priority: "P2" } };
+  fs.writeFileSync(path.join(dataDir, "apps", "forms.json"), JSON.stringify({ records: [own], sessions: [{ form: "ticket", values: { category: "Old" }, at: NOW - 100 * DAY }, { form: "ticket", values: { category: "Recent" }, at: NOW - 10 * DAY }, { form: "ticket", values: { category: "Undated" } }] }));
+  app.onStart(asyncShell(""));
+  assert.deepEqual(stored(dataDir).sessions.map((s) => s.values.category), ["Recent"], "the expired fills left the file when the shell started the app, before any keystroke or dashboard read");
+  const info = assistant.invoke("forms:info");
+  assert.equal(info.sessions, 1);
+  assert.equal(info.retentionDays, 30);
+  clock = NOW + 25 * DAY;
+  const shell = asyncShell(CLIPBOARD);
+  app.onStart(shell);
+  const [action] = open(assistant, TICKET, "refund/");
+  assert.equal((await submit(state(action), { reference: "A-12345", answers: { reason: REASON } }, shell)).ok, true);
+  assert.deepEqual(stored(dataDir).sessions.map((s) => [s.values.category, s.at]), [["Refund", clock]], "35 days old by now: gone with the new fill");
+
+  const result = assistant.clearLearning();
+  assert.equal(result.sessions, 0);
+  assert.deepEqual(stored(dataDir).sessions, [], "the Learning tab's \"Delete learned text\" reaches the Forms fills");
+  assert.deepEqual(stored(dataDir).records.map((r) => r.id), ["own-1"], "own records are the person's, not learned text: they stay");
+  assert.deepEqual(assistant.audit().filter((e) => e.event === "form-sessions-cleared").map((e) => e.sessions), [1]);
+  app.onClearLearning();
+  assert.deepEqual(assistant.audit().filter((e) => e.event === "form-sessions-cleared").length, 1, "nothing to delete: no write, no audit line");
+  const fresh = desk();
+  fresh.assistant.clearLearning();
+  assert.equal(fs.existsSync(path.join(fresh.dataDir, "apps", "forms.json")), false, "a desk that never stored a fill gets no file");
+});
+
+test("bank details, identity numbers and credentials from the policy never reach the stored fills, by field name, by blank name or by what the value holds", async () => {
+  const row = { ref: "S-1", name: "Ann Lee", iban: "DE89 3704 0044 0532 0130 00", account: "DE89 3704 0044 0532 0130 00", taxId: "078-05-1120", insurance: "AB 12 34 56 C", credentials: "Hunter2!", pass: "Hunter2!", cvv: "737", password: "Hunter2!" };
+  const fields = ["name", "iban", "account", "taxId", "insurance", "credentials", "pass", "cvv", "note", "memo"];
+  const section = {
+    records: [{ id: "onboard", trigger: "onb/", fields: { note: "Salary to [[account]] for [[name]]", memo: "Temporary password for [[name]]: [[password]]" } }],
+    lookups: [{ id: "staff", key: "ref", rows: [row] }],
+    forms: [{ id: "hr", match: { process: "hr" }, fields: fields.map((name) => ({ name, selector: name })) }],
+  };
+  const { assistant, dataDir, submit } = desk({ forms: section });
+  const [action] = open(assistant, { process: "hr.exe", title: "Onboarding" }, "onb/");
+  const result = await submit(state(action), { reference: "S-1", answers: {} }, asyncShell(""));
+  assert.equal(result.fields, 10, "every value is typed into the form");
+  assert.deepEqual(stored(dataDir).sessions[0].values, { name: "Ann Lee" }, "iban, credentials, pass and cvv by name; the IBAN, the SSN and the NI number by Guard's detectors; the memo by its [[password]] blank");
+  const text = fs.readFileSync(path.join(dataDir, "apps", "forms.json"), "utf8");
+  for (const value of ["DE89", "078-05", "AB 12", "Hunter2", "737"]) assert.equal(text.includes(value), false, value);
+});
+
+test("a learned proposal is labelled by number and form, and an own record's fill notifies a count only, never a learned or typed label", async () => {
+  const section = withRecords([{ id: "legal", label: "Legal matter", trigger: "legal/", fields: { category: "Legal", priority: "P1" } }]);
+  const { assistant, app, submit } = desk({ forms: section });
+  const notified = [];
+  for (let i = 0; i < 3; i++) {
+    const shell = asyncShell("order A-12345");
+    app.onStart(shell);
+    const [action] = open(assistant, TICKET, "legal/");
+    assert.equal((await submit(state(action), { reference: "A-12345", answers: {} }, shell)).ok, true);
+    notified.push(...shell.calls.notified);
+  }
+  assert.deepEqual(notified, Array.from({ length: 3 }, () => "Filled 4 fields of Legal matter."), "the organisation's record is named by its policy label");
+  const [proposal] = assistant.invoke("forms:info").proposals;
+  assert.deepEqual(proposal.constant, ["category", "customer", "email", "priority"], "the same customer three times");
+  assert.equal(proposal.label, "Learned record 1 on Support ticket");
+  assert.equal(/Mary|Legal|P1/.test(proposal.label), false, "no learned value in the label");
+  const accepted = assistant.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: "mj/", label: "" });
+  assert.equal(accepted.record.label, "Learned record 1 on Support ticket");
+  const shell = asyncShell("");
+  const [own] = open(assistant, TICKET, "mj/");
+  assert.equal((await submit(state(own), { reference: "", answers: {} }, shell)).ok, true);
+  assert.deepEqual(shell.calls.notified, ["Filled 4 fields."]);
+  const renamed = desk({ forms: section });
+  fs.mkdirSync(path.join(renamed.dataDir, "apps"), { recursive: true });
+  fs.writeFileSync(path.join(renamed.dataDir, "apps", "forms.json"), JSON.stringify({ records: [{ id: "own-x", label: "my divorce lawyer note", trigger: "dl/", fields: { category: "Legal", notes: "x" } }] }));
+  const other = asyncShell("");
+  const [named] = open(renamed.assistant, TICKET, "dl/");
+  assert.equal((await renamed.submit(state(named), {}, other)).ok, true);
+  assert.deepEqual(other.calls.notified, ["Filled 2 fields."], "a label the person typed never reaches a system notification either");
+});
+
+test("proposals accepted under their default labels keep distinct names", async () => {
+  const section = withRecords([{ id: "legal", label: "Legal matter", trigger: "legal/", fields: { category: "Legal", priority: "P1" } }, { id: "hr", label: "HR matter", trigger: "hr/", fields: { category: "HR", priority: "P4" } }]);
+  const { assistant, app, submit } = desk({ forms: section });
+  for (let i = 0; i < 3; i++) {
+    for (const trigger of ["legal/", "hr/"]) {
+      const shell = asyncShell("order A-12345");
+      app.onStart(shell);
+      const [action] = open(assistant, TICKET, trigger);
+      assert.equal((await submit(state(action), { reference: "A-12345", answers: {} }, shell)).ok, true);
+    }
+  }
+  const before = assistant.invoke("forms:info").proposals;
+  assert.deepEqual(before.map((p) => p.label), ["Learned record 1 on Support ticket", "Learned record 2 on Support ticket"]);
+  assert.equal(assistant.invoke("forms:acceptProposal", { digest: before[0].digest, trigger: "x1/", label: before[0].label }).ok, true);
+  const [second] = assistant.invoke("forms:info").proposals;
+  assert.equal(second.digest, before[1].digest);
+  assert.equal(second.label, "Learned record 2 on Support ticket", "the number an own record holds is not offered again");
+  assert.equal(assistant.invoke("forms:acceptProposal", { digest: second.digest, trigger: "x2/", label: second.label }).ok, true);
+  assert.deepEqual(assistant.invoke("forms:info").ownRecords.map((r) => r.label), ["Learned record 1 on Support ticket", "Learned record 2 on Support ticket"]);
+});
+
+test("a plan popover opened before the organisation paused the desk fills nothing after the pause", async () => {
+  const pair = signing.generateKeyPair();
+  const URL = "https://intranet.example/org.signed.json";
+  const layer = { layer: "org", serial: 1, organization: "Example Logistics", forms: SAMPLE };
+  const served = { [URL]: JSON.stringify(signing.signPolicy(layer, pair.privateKey)) };
+  const dataDir = temp();
+  const assistant = createAssistant({ dataDir, now: () => NOW, appIds: ["forms"], deployment: { policySources: [{ layer: "org", label: "Organisation", url: URL }], publicKeys: [pair.publicKey] }, fetch: async (url) => ({ ok: true, status: 200, text: async () => served[url] }) });
+  await assistant.refreshPolicy();
+  const app = assistant.app("forms");
+  const shell = asyncShell(CLIPBOARD);
+  app.onStart(shell);
+  const [action] = open(assistant, TICKET, "refund/");
+  assert.equal(action.popover, "plan", "opened while the policy was live");
+  served[URL] = JSON.stringify(signing.signPolicy(Object.assign({}, layer, { serial: 2, paused: { message: "Incident" } }), pair.privateKey));
+  assert.equal((await assistant.refreshPolicy()).paused, true);
+  const refused = await app.popovers.plan.submit(state(action), { reference: "A-12345", answers: { reason: REASON } }, shell);
+  assert.deepEqual(refused, { ok: false, error: "Paused by your organisation." });
+  assert.equal(formsApp.PAUSED, refused.error);
+  assert.deepEqual(shell.calls.keys, [], "nothing typed, and the popover was not closed for a fill");
+  assert.deepEqual(shell.calls.notified, []);
+  assert.equal(assistant.ledger.entries().length, 0);
+  assert.equal(fs.existsSync(path.join(dataDir, "apps", "forms.json")), false, "nothing stored");
+  assert.equal(assistant.audit().some((e) => e.event === "form-filled"), false);
+});
+
+test("a Fill whose pause arrives while the focus goes back to the form types nothing; a fill that has started typing finishes", async () => {
+  const pair = signing.generateKeyPair();
+  const URL = "https://intranet.example/org.signed.json";
+  const layer = { layer: "org", serial: 1, organization: "Example Logistics", forms: SAMPLE };
+  const served = { [URL]: JSON.stringify(signing.signPolicy(layer, pair.privateKey)) };
+  const dataDir = temp();
+  const assistant = createAssistant({ dataDir, now: () => NOW, appIds: ["forms"], deployment: { policySources: [{ layer: "org", label: "Organisation", url: URL }], publicKeys: [pair.publicKey] }, fetch: async (url) => ({ ok: true, status: 200, text: async () => served[url] }) });
+  await assistant.refreshPolicy();
+  let serial = 1;
+  const setPaused = async (paused) => {
+    serial += 1;
+    served[URL] = JSON.stringify(signing.signPolicy(Object.assign({}, layer, { serial }, paused ? { paused: { message: "Incident" } } : {}), pair.privateKey));
+    return (await assistant.refreshPolicy()).paused;
+  };
+  const app = assistant.app("forms");
+  const shell = asyncShell(CLIPBOARD);
+  app.onStart(shell);
+  const [action] = open(assistant, TICKET, "refund/");
+  // Electron's settle() waits for the focus to go back to the form; the pause lands meanwhile.
+  shell.settle = () => setPaused(true);
+  const result = await app.popovers.plan.submit(state(action), { reference: "A-12345", answers: { reason: REASON } }, shell);
+  assert.deepEqual(result, { ok: false, error: "Paused by your organisation.", close: true });
+  assert.deepEqual(shell.calls.keys, ["close popover"], "closed for the fill, then nothing typed");
+  assert.deepEqual(shell.calls.notified, ["Paused by your organisation."], "the popover is gone, so a notification says why");
+  assert.equal(assistant.ledger.entries().length, 0);
+  assert.equal(fs.existsSync(path.join(dataDir, "apps", "forms.json")), false, "nothing stored");
+  assert.equal(assistant.audit().some((e) => e.event === "form-filled"), false);
+
+  // Resumed: a pause that lands after the first key lets the fill finish, since half a form is worse.
+  assert.equal(await setPaused(false), false);
+  const typing = asyncShell(CLIPBOARD);
+  app.onStart(typing);
+  const [next] = open(assistant, TICKET, "refund/");
+  const press = typing.sender.press;
+  let pausing = null;
+  typing.sender.press = (name, count) => {
+    if (!pausing) pausing = setPaused(true);
+    return pausing.then(() => press(name, count));
+  };
+  const finished = await app.popovers.plan.submit(state(next), { reference: "A-12345", answers: { reason: REASON } }, typing);
+  assert.equal(await pausing, true, "paused during the fill");
+  assert.equal(finished.ok, true);
+  assert.equal(finished.fields, 6);
 });
 
 test("dashboard channels: info describes everything the tab shows, lookup and plan try without counting", () => {
@@ -502,9 +811,10 @@ test("the simulation walks through the sample headlessly, with or without a form
     assert.match(text, /keys: close popover \| paste "Account" \| tab \| paste "P3" \| tab \| paste "Lee Park" \| tab x3 \| paste "New delivery address for Lee Park: 1 Main St"/);
     assert.match(text, /Fill again for Priya Nair \(A-10021\) -> 6 fields/);
     assert.match(text, /stored fills: 4; proposals: 1/);
-    assert.match(text, /learned "Refund \/ P2" \(3 fills on ticket\): category = "Refund"; priority = "P2"; sla = "48"/);
+    assert.match(text, /stored fills hold a typed answer: no/);
+    assert.match(text, /learned "Learned record 1 on Support ticket" \(3 fills on ticket\): category = "Refund"; priority = "P2"; sla = "48"; email = "\[\[email\]\]"/);
     assert.match(text, /accepted as own record own-[0-9a-f]{8} with trigger refund2\//);
-    assert.match(text, /typed "refund2\/" -> Refund with apology; still needed: name, reference/);
+    assert.match(text, /typed "refund2\/" -> Refund with apology; still needed: nothing/);
     assert.match(text, /palette items: refund\/, cmp\/, form:address-change, refund2\//);
     assert.equal(text.includes("the policy has no forms section"), extra.forms === null);
     assert.equal(assistant.ledger.entries().filter((e) => e.kind === "form").length, 4);
@@ -715,8 +1025,10 @@ test("the dashboard page shows records, lookups, forms, proposals and own record
   assert.equal(lookupLines[1][2][20], "… 5 more");
   assert.deepEqual(rows.find((row) => row[0] === "Support ticketticket"), ["Support ticketticket", "process zendesk, chrome; title matches /new ticket/", "Category (combobox:Category), Priority (combobox:Priority), Requester (edit:Requester), E-mail (edit:Email), SLA hours (edit:SLA), Internal note (document:Internal note)"]);
   assert.match(text, /None yet\. Accept a learned proposal/);
-  assert.match(text, /Refund \/ P2: 3 fills on form ticket; constant: category, priority, sla; as a template: email, notes/);
-  assert.match(text, /3 of at most 500 fills stored for learning/);
+  assert.match(text, /Learned record 1 on Support ticket: 3 fills on form ticket; constant: category, priority, sla; as a template: email/);
+  assert.match(text, /3 of at most 500 fills stored for learning, each for 90 days\. "Clear stored fills" deletes them; "Delete learned text" on the Learning tab does too, but that button is enabled only while the Learning tab has learned text of its own\. A stored fill keeps only the values that came from your organisation's records and lookup lists: nothing you type into the fill popover/);
+  const nameInput = section.querySelectorAll("input").find((input) => input.getAttribute("aria-label") === "Name for this record");
+  assert.equal(nameInput.value, "Learned record 1 on Support ticket", "the name field starts with the neutral label");
 
   // A change that touches nothing on this tab leaves the section alone; one that does, or a new section, renders.
   assert.equal(fetched, 1);
@@ -749,16 +1061,21 @@ test("the dashboard page shows records, lookups, forms, proposals and own record
   const triggerInput = section.querySelectorAll("input").find((input) => input.getAttribute("aria-label") === "Trigger for this record");
   triggerInput.value = "refund2/";
   await triggerInput.dispatch("input");
+  const named = section.querySelectorAll("input").find((input) => input.getAttribute("aria-label") === "Name for this record");
+  named.value = "Refund, no note";
+  await named.dispatch("input");
+  section = await render();
+  assert.equal(section.querySelectorAll("input").find((input) => input.getAttribute("aria-label") === "Name for this record").value, "Refund, no note", "the typed name survives a re-render");
   await buttons(section).find((b) => b.textContent === "Accept as my record").dispatch("click");
-  assert.equal(messages.pop(), "Saved Refund / P2 with trigger refund2/");
+  assert.equal(messages.pop(), "Saved Refund, no note with trigger refund2/");
   section = await render();
   rows = section.querySelectorAll("tr").map((row) => row.querySelectorAll("td").map((cell) => cell.textContent));
   const ownRow = rows.find((row) => row[1] === "refund2/");
-  assert.match(ownRow[0], /^Refund \/ P2own-[0-9a-f]{8}$/);
+  assert.match(ownRow[0], /^Refund, no noteown-[0-9a-f]{8}$/);
   assert.equal(ownRow[4], "Delete");
   assert.match(section.textContent, /No proposals yet\./);
   await buttons(section).find((b) => b.textContent === "Delete").dispatch("click");
-  assert.match(messages.pop(), /^Deleted Refund \/ P2$/);
+  assert.match(messages.pop(), /^Deleted Refund, no note$/);
   section = await render();
   assert.match(section.textContent, /None yet\. Accept a learned proposal/);
   await buttons(section).find((b) => b.textContent === "Dismiss").dispatch("click");

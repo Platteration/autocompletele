@@ -10,9 +10,13 @@ const { createAssistant } = require("./assistant.js");
 const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
 const { createFolderWatcher } = require("./filer.js");
+const guards = require("./shell-guards.js");
 const { personal } = require("../core/index.js");
 
 const SINGLE = app.requestSingleInstanceLock();
+// Every window keeps the page it loaded: no navigation, no window.open.
+app.on("web-contents-created", (event, contents) => guards.guardNavigation(contents));
+
 if (!SINGLE) {
   app.quit();
 } else {
@@ -27,6 +31,8 @@ let tray = null;
 let dashboard = null;
 let popover = null;
 let popoverState = null;
+// Popover windows main.js has put on screen; popover:get reports it as `shown`.
+const shownPopovers = new WeakSet();
 let listenerStatus = { available: false, error: "starting" };
 let dashboardFocused = false;
 let lastContext = {};
@@ -136,7 +142,16 @@ function showPopover(name, state, size) {
     frame: false, alwaysOnTop: true, resizable: false, skipTaskbar: true, title: "actle",
   }, size)));
   popover.loadFile(path.join(__dirname, "renderer", name + ".html"));
-  popover.once("ready-to-show", () => popover.show());
+  // A popover that opens on its own (filing) or never takes the keys
+  // (focusable: false) is shown without activating the window or the app;
+  // the person clicks into it (see shell-guards.js). The page is told when
+  // it is on screen: filing.js counts clicks only from a moment later.
+  const win = popover;
+  win.once("ready-to-show", () => {
+    win[guards.popoverShowMethod(state.kind, size)]();
+    shownPopovers.add(win);
+    win.webContents.send("popover:shown");
+  });
   // Values typed into a template form are actle's own input: never expanded
   // or learned (the keyword popover cannot take the focus at all).
   popover.on("focus", () => setOwnWindow(true));
@@ -163,7 +178,7 @@ function handleAction(action) {
     case "documents":
       return showPopover("documents", Object.assign({ kind: "documents" }, action), { width: 460, height: 160 + 44 * action.documents.length });
     case "filing":
-      return showPopover("filing", { kind: "filing", proposal: action.proposal }, { width: 540, height: 250 + 62 * action.proposal.missing.length });
+      return showPopover("filing", { kind: "filing", proposal: action.proposal }, { width: 540, height: 280 + 62 * action.proposal.missing.length });
     case "app":
       return showAppPopover(action);
     case "keyword":
@@ -288,14 +303,23 @@ async function submitFiling(state, payload) {
     return { ok: true };
   }
   if (payload.action === "ignoreFolder") {
-    const folder = path.dirname(String(payload.path || state.proposal.path));
-    const match = assistant.filingFolders().policy.find((f) => f.path === folder);
-    if (match) assistant.filingIgnoreFolder(match.raw, true);
-    else assistant.filingRemoveFolder((assistant.filingFolders().own.find((f) => f.path === folder) || { raw: folder }).raw);
+    // Every watch still on that proposes this document: its folder, or a
+    // recursive watch above it. Only the document this popover shows, never
+    // a path the page sends.
+    const file = state.proposal.path;
+    const covering = guards.watchesCovering(file, assistant.filingFolders().active);
+    if (!covering.length) return { ok: false, error: "This document's folder is no longer watched, so there is nothing to turn off. Skip it, or change folders on the Filing tab." };
+    for (const folder of covering) {
+      if (folder.source === "organization") assistant.filingIgnoreFolder(folder.raw, true);
+      else assistant.filingRemoveFolder(folder.raw);
+    }
+    dropUnwatchedFromQueue();
     closePopover();
     startWatching();
     broadcast({ settings: true, filing: true });
-    return { ok: true };
+    const message = guards.ignoredFoldersMessage(file, covering);
+    if (message) notify(message);
+    return { ok: true, turnedOff: covering.map((folder) => folder.path) };
   }
   const result = assistant.applyFiling({ path: state.proposal.path, name: payload.name, answers: payload.answers });
   if (!result.ok) return result;
@@ -313,11 +337,24 @@ function enqueueFiling(file) {
   nextFiling();
 }
 
+// Documents queued from a folder that was turned off or removed since are
+// not shown (a rescan can queue thousands).
+function dropUnwatchedFromQueue() {
+  const kept = guards.stillWatched(filingQueue, assistant.filingFolders().active);
+  filingQueue.length = 0;
+  filingQueued.clear();
+  for (const queued of kept) {
+    filingQueue.push(queued);
+    filingQueued.add(queued);
+  }
+}
+
 // One popover at a time. A loop, not a recursion: a rescan of a large folder
 // where most files get no proposal must not grow the stack, and a proposal
 // that throws must not escape the timer that called this.
 function nextFiling() {
-  if (!assistant) return;
+  // A paused desk proposes nothing, and keeps the queue for the resume.
+  if (!assistant || assistant.paused) return;
   while (!popover && filingQueue.length) {
     const file = filingQueue.shift();
     filingQueued.delete(file);
@@ -359,8 +396,23 @@ async function refreshPolicy() {
   if (assistant.paused !== wasPaused) {
     const message = assistant.policyInfo().paused.message;
     notify(assistant.paused ? "Paused by your organisation" + (message ? ": " + message : ".") : "Your organisation resumed actle.");
+    // Kill-switch consistency (the pause is not a security boundary): a
+    // paused desk offers nothing, so an open popover or palette goes too.
+    // A document whose filing popover closes waits at the head of the queue
+    // and is proposed again on the resume; what was typed into another
+    // popover is discarded.
+    if (assistant.paused) {
+      const waiting = popoverState && popoverState.kind === "filing" ? popoverState.proposal.path : null;
+      closePopover();
+      closePalette();
+      if (waiting && !filingQueued.has(waiting)) {
+        filingQueue.unshift(waiting);
+        filingQueued.add(waiting);
+      }
+    }
   }
   startWatching();
+  if (wasPaused && !assistant.paused) nextFiling();
   updateTray();
   broadcast({ settings: true, status: true, policy: true });
   return result;
@@ -475,8 +527,8 @@ function registerIpc() {
     broadcast({ settings: true, filing: true });
     return r;
   });
-  handle("filing:removeFolder", (raw) => { const r = assistant.filingRemoveFolder(String(raw || "")); startWatching(); broadcast({ settings: true, filing: true }); return r; });
-  handle("filing:ignoreFolder", (q) => { const r = assistant.filingIgnoreFolder(String((q && q.path) || ""), !(q && q.ignore === false)); startWatching(); broadcast({ settings: true, filing: true }); return r; });
+  handle("filing:removeFolder", (raw) => { const r = assistant.filingRemoveFolder(String(raw || "")); dropUnwatchedFromQueue(); startWatching(); broadcast({ settings: true, filing: true }); return r; });
+  handle("filing:ignoreFolder", (q) => { const r = assistant.filingIgnoreFolder(String((q && q.path) || ""), !(q && q.ignore === false)); dropUnwatchedFromQueue(); startWatching(); broadcast({ settings: true, filing: true }); return r; });
   handle("filing:rescan", (folder) => {
     const target = String(folder || "");
     const known = assistant.filingFolders().active.find((f) => f.path === target);
@@ -485,7 +537,18 @@ function registerIpc() {
     for (const file of files) enqueueFiling(file);
     return { ok: true, queued: files.length };
   });
-  handle("filing:reveal", (p) => { if (p) shell.showItemInFolder(String(p)); return { ok: true }; });
+  // An index entry id from the Filing tab, or the exact path of the last
+  // Sheets export; never any other path (shell-guards.js revealTarget).
+  handle("filing:reveal", async (request) => {
+    const sheets = await assistant.invoke("sheets:info");
+    const target = guards.revealTarget(request, {
+      entries: assistant.filingRecent(Math.max(1, assistant.filingInfo().indexed)),
+      exportPaths: sheets && sheets.ok && sheets.lastExport ? [sheets.lastExport.path] : [],
+    });
+    if (!target) return { ok: false, error: "Not a filed document or an export of this desk." };
+    shell.showItemInFolder(target);
+    return { ok: true };
+  });
   handle("apps:list", () => assistant.appsInfo());
   handle("app:invoke", async (q) => {
     const result = await assistant.invoke(q && q.channel, q && q.payload);
@@ -523,7 +586,7 @@ function registerIpc() {
     context: lastContext,
     version: app.getVersion(),
   }));
-  handle("popover:get", () => popoverState);
+  handle("popover:get", () => popoverState && Object.assign({}, popoverState, { shown: !!popover && shownPopovers.has(popover) }));
   handle("popover:submit", (payload) => submitPopover(payload));
   handle("popover:close", () => { closePopover(); return { ok: true }; });
 }

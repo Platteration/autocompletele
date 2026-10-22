@@ -10,6 +10,7 @@ const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 const orgPolicy = require("../core/org-policy.js");
+const signing = require("../core/policy-signing.js");
 const { loadApps } = require("../desktop/apps/index.js");
 const guardApp = require("../desktop/apps/guard/app.js");
 const { fakeShell, MESSAGE, CHAT, CARD } = require("../desktop/apps/guard/simulate.js");
@@ -427,6 +428,83 @@ test("the simulation walks through the sample headlessly, with or without a guar
     assert.deepEqual(guardAudit(assistant).filter(([, outcome]) => outcome !== "raised"), [["card-number", "dismissed"], ["contract-disclaimer", "fixed"], ["contract-disclaimer", "dismissed"]]);
     assert.ok(CHAT.includes("guaranteed"));
   }
+});
+
+test("a warning raised by Enter offers no fix: the key may have sent the message, so a fix would land in the next one", async () => {
+  const dataDir = temp();
+  fs.writeFileSync(path.join(dataDir, "policy.json"), JSON.stringify({ guard: SAMPLE }));
+  const assistant = createAssistant({ dataDir, now: () => NOW, appIds: ["guard"] });
+  assistant.focusChanged(OUTLOOK);
+  const actions = type(assistant, "Please find the contract\n");
+  assert.equal(actions.length, 1, "the word ended by Enter is still checked");
+  assert.equal(actions[0].leftField, true);
+  const state = Object.assign(popoverState(actions), { leftField: true });
+  const shell = asyncShell();
+  assert.deepEqual(await assistant.app("guard").submit(state, { action: "fix", index: 0 }, shell), { ok: false, error: guardApp.SENT });
+  assert.deepEqual(shell.calls.replaced, [], "nothing typed into the next message");
+  assert.deepEqual(shell.calls.copied, []);
+  assert.deepEqual(assistant.ledger.entries(), []);
+  assert.deepEqual(await assistant.app("guard").submit(state, { action: "dismiss" }, shell), { ok: true, dismissed: 1 }, "Dismiss still answers it");
+  assistant.focusChanged(OUTLOOK);
+  const spaced = type(assistant, "Please find the contract ");
+  assert.equal(spaced.length, 1);
+  assert.equal(spaced[0].leftField, undefined, "a word ended by a space is not marked, so it keeps its fix");
+});
+
+test("a warning raised before the organisation paused the desk fixes nothing after the pause; Dismiss still answers it", async () => {
+  const pair = signing.generateKeyPair();
+  const URL = "https://intranet.example/org.signed.json";
+  const layer = { layer: "org", serial: 1, organization: "Example Logistics", guard: SAMPLE };
+  const served = { [URL]: JSON.stringify(signing.signPolicy(layer, pair.privateKey)) };
+  const assistant = createAssistant({ dataDir: temp(), now: () => NOW, appIds: ["guard"], deployment: { policySources: [{ layer: "org", label: "Organisation", url: URL }], publicKeys: [pair.publicKey] }, fetch: async (url) => ({ ok: true, status: 200, text: async () => served[url] }) });
+  await assistant.refreshPolicy();
+  assistant.focusChanged(OUTLOOK);
+  const state = popoverState(type(assistant, "Please find the contract attached "));
+  assert.deepEqual(state.hits.map((h) => h.rule), ["contract-disclaimer"], "raised while the policy was live");
+  served[URL] = JSON.stringify(signing.signPolicy(Object.assign({}, layer, { serial: 2, paused: { message: "Incident" } }), pair.privateKey));
+  assert.equal((await assistant.refreshPolicy()).paused, true);
+  const shell = asyncShell();
+  assert.deepEqual(await assistant.app("guard").submit(state, { action: "fix", index: 0 }, shell), { ok: false, error: "Paused by your organisation." });
+  assert.equal(guardApp.PAUSED, "Paused by your organisation.");
+  assert.deepEqual(shell.calls.replaced, [], "the disclaimer was not typed");
+  assert.deepEqual(shell.calls.copied, []);
+  assert.deepEqual(assistant.ledger.entries(), []);
+  assert.deepEqual(await assistant.app("guard").submit(state, { action: "dismiss" }, shell), { ok: true, dismissed: 1 });
+  assert.deepEqual(guardAudit(assistant), [["contract-disclaimer", "raised"], ["contract-disclaimer", "dismissed"]]);
+});
+
+test("no clipboard fix copies what was typed in a terminal, a password manager or a sign-in window: no warning is raised there, and one raised elsewhere is refused once the focus moves there", async () => {
+  const { assistant, app } = desk();
+  // The card-number rule applies in every application and its fix goes to the clipboard: the engine is what keeps it silent here.
+  const typed = "sudo -S true; card " + CARD + " and the contract attached ";
+  const sensitive = [
+    { process: "/usr/bin/gnome-terminal", title: "bash" },
+    { process: "gnome-terminal-", title: "bash" },
+    { process: "KeePassXC.exe", title: "Database" },
+    { process: "chrome.exe", title: "Sign in - Example Bank" },
+    { process: OUTLOOK.process, title: "Message", passwordField: true },
+    { process: OUTLOOK.process, title: "Message", secureInput: true },
+  ];
+  for (const context of sensitive) {
+    assistant.focusChanged(context);
+    assert.deepEqual(type(assistant, typed), [], "no warning, so no fix to click: " + JSON.stringify(context));
+    assert.equal(assistant.engine.fieldText, "", "and no field text held to copy: " + JSON.stringify(context));
+  }
+  assert.deepEqual(guardAudit(assistant), [], "nothing was raised");
+  // A warning raised in an ordinary window is refused once the focus moved to a terminal.
+  assistant.focusChanged(OUTLOOK);
+  const state = popoverState(type(assistant, "card " + CARD + " "));
+  assert.deepEqual(state.hits.map((h) => h.rule), ["card-number"]);
+  assistant.focusChanged(sensitive[0]);
+  const moved = asyncShell();
+  assert.deepEqual(await app.submit(state, { action: "fix", index: 0 }, moved), { ok: false, error: guardApp.FOCUS_MOVED });
+  assert.deepEqual(moved.calls.copied, []);
+  // In the ordinary window itself the same clipboard fix copies the corrected text.
+  assistant.focusChanged(OUTLOOK);
+  const again = popoverState(type(assistant, "card " + CARD + " "));
+  const shell = asyncShell();
+  assert.deepEqual(await app.submit(again, { action: "fix", index: 0 }, shell), { ok: true, rule: "card-number", via: "clipboard", inserted: 0 });
+  assert.deepEqual(shell.calls.copied, ["card [card number removed] "]);
 });
 
 // ---- The two pages, run under Node with a few lines of DOM ----------------

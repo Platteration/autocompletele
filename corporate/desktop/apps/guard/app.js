@@ -20,6 +20,11 @@ const CLIPBOARD_NOTE = "The corrected text is on your clipboard. It covers only 
 // The engine keeps the last maxFieldText characters of a field: a corrected copy of a longer message would start mid-word.
 const TOO_LONG = "This message is longer than actle holds (" + DEFAULTS.maxFieldText + " characters), so a corrected copy would be incomplete: correct it by hand.";
 const FOCUS_MOVED = "The focus moved since this warning was raised; type the fix by hand.";
+const PAUSED = "Paused by your organisation.";
+// The engine marks a warning raised by Enter, Tab or a shortcut key as having
+// left the field: that key may have sent the message, and the caret may be in
+// the next one. A fix typed now would land in the wrong message.
+const SENT = "The key that raised this warning (Enter, Tab or a shortcut) may already have sent the message; check it and correct it by hand.";
 // A policy without a guard section: normalised once, not on every key the engine polls the extension on.
 const EMPTY = guard.normalizeGuard(null);
 
@@ -127,10 +132,17 @@ function createApp(host) {
    * The shell cannot edit text already in the field, so a "remove" fix and a
    * text fix at the start put the corrected field text (what actle saw typed
    * since the field got the focus) on the clipboard instead. Every kind is
-   * refused once the focus moved: the popover never closes on its own.
+   * refused once the focus moved (the popover never closes on its own) or
+   * while the organisation has paused the desk. No warning is raised in a
+   * password manager, a terminal or a sign-in window: the engine holds no
+   * field text there and runs no check (core/engine.js tracksField), and a
+   * warning from another window is refused once the focus moves there.
    */
   function fix(hit, from, popover) {
+    const policy = host.policy();
+    if (policy.paused && policy.paused.active) return { ok: false, error: PAUSED };
     if (popover.focus !== focus) return { ok: false, error: FOCUS_MOVED };
+    if (popover.leftField) return { ok: false, error: SENT };
     const rule = ruleById(hit.rule);
     if (!rule) return { ok: false, error: "The rule " + hit.rule + " is no longer in the policy." };
     if (!rule.fix) return { ok: false, error: "This warning has no fix to apply." };
@@ -257,4 +269,4 @@ function createApp(host) {
   return app;
 }
 
-module.exports = { createApp, CLIPBOARD_NOTE, TOO_LONG, FOCUS_MOVED, SIZE, splitRecipients };
+module.exports = { createApp, CLIPBOARD_NOTE, TOO_LONG, FOCUS_MOVED, PAUSED, SENT, SIZE, splitRecipients };

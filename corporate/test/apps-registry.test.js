@@ -102,6 +102,30 @@ test("keyword offers and app checks on the same word both reach the shell, the a
   assert.deepEqual(actions.map((a) => a.type), ["keyword", "app"]);
 });
 
+test("the Guard app sees the word a send key ends, and nothing typed in a terminal or a password manager", () => {
+  const dataDir = temp();
+  const sample = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "desktop", "apps", "guard", "sample-policy.json"), "utf8"));
+  fs.writeFileSync(path.join(dataDir, "policy.json"), JSON.stringify({ organization: "Org", guard: Object.assign({}, sample, { assumeExternal: true }) }));
+  const assistant = createAssistant({ dataDir, now: () => new Date(2026, 9, 21, 12).getTime(), appIds: ["guard"] });
+  const guard = (actions) => actions.filter((a) => a.type === "app" && a.app === "guard").map((a) => a.rule || (a.rules && a.rules[0]) || a.popover);
+  const send = { enter: { text: "\n", resetsBuffer: true }, tab: { text: "\t", resetsBuffer: true }, chord: { text: "", resetsBuffer: true } };
+  for (const [name, key] of Object.entries(send)) {
+    assistant.focusChanged({ process: "slack", title: "general - Slack" });
+    assert.deepEqual(guard(typeAll(assistant, "my card is 4111 1111 1111 1111")), [], name + ": nothing while typing");
+    const raised = assistant.keyTyped(key).filter((a) => a.type === "app" && a.app === "guard");
+    assert.equal(guard(raised).length, 1, name + ": the card typed last is warned about");
+    assert.equal(raised[0].leftField, true, name + ": marked as raised by a key that may have left the field");
+  }
+  for (const context of [{ process: "/usr/bin/gnome-terminal" }, { process: "C:\\Program Files\\1Password\\1Password.exe" },
+    { process: "C:\\Program Files\\PuTTY\\putty.exe" }, { process: "pinentry-gnome3" }, { process: "msedge.exe", title: "Anmelden - Microsoft-Konto" }]) {
+    assistant.focusChanged(context);
+    const actions = typeAll(assistant, "sudo -v hunter2 4111 1111 1111 1111 ").concat(assistant.keyTyped(send.enter));
+    assert.deepEqual(guard(actions), [], JSON.stringify(context));
+    assert.equal(assistant.engine.fieldText, "", JSON.stringify(context) + ": no field text held");
+  }
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
 test("loadApps validates the shape and skips what it cannot load", () => {
   const log = [];
   const host = { policy: () => ({}) };

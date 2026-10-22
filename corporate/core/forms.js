@@ -328,13 +328,13 @@ function learnFieldSets(sessions, options) {
           templated.push(name);
         }
       }
-      const short = constant.map((name) => list[c.support[0]][name]).filter((v) => v.length <= 40).slice(0, 2);
-      proposals.push({ form, label: short.join(" / ") || constant.join(", "), count: c.support.length, fields, constant, templated });
+      proposals.push({ form, count: c.support.length, fields, constant, templated, order: c.pairs.join("\n") });
     }
   }
-  proposals.sort((a, b) => b.count - a.count || b.constant.length - a.constant.length || a.form.localeCompare(b.form) || a.label.localeCompare(b.label));
+  proposals.sort((a, b) => b.count - a.count || b.constant.length - a.constant.length || a.form.localeCompare(b.form) || a.order.localeCompare(b.order));
+  // The label is a number, never a learned value: it is shown wherever the record goes (an accepted proposal keeps it unless renamed), and a value may be personal data.
   return proposals.slice(0, Math.max(1, Math.floor(Number(settings.limit) || DEFAULTS.limit)))
-    .map((p, i) => Object.assign({ id: "learned-" + (i + 1) }, p));
+    .map(({ order, ...p }, i) => Object.assign({ id: "learned-" + (i + 1), label: "Learned record " + (i + 1) }, p));
 }
 
 /** The policy items usage reports name: one "form" item per record, by id (a fill is counted against the record, not its trigger). */

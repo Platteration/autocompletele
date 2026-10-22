@@ -4,9 +4,14 @@
 // they belong. Field values are found in the text by lists, aliases and
 // patterns; dates are recognised in common spellings. The index of filed
 // documents holds names, paths and the values found, never document text.
-// Pure: reading, renaming and watching folders are the shell's job.
+// Pure, except resolveFolder and moveDocument at the end: the desk and the
+// admin tool both file through them, so a folder resolves the same way in
+// both and neither can overwrite. Reading and watching are the shell's job.
 "use strict";
 
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { template } = require("./personal.js");
 const { keywordPattern, MATCH } = require("./keyword-rules.js");
 const capture = require("./capture-policy.js");
@@ -16,9 +21,19 @@ const SEARCH_MAX = 200000;
 
 const BUILTIN_FIELDS = Object.freeze(["date", "year", "month", "day", "original", "ext"]);
 const DATE_ORDERS = Object.freeze(["dmy", "mdy"]);
+// A file name is capped twice: in UTF-16 code units (what NTFS counts, kept
+// short for Windows paths) and in UTF-8 bytes (ext4 and APFS allow 255), with
+// room left inside 255 bytes for the " (n)" uniqueName may add.
 const MAX_NAME = 150;
+const MAX_NAME_BYTES = 200;
+// A folder gets no " (n)", so each component may use the whole 255.
+const MAX_FOLDER_PART = 255;
 const MAX_VALUE = 80;
-const RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+// Longer than any real extension: such a tail is kept in the name and capped with it.
+const MAX_EXT = 16;
+// The device names Windows reserves, with the superscript digits it also treats as 1-3.
+const RESERVED_NAMES = /^(con|prn|aux|nul|conin\$|conout\$|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])$/i;
+const HOME_PREFIX = /^~(?=$|[\\/])/;
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 
 function asText(value) {
@@ -37,9 +52,14 @@ function pad(n) {
   return n < 10 ? "0" + n : String(n);
 }
 
-/** A value that will become part of a file or folder name: no separators or control characters. */
+/**
+ * A value that will become part of a file or folder name: no separators or
+ * control characters, and no lone surrogate (it becomes U+FFFD, which is what
+ * the file system would get), so the path in the index is the path on disk.
+ */
 function cleanValue(value) {
   return String(value == null ? "" : value)
+    .toWellFormed()
     .replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -47,23 +67,67 @@ function cleanValue(value) {
     .trim();
 }
 
+/** UTF-8 length of one code point; a lone surrogate counts as the U+FFFD Node writes for it. */
+function utf8Length(ch) {
+  const cp = ch.codePointAt(0);
+  return cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+}
+
+function utf8Bytes(text) {
+  let total = 0;
+  for (const ch of text) total += utf8Length(ch);
+  return total;
+}
+
+/** The longest start of `text` within `units` UTF-16 code units and `bytes` UTF-8 bytes, cut between code points. */
+function clip(text, units, bytes) {
+  let end = 0;
+  let size = 0;
+  for (const ch of text) {
+    size += utf8Length(ch);
+    if (end + ch.length > units || size > bytes) break;
+    end += ch.length;
+  }
+  return text.slice(0, end);
+}
+
 /**
  * Make a file name safe on Windows, macOS and Linux: banned characters removed,
  * whitespace collapsed to one underscore, trailing dots and spaces dropped,
- * reserved device names prefixed, length capped while keeping the extension.
+ * reserved device names prefixed (Windows reserves the part before the first
+ * dot: CON.2026.txt is CON), length capped in code units and in UTF-8 bytes
+ * while keeping the extension, never cutting inside a surrogate pair. An
+ * "extension" longer than MAX_EXT is not one: it stays in the name and is
+ * capped with it, so every name fits both caps.
  */
 function safeName(name, ext) {
-  const extension = asText(ext).replace(/^\.+/, "").replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+  let extension = asText(ext).replace(/^\.+/, "").replace(/[^A-Za-z0-9]/g, "").toLowerCase();
   let stem = String(name == null ? "" : name)
+    .toWellFormed()
     .replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, "")
     .replace(/\s+/g, "_")
     .replace(/_{2,}/g, "_")
     .replace(/^[._\s]+|[._\s]+$/g, "");
   if (!stem) stem = "document";
-  if (RESERVED_NAMES.test(stem)) stem = "_" + stem;
-  const room = MAX_NAME - (extension ? extension.length + 1 : 0);
-  if (stem.length > room) stem = stem.slice(0, Math.max(1, room)).replace(/[._\s]+$/g, "") || "document";
-  return extension ? stem + "." + extension : stem;
+  if (RESERVED_NAMES.test(stem.split(".")[0])) stem = "_" + stem;
+  if (extension.length > MAX_EXT) {
+    stem += "." + extension;
+    extension = "";
+  }
+  const suffix = extension ? "." + extension : "";
+  // The extension is ASCII, at most MAX_EXT + 1 code units and as many bytes, so the stem always keeps room.
+  const units = MAX_NAME - suffix.length;
+  const bytes = MAX_NAME_BYTES - suffix.length;
+  if (stem.length > units || utf8Bytes(stem) > bytes) stem = clip(stem, units, bytes).replace(/[._\s]+$/g, "") || "document";
+  return stem + suffix;
+}
+
+/** Each component of a filled folder well formed and within MAX_FOLDER_PART code units and UTF-8 bytes; separators and short components untouched. */
+function capFolder(folder) {
+  return String(folder).toWellFormed().split(/([\\/])/).map((part, index) => {
+    if (index % 2 || (part.length <= MAX_FOLDER_PART && utf8Bytes(part) <= MAX_FOLDER_PART)) return part;
+    return clip(part, MAX_FOLDER_PART, MAX_FOLDER_PART).replace(/[.\s]+$/g, "");
+  }).join("");
 }
 
 /** A template is usable when it has text or blanks and no path separators outside blanks. */
@@ -270,7 +334,7 @@ function detectFields(file, filing, rule) {
     // token) never becomes part of a file name, the index or the audit log:
     // the blank is left for the person to answer.
     if (value != null && cleanValue(value) && capture.scrub(String(value)).redactions === 0) {
-      values[name] = cleanValue(value).slice(0, MAX_VALUE);
+      values[name] = clip(cleanValue(value), MAX_VALUE, Infinity);
       sources[name] = "text";
     } else {
       missing.push(name);
@@ -328,7 +392,7 @@ function propose(file, filing, answers) {
   const detected = detectFields(file, filing, rule);
   const values = Object.assign({}, detected.values);
   for (const [key, value] of Object.entries(answers || {})) {
-    if (cleanValue(value) && capture.scrub(String(value)).redactions === 0) values[key] = cleanValue(value).slice(0, MAX_VALUE);
+    if (cleanValue(value) && capture.scrub(String(value)).redactions === 0) values[key] = clip(cleanValue(value), MAX_VALUE, Infinity);
   }
   const missing = template.fields(rule.name).concat(template.fields(rule.folder || "")).map((f) => f.name).filter((name, index, all) => !Object.hasOwn(values, name) && all.indexOf(name) === index);
   const ext = String(file && file.ext != null ? file.ext : "");
@@ -344,7 +408,7 @@ function propose(file, filing, answers) {
     nameTemplate: rule.name,
     folderTemplate: rule.folder || "",
     name: missing.length ? filledName : safeName(filledName, ext),
-    folder: filledFolder,
+    folder: capFolder(filledFolder),
     ready: missing.length === 0,
   };
 }
@@ -384,7 +448,14 @@ function normalizeEntry(raw) {
     values,
     filedAt: Number.isFinite(Number(raw.filedAt)) ? Number(raw.filedAt) : 0,
     ext: asText(raw.ext).toLowerCase(),
+    // What the filed document looked like, so Undo can tell it from another file at the same path (null: filed by an earlier version).
+    size: fileNumber(raw.size),
+    mtimeMs: fileNumber(raw.mtimeMs),
   };
+}
+
+function fileNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function normalizeIndex(raw) {
@@ -437,10 +508,119 @@ function search(query, index, limit) {
   return out.slice(0, Math.max(1, Math.floor(Number(limit) || 10)));
 }
 
+// ---- Resolving and moving: shared by the desk and the admin tool -----------
+
+const MOVE_ATTEMPTS = 100;
+
+/**
+ * The absolute folder a proposal files into. A relative folder is relative to
+ * the document's own folder; a leading `~` written in the policy's folder (not
+ * one a filled value starts with) is the person's home folder; no folder
+ * renames in place.
+ */
+function resolveFolder(documentPath, proposal, home) {
+  const documentDir = path.dirname(path.resolve(String(documentPath)));
+  const folder = proposal && proposal.folder ? String(proposal.folder) : "";
+  if (!folder) return documentDir;
+  const fromHome = HOME_PREFIX.test(String(proposal.folderTemplate || "")) && HOME_PREFIX.test(folder);
+  return path.resolve(documentDir, fromHome ? folder.replace(HOME_PREFIX, () => home || os.homedir()) : folder);
+}
+
+function removeQuietly(file) {
+  try {
+    fs.unlinkSync(file);
+  } catch (error) {
+    // Already gone; nothing else to undo.
+  }
+}
+
+/** The document now also lives at `target`: remove the old name, or, if that fails, our new one, so it is never in two places. */
+function release(from, target) {
+  try {
+    fs.unlinkSync(from);
+  } catch (error) {
+    removeQuietly(target);
+    throw error;
+  }
+}
+
+/** Copy to a name that must not exist yet; the copy must be a regular file as long as the original before the original goes. */
+function copyExclusive(from, target, source) {
+  try {
+    fs.copyFileSync(from, target, fs.constants.COPYFILE_EXCL);
+  } catch (error) {
+    if (error.code === "EEXIST") return false;
+    throw error;
+  }
+  let copy = null;
+  try {
+    copy = fs.lstatSync(target);
+  } catch (error) {
+    copy = null;
+  }
+  if (!copy || !copy.isFile() || copy.size !== source.size) {
+    if (copy && copy.isFile()) removeQuietly(target);
+    throw new Error("the copy at " + target + " does not match the original, which was left in place");
+  }
+  try {
+    fs.utimesSync(target, source.atime, source.mtime);
+  } catch (error) {
+    // The copy keeps the time it was made.
+  }
+  release(from, target);
+  return true;
+}
+
+/** Put the document at `target` only if nothing is there: true when moved, false when the name is taken. */
+function claim(from, target, source) {
+  try {
+    // A hard link fails with EEXIST when anything has the name, so the name is reserved in one step.
+    fs.linkSync(from, target);
+  } catch (error) {
+    if (error.code === "EEXIST") return false;
+    // No hard link here (another drive, FAT or exFAT, some shares): an exclusive copy.
+    return copyExclusive(from, target, source);
+  }
+  release(from, target);
+  return true;
+}
+
+/**
+ * Move a regular file into `folder` (which exists) as `name`, or as the next
+ * free "name (n).ext", never replacing anything already there: a name another
+ * writer takes between the check and the move goes to the next number.
+ * Symbolic links, folders and devices are refused.
+ * @returns {{name:string, path:string, size:number, mtimeMs:number}}
+ */
+function moveDocument(from, folder, name) {
+  const source = fs.lstatSync(from);
+  if (source.isSymbolicLink()) throw new Error("symbolic links are not filed");
+  if (!source.isFile()) throw new Error(from + " is not a regular file");
+  const tried = new Set();
+  for (let attempt = 0; attempt < MOVE_ATTEMPTS; attempt++) {
+    const candidate = uniqueName(name, (c) => tried.has(c) || fs.existsSync(path.join(folder, c)));
+    tried.add(candidate);
+    const target = path.join(folder, candidate);
+    if (claim(from, target, source)) {
+      let moved = source;
+      try {
+        moved = fs.lstatSync(target);
+      } catch (error) {
+        // Moved, then touched by someone else at once: keep what was moved.
+      }
+      return { name: candidate, path: target, size: moved.size, mtimeMs: moved.mtimeMs };
+    }
+  }
+  throw new Error("no free name for " + name + " in " + folder + " after " + MOVE_ATTEMPTS + " tries");
+}
+
 module.exports = {
   BUILTIN_FIELDS,
   DATE_ORDERS,
   MAX_NAME,
+  MAX_NAME_BYTES,
+  MAX_FOLDER_PART,
+  MAX_EXT,
   normalizeFiling,
   cleanValue,
   safeName,
@@ -455,4 +635,6 @@ module.exports = {
   addEntry,
   removeEntry,
   search,
+  resolveFolder,
+  moveDocument,
 };

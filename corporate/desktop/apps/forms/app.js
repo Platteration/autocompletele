@@ -6,8 +6,14 @@
 // actle's own window, then types the values in Tab order. The shell cannot
 // read the form or reach its fields by selector: the caret has to be in the
 // form's first field, and a Tab is pressed for every field passed over.
-// Every fill made on a matched form is stored (secrets left out) so the
-// core can propose records from fields filled together.
+// Every fill made on a matched form is stored so the core can propose
+// records from fields filled together, but only the values that came from
+// the policy (records.js policyValues and sessionFrom): never what was typed
+// into the popover, a value of a field named with one of records.js's secret
+// words, or a value the scrubber masks or Guard's IBAN or national ID
+// detector flags. Stored fills older than the policy's retention.corpusDays
+// go at start and at every fill, and all go with "Delete learned text"
+// (onClearLearning).
 "use strict";
 
 const core = require("../../../core/forms.js");
@@ -25,6 +31,7 @@ const FOCUS_DELAY_MS = 150;
 const OWN_TRIGGER = "own-record";
 const INFO_ROWS = 20;
 const EMPTY_SECTION = core.normalizeForms(null);
+const PAUSED = "Paused by your organisation.";
 
 function asText(value) {
   return String(value == null ? "" : value).trim();
@@ -39,7 +46,7 @@ function then(value, fn) {
   return value && typeof value.then === "function" ? value.then(fn) : fn(value);
 }
 
-/** A stand-in shell says through settle() that the focus is back at once; Electron's shell has no such hook and gets the pause. */
+/** The shell's settle() gives the focus back to the form (Electron's waits 150 ms; the simulator's stand-in answers at once); a shell without it gets the same pause here. */
 function settle(from) {
   return typeof from.settle === "function" ? from.settle() : new Promise((resolve) => setTimeout(resolve, FOCUS_DELAY_MS));
 }
@@ -68,8 +75,31 @@ function createApp(host) {
     return !!(state && state.active);
   }
 
+  function retentionDays() {
+    const retention = host.policy().retention;
+    return retention ? retention.corpusDays : undefined;
+  }
+
+  /**
+   * The stored data, read once (at start, from onStart); fills older than the
+   * policy's retention.corpusDays are dropped from the file then and at every
+   * new fill. The read can happen inside the keystroke hook, so a write that
+   * fails here (disk full, read-only folder) is logged, never thrown: the
+   * pruned list stays in memory and the next write carries it.
+   */
   function loadData() {
-    if (!cache) cache = data.normalizeData(host.appData(ID).load({}));
+    if (!cache) {
+      const loaded = data.normalizeData(host.appData(ID).load({}));
+      const kept = data.pruneSessions(loaded.sessions, host.now(), retentionDays());
+      cache = kept.length === loaded.sessions.length ? loaded : Object.assign({}, loaded, { sessions: kept });
+      if (cache !== loaded) {
+        try {
+          host.appData(ID).save(cache);
+        } catch (error) {
+          host.log("forms: expired stored fills could not be removed from the file: " + error.message);
+        }
+      }
+    }
     return cache;
   }
 
@@ -144,7 +174,16 @@ function createApp(host) {
       reference: key,
       answers: given,
       plan: { steps: layout.withTabs(planned.steps, target.fields), missing: planned.missing.slice(), skipped: planned.skipped.slice(), ready: planned.ready },
+      // What a complete fill may store for learning: the steps whose value came from the policy alone (never shown to a page).
+      learnable: data.policyValues(record, planned.steps, given),
     };
+  }
+
+  /** The plan for the dashboard's "try": everything prepare() returns but what only a fill stores. */
+  function preview(recordId, formId, reference, answers) {
+    const prepared = prepare(recordId, formId, reference, answers);
+    delete prepared.learnable;
+    return prepared;
   }
 
   /** The popover state for a record, with the clipboard tried once for a reference; null while paused. */
@@ -181,16 +220,20 @@ function createApp(host) {
     const spent = Math.max(0, Math.floor(Number(state.spentKeystrokes) || 0)) + typedReference + typedAnswers + (backspaces ? metrics.graphemes(asText(state.trigger)) : 0);
     // The engine reports "form" inserts as the organisation's: an own record's fill is counted under one shared name, so no desk-local id reaches a usage report.
     const entry = host.recordInsert({ kind: "form", trigger: prepared.record.own ? OWN_TRIGGER : prepared.record.id, inserted: steps.map((step) => step.value).join("\n"), typed: "", spentKeystrokes: spent });
-    // Only a fill on a matched form can teach anything: the form id keys the learning.
+    // Only a fill on a matched form can teach anything: the form id keys the
+    // learning. What is stored came from the policy (the record's text and the
+    // lookup row); what was typed into the popover is never written.
     if (prepared.form) {
       const stored = loadData();
-      stored.sessions = data.addSession(stored.sessions, data.sessionFrom(prepared.form.id, Object.fromEntries(steps.map((step) => [step.field, step.value])), host.now()));
+      const kept = data.pruneSessions(stored.sessions, host.now(), retentionDays());
+      stored.sessions = data.addSession(kept, data.sessionFrom(prepared.form.id, prepared.learnable, host.now()));
       saveData(stored);
     }
     const keystrokesSaved = entry ? entry.keystrokesSaved : 0;
     // Ids and counts only: never a value, an answer or the reference.
     host.audit({ event: "form-filled", record: prepared.record.id, form: prepared.form ? prepared.form.id : null, via: state.via || "trigger", fields: steps.length, blanksAnswered: Object.keys(prepared.answers).length, lookup: prepared.lookup ? prepared.lookup.lookup : null, keystrokesSaved });
-    from.notify("Filled " + steps.length + " field" + (steps.length === 1 ? "" : "s") + " of " + prepared.record.label + ".");
+    // A system notification outlives the fill (notification centre, lock screen): a count, plus the label of an organisation record (policy text); an own record's label, learned or typed, never.
+    from.notify("Filled " + steps.length + " field" + (steps.length === 1 ? "" : "s") + (prepared.record.own ? "." : " of " + prepared.record.label + "."));
     return { ok: true, record: prepared.record.id, form: prepared.form ? prepared.form.id : null, fields: steps.length, keystrokesSaved };
   }
 
@@ -223,6 +266,8 @@ function createApp(host) {
    * popover so the keys reach the form and type the values.
    */
   function submit(state, payload, from) {
+    // A popover opened before the organisation paused the desk types nothing after it.
+    if (paused()) return { ok: false, error: PAUSED };
     const given = payload && isObject(payload.answers) ? payload.answers : {};
     const reference = payload && payload.reference != null ? payload.reference : state.reference;
     const prepared = prepare(state.recordId, state.formId, reference, given);
@@ -234,13 +279,39 @@ function createApp(host) {
     }
     if (!plan.steps.length) return { ok: false, error: "Nothing to fill: the form " + prepared.form.label + " has none of this record's fields." };
     from.closePopover();
-    return then(settle(from), () => typeAll(prepared, state, from));
+    return then(settle(from), () => {
+      // A pause that arrived while the focus went back types nothing; a fill that has started typing finishes (half a form is worse).
+      if (paused()) {
+        from.notify(PAUSED);
+        return { ok: false, error: PAUSED, close: true };
+      }
+      return typeAll(prepared, state, from);
+    });
   }
 
+  /**
+   * The proposals from the stored fills, each under a neutral label: a
+   * number and the policy's form label, never a learned value (an accepted
+   * proposal keeps this label unless the person names it). The number is the
+   * lowest that no record and no earlier proposal uses with that label, so
+   * accepting proposals under their default labels gives distinct names.
+   */
   function proposals() {
     const stored = loadData();
     const records = allRecords();
-    if (!proposalsMemo || proposalsMemo.stored !== stored || proposalsMemo.records !== records) proposalsMemo = { stored, records, value: data.proposals(stored, records) };
+    if (!proposalsMemo || proposalsMemo.stored !== stored || proposalsMemo.records !== records) {
+      const taken = new Set(records.map((record) => record.label));
+      const value = data.proposals(stored, records).map((proposal) => {
+        const form = formById(proposal.form);
+        const on = " on " + (form ? form.label : proposal.form);
+        let n = 1;
+        while (taken.has("Learned record " + n + on)) n += 1;
+        const label = "Learned record " + n + on;
+        taken.add(label);
+        return Object.assign({}, proposal, { label });
+      });
+      proposalsMemo = { stored, records, value };
+    }
     return proposalsMemo.value;
   }
 
@@ -299,6 +370,12 @@ function createApp(host) {
     return { ok: true, removed: count, broadcast: { apps: true } };
   }
 
+  /** "Delete learned text" (assistant.clearLearning): the stored fills go too; own records and dismissals are the person's decisions and stay. */
+  function clearLearning() {
+    if (!loadData().sessions.length) return;
+    clearSessions();
+  }
+
   function info() {
     const cfg = config();
     const all = merged();
@@ -315,6 +392,7 @@ function createApp(host) {
       proposals: proposals(),
       sessions: loadData().sessions.length,
       maxSessions: data.MAX_SESSIONS,
+      retentionDays: retentionDays(),
       learning: { minCount: core.DEFAULTS.minCount, minFields: core.DEFAULTS.minFields },
       warnings: all.warnings,
     };
@@ -331,7 +409,7 @@ function createApp(host) {
     ipc: {
       "forms:info": () => info(),
       "forms:lookup": (payload) => ({ ok: true, hit: core.lookup(payload && payload.text != null ? String(payload.text) : "", config()) }),
-      "forms:plan": (payload) => prepare(payload && payload.recordId, payload && payload.formId, payload && payload.reference, payload && payload.answers),
+      "forms:plan": (payload) => preview(payload && payload.recordId, payload && payload.formId, payload && payload.reference, payload && payload.answers),
       "forms:acceptProposal": (payload) => acceptProposal(payload || {}),
       "forms:dismissProposal": (payload) => dismissProposal(payload || {}),
       "forms:deleteOwnRecord": (payload) => deleteOwnRecord(payload || {}),
@@ -363,11 +441,16 @@ function createApp(host) {
       },
     },
     onFocus: (context) => { lastContext = isObject(context) ? context : {}; },
-    onStart: (started) => { shell = started; },
+    onClearLearning: () => clearLearning(),
+    onStart: (started) => {
+      shell = started;
+      // Expired stored fills leave the file at start, as the learning corpus does.
+      loadData();
+    },
     onStop: () => { shell = null; },
     simulate: (sim) => simulate(sim, { host, createApp, app }),
   };
   return app;
 }
 
-module.exports = { createApp, NO_FORM_NOTE, SELECTORS_NOTE, SIZE: layout.SIZE, FOCUS_DELAY_MS, OWN_TRIGGER };
+module.exports = { createApp, NO_FORM_NOTE, SELECTORS_NOTE, SIZE: layout.SIZE, FOCUS_DELAY_MS, OWN_TRIGGER, PAUSED };

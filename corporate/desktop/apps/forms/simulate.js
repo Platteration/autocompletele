@@ -138,6 +138,10 @@ function simulate(sim, internals) {
   }
   const info = app.ipc["forms:info"]();
   print(`  stored fills: ${info.sessions}; proposals: ${info.proposals.length}`);
+  // Only what came from the policy is stored: the reason typed into the popover, and the fills' typed customer, never are.
+  const storedText = JSON.stringify(host.appData("forms").load({}));
+  if (storedText.includes(REASON) || storedText.includes(answers.customer)) throw new Error("a typed answer reached apps/forms.json");
+  print("  stored fills hold a typed answer: no");
   const proposal = info.proposals.find((p) => p.constant.includes("sla"));
   if (!proposal) throw new Error("three similar fills proposed nothing");
   print(`  learned "${proposal.label}" (${proposal.count} fills on ${proposal.form}): ` + Object.entries(proposal.fields).map(([name, value]) => name + " = " + brief(value)).join("; "));

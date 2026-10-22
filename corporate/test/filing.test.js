@@ -229,3 +229,154 @@ test("without filing rules, or while paused, nothing is proposed", () => {
   assert.equal(paused.assistant.filingProposal(other), null);
   assert.equal(paused.assistant.applyFiling({ path: other }).ok, false);
 });
+
+/** Run `body` with fs[name] replaced, restoring it however `body` ends. */
+function patched(name, replacement, body) {
+  const real = fs[name];
+  fs[name] = replacement(real);
+  try {
+    return body();
+  } finally {
+    fs[name] = real;
+  }
+}
+
+test("a document another desk files under the same name at the same moment is never overwritten", () => {
+  const { assistant, inbox, root } = desk();
+  const file = path.join(inbox, "scan 12.docx");
+  fs.writeFileSync(file, docx("INVOICE INV-20481 from ACME, 21.10.2026"));
+  const target = path.join(root, "Invoices", "2026", "2026-10-21_Acme_Logistics_GmbH_invoice_INV-20481.docx");
+  let raced = 0;
+  // The other desk's document lands right after this desk found the name free.
+  const result = patched("existsSync", (real) => (p) => {
+    if (p === target && !raced++) {
+      fs.writeFileSync(target, "THE OTHER DESK'S INVOICE");
+      return false;
+    }
+    return real(p);
+  }, () => assistant.applyFiling({ path: file }));
+  assert.equal(raced, 1);
+  assert.equal(result.ok, true, result.error);
+  assert.equal(fs.readFileSync(target, "utf8"), "THE OTHER DESK'S INVOICE", "the other desk's document survives");
+  assert.equal(result.name, "2026-10-21_Acme_Logistics_GmbH_invoice_INV-20481 (2).docx");
+  assert.ok(fs.existsSync(result.to) && !fs.existsSync(file));
+  assert.equal(assistant.filingRecent()[0].path, result.to, "the index names this desk's copy");
+  assert.equal(assistant.audit().filter((e) => e.event === "document-filed").pop().to, result.to);
+});
+
+test("undo moves only the document that was filed, and never overwrites in the original folder", () => {
+  const { assistant, inbox } = desk();
+  const file = path.join(inbox, "memo.txt");
+  // A different document saved later at the filed path (another size): left where it is, entry kept.
+  fs.writeFileSync(file, "Memo to all staff, 2026-01-05");
+  const first = assistant.applyFiling({ path: file });
+  assert.equal(first.ok, true, first.error);
+  assert.equal(assistant.filingRecent()[0].size, fs.statSync(first.to).size, "the index records what was filed");
+  fs.writeFileSync(first.to, "A DIFFERENT DOCUMENT saved later under the same name");
+  const changed = assistant.undoFiling(first.id);
+  assert.equal(changed.ok, false);
+  assert.equal(changed.changed, true);
+  assert.match(changed.error, /has changed since it was filed; it was left where it is/);
+  assert.ok(changed.error.includes(first.to), "the message says where the file is");
+  assert.ok(!fs.existsSync(file), "nothing was moved back");
+  assert.equal(fs.readFileSync(first.to, "utf8"), "A DIFFERENT DOCUMENT saved later under the same name");
+  assert.equal(assistant.filingRecent().length, 1, "the entry stays for the person to look at");
+  // Same size, other time: still not the document that was filed.
+  fs.writeFileSync(first.to, "Memo to all staff, 2026-01-05");
+  fs.utimesSync(first.to, new Date(2020, 0, 1), new Date(2020, 0, 1));
+  assert.equal(assistant.undoFiling(first.id).changed, true);
+  // A folder at the filed path is not moved either.
+  fs.unlinkSync(first.to);
+  fs.mkdirSync(first.to);
+  fs.writeFileSync(path.join(first.to, "inside.txt"), "x");
+  const folder = assistant.undoFiling(first.id);
+  assert.equal(folder.ok, false);
+  assert.match(folder.error, /is not the document that was filed/);
+  assert.ok(fs.existsSync(path.join(first.to, "inside.txt")) && !fs.existsSync(file));
+  fs.rmSync(first.to, { recursive: true });
+  assert.match(assistant.undoFiling(first.id).error, /no longer at/);
+
+  // The original name taken at the moment of the undo: the next free name, nothing replaced.
+  fs.writeFileSync(file, "Memo to all staff, 2026-01-05");
+  const second = assistant.applyFiling({ path: file });
+  assert.equal(second.ok, true, second.error);
+  let raced = 0;
+  const undone = patched("existsSync", (real) => (p) => {
+    if (p === file && !raced++) {
+      fs.writeFileSync(file, "a new memo saved at that moment");
+      return false;
+    }
+    return real(p);
+  }, () => assistant.undoFiling(second.id));
+  assert.equal(undone.ok, true, undone.error);
+  assert.equal(fs.readFileSync(file, "utf8"), "a new memo saved at that moment");
+  assert.equal(undone.to, path.join(inbox, "memo (2).txt"));
+  assert.equal(fs.readFileSync(undone.to, "utf8"), "Memo to all staff, 2026-01-05");
+});
+
+test("an entry filed by an earlier version, without size or time, can still be undone if a document is there", () => {
+  const { assistant, inbox, dataDir } = desk();
+  const file = path.join(inbox, "memo.txt");
+  fs.writeFileSync(file, "Memo to all staff, 2026-01-05");
+  const filed = assistant.applyFiling({ path: file });
+  const indexFile = path.join(dataDir, "filing-index.json");
+  const index = JSON.parse(fs.readFileSync(indexFile, "utf8"));
+  for (const entry of index.entries) {
+    delete entry.size;
+    delete entry.mtimeMs;
+  }
+  fs.writeFileSync(indexFile, JSON.stringify(index));
+  const reopened = createAssistant({ dataDir, now: () => new Date(2026, 9, 21, 10).getTime() });
+  fs.appendFileSync(filed.to, " (edited)");
+  const undone = reopened.undoFiling(filed.id);
+  assert.equal(undone.ok, true, undone.error);
+  assert.equal(undone.to, file);
+});
+
+test("names stay within the file system's byte limit, and a folder value is never the home folder", () => {
+  const { assistant, inbox } = desk({ filing: { fallback: { name: "[[date]]_[[original]]" }, rules: [{ id: "home", label: "Home", when: { keywords: ["tilde"] }, name: "[[original]]_note", folder: "[[original]]/filed" }] } });
+  // A 253-byte name is legal; with the date in front it used to be refused with ENAMETOOLONG.
+  const long = path.join(inbox, "株".repeat(83) + ".txt");
+  fs.writeFileSync(long, "hello");
+  fs.utimesSync(long, new Date(2026, 9, 21, 10), new Date(2026, 9, 21, 10));
+  const filed = assistant.applyFiling({ path: long });
+  assert.equal(filed.ok, true, filed.error);
+  assert.ok(Buffer.byteLength(filed.name) <= 200, Buffer.byteLength(filed.name) + " bytes");
+  assert.ok(filed.name.startsWith("2026-10-21_株") && filed.name.endsWith(".txt") && filed.name.isWellFormed(), filed.name);
+  // A document named "~" under a "[[original]]/..." folder stays next to itself.
+  const tilde = path.join(inbox, "~.txt");
+  fs.writeFileSync(tilde, "tilde");
+  const proposal = assistant.filingProposal(tilde);
+  assert.equal(proposal.folder, path.join(inbox, "~", "filed"));
+  assert.notEqual(proposal.folder, path.join(os.homedir(), "filed"));
+});
+
+test("a document with a 253-character extension still files, within the name caps", () => {
+  const { assistant, inbox } = desk({ filing: { fallback: { name: "[[date]]_[[original]]" } } });
+  // A 255-byte name, legal on ext4 and APFS; the date in front used to push it to 256 bytes (ENAMETOOLONG).
+  const file = path.join(inbox, "a." + "b".repeat(253));
+  fs.writeFileSync(file, "x");
+  fs.utimesSync(file, new Date(2026, 9, 21, 10), new Date(2026, 9, 21, 10));
+  const filed = assistant.applyFiling({ path: file });
+  assert.equal(filed.ok, true, filed.error);
+  assert.ok(filed.name.length <= 150 && Buffer.byteLength(filed.name) <= 200, filed.name.length + " units");
+  assert.ok(filed.name.startsWith("2026-10-21_a.bbb"), filed.name.slice(0, 20));
+  assert.equal(fs.readFileSync(filed.to, "utf8"), "x");
+});
+
+test("a lone surrogate from a .docx character reference is filed under the folder name it gets on disk, and not offered again", () => {
+  const { assistant, inbox } = desk({ filing: { fields: { client: { pattern: "Client: (\\S+)", group: 1 } }, rules: [{ id: "inv", label: "Invoice", when: { keywords: ["invoice"] }, name: "[[date]]_invoice_[[client]]", folder: "Clients/[[client]]" }] } });
+  const file = path.join(inbox, "scan.docx");
+  fs.writeFileSync(file, docx("Invoice 21.10.2026 Client: Acme&#xD800;x"));
+  const proposal = assistant.filingProposal(file);
+  assert.equal(proposal.values.client, "Acme�x");
+  assert.equal(proposal.folder.isWellFormed(), true);
+  const filed = assistant.applyFiling({ path: file });
+  assert.equal(filed.ok, true, filed.error);
+  const folders = fs.readdirSync(path.join(inbox, "Clients"));
+  const onDisk = path.join(inbox, "Clients", folders[0], fs.readdirSync(path.join(inbox, "Clients", folders[0]))[0]);
+  assert.equal(filed.to, onDisk, "the index path is the path on disk");
+  assert.equal(assistant.filingRecent(1)[0].path, onDisk);
+  assert.equal(assistant.filingProposal(onDisk), null, "a filed document is not offered for filing again");
+  assert.equal(assistant.undoFiling(filed.id).ok, true);
+});

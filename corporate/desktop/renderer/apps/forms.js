@@ -10,6 +10,7 @@
   let lookupDraft = "";
   let lookupResult = null;
   const triggerDrafts = {};
+  const labelDrafts = {};
   // The section last rendered: a change that touches nothing shown here (a metrics entry, a library edit) keeps it as it is.
   let rendered = null;
   const WATCHED = ["apps", "settings", "policy", "context", "status"];
@@ -68,14 +69,19 @@
       el("div", { class: "meta", text: proposal.label + ": " + proposal.count + " fills on form " + proposal.form + "; constant: " + proposal.constant.join(", ") + (proposal.templated.length ? "; as a template: " + proposal.templated.join(", ") : "") }),
       el("div", { class: "overlay", text: Object.entries(proposal.fields).map(([name, value]) => name + " = " + value).join("\n") }),
     ]);
+    // The proposal's label is neutral ("Learned record 1 on …"); the person may name the record, and an empty name keeps the neutral one.
+    const label = el("input", { type: "text", "aria-label": "Name for this record", placeholder: proposal.label });
+    label.value = Object.hasOwn(labelDrafts, proposal.digest) ? labelDrafts[proposal.digest] : proposal.label;
+    label.addEventListener("input", () => { labelDrafts[proposal.digest] = label.value; });
     const trigger = el("input", { type: "text", "aria-label": "Trigger for this record", placeholder: "trigger to type, e.g. refund2/" });
     trigger.value = triggerDrafts[proposal.digest] || "";
     trigger.addEventListener("input", () => { triggerDrafts[proposal.digest] = trigger.value; });
     const accept = el("button", { class: "primary", text: "Accept as my record" });
     accept.addEventListener("click", async () => {
-      const result = await api.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: trigger.value, label: proposal.label });
+      const result = await api.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: trigger.value, label: label.value });
       if (result && result.ok) {
         delete triggerDrafts[proposal.digest];
+        delete labelDrafts[proposal.digest];
         announce("Saved " + result.record.label + " with trigger " + result.record.trigger);
       } else announce((result && result.error) || "Could not save the record");
     });
@@ -84,7 +90,7 @@
       const result = await api.invoke("forms:dismissProposal", { digest: proposal.digest });
       announce(result && result.ok ? "Dismissed" : (result && result.error) || "Could not dismiss the proposal");
     });
-    card.append(el("div", { class: "row" }, [trigger, accept, dismiss]));
+    card.append(el("div", { class: "row" }, [label, trigger, accept, dismiss]));
     return card;
   }
 
@@ -181,7 +187,7 @@
         announce(result && result.ok ? "Stored fills cleared (" + result.removed + ")" : (result && result.error) || "Could not clear the fills");
       });
       section.append(el("div", { class: "toolbar mt" }, [
-        el("span", { class: "hint", text: info.sessions + " of at most " + info.maxSessions + " fills stored for learning. Values of fields whose name has the word password, PIN, secret, token, OTP or API key in it, and values the scrubber masks (card numbers, labelled secrets), are never stored." }),
+        el("span", { class: "hint", text: info.sessions + " of at most " + info.maxSessions + " fills stored for learning" + (info.retentionDays ? ", each for " + info.retentionDays + " days" : "") + ". \"Clear stored fills\" deletes them; \"Delete learned text\" on the Learning tab does too, but that button is enabled only while the Learning tab has learned text of its own. A stored fill keeps only the values that came from your organisation's records and lookup lists: nothing you type into the fill popover, no value of a field whose name has a word such as password, PIN, credential, CVV, IBAN, SSN or token in it, and no card number, IBAN, US, UK, Spanish or French national ID number, labelled secret or long token found in a value." }),
         clear,
       ]));
     },

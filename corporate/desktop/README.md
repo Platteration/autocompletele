@@ -40,10 +40,39 @@ length minus the query and the Enter key.
 
 Folders named in the policy's `filing.watch` (and any the person adds on the
 Filing tab) are watched. A new file is read once it has stopped growing, and
-a popover proposes its name and folder; Enter files it, Esc skips it. The
-Filing tab lists watched folders (a policy folder can be turned off on this
-desk), the rules, and filed documents with Undo. "File existing documents…"
-proposes a filing for each document already in a folder, one at a time.
+a popover proposes its name and folder. A file can land while you are typing
+in another application, so the popover appears without taking the keyboard
+focus, nothing in it is selected, and it files nothing until you click its
+name, a blank or a button; after that Enter files it and Esc skips it (Skip
+needs no click). A click in its first 0.7 seconds on screen does not count
+and leaves no caret in the Name field (it was probably aimed at the window
+underneath), and once the popover loses the focus it needs a new click, so
+keys typed for another application are never filed. "Never for this
+folder" turns off every watch still on that the document came from: its
+own folder, or a watched folder above it that includes sub-folders (a
+notification names the folder then), and documents already waiting from
+there are not shown; when no watch that is on covers the document any more
+(for example it was turned off on the Filing tab meanwhile), the popover
+says so and stays open. The Filing tab lists watched folders (a policy
+folder can be turned off on this desk; turning one off or removing your own
+also drops the documents still waiting from it), the rules, and filed
+documents with Undo and Reveal. "File existing documents…" proposes a
+filing for each document already in a folder, one at a time. When the
+organisation pauses the desk, an open popover and the search palette close
+(what was typed into a fill-in popover is discarded); documents waiting to
+be filed stay in the queue, the one whose popover closed first, and are
+proposed again when the organisation resumes the desk.
+
+## Windows and the bridge
+
+Every window keeps the page it was opened with: a navigation a page starts
+is cancelled and `window.open` is denied (`shell-guards.js`). Reveal on the
+Filing tab sends the filed document's index id and Show file on the Sheets
+tab the path of the last configuration export; `filing:reveal` shows nothing
+else in the file manager (the documents popover still reveals the files the
+policy's document sets name). The filing popover, keyword offers and Guard
+warnings open while you type elsewhere and are shown with `showInactive()`,
+so they do not activate actle.
 
 ## Reply
 Copy the message you are answering, then choose "Reply to the copied message…" in the tray menu
@@ -161,8 +190,25 @@ pipeline works.
 This shell was written in a Linux container without a display, without
 Electron and without the native `uiohook-napi` build:
 
-- `npm start` has not been run on any platform; the tray, windows and
-  popovers are unverified by eye in any theme.
+- The app has only been started on Linux under Xvfb, with Electron 44.9.0
+  installed outside the repository and no uiohook listener, to check the
+  filing popover, with openbox and without a window manager: it appears
+  without taking the focus from another application, keys and Enter typed
+  there stay in that application, a click on the Name field then files the
+  document, and "Never for this folder" from a sub-folder turns the
+  recursive watch off; seen in the light and the dark theme. Also there,
+  with openbox: a click 0.2 seconds after the popover appeared, then typing
+  and Enter, filed nothing and left the name as proposed; a click, a switch
+  to another window and the focus handed back, then typing and Enter, filed
+  nothing; a later click filed in both cases. Keyword offers and Guard
+  warnings were not opened in Electron (no uiohook listener); a stand-in
+  `focusable: false` window shown with `showInactive()` kept the focus where
+  it was and took a click, as `show()` does on Linux. Nothing has run on
+  macOS or Windows: `showInactive()` there (on macOS it is meant to stop
+  `show()` from activating actle), and the first click into an inactive
+  window (macOS uses it to activate the window, so a second click may be
+  needed), are unverified. The tray, the dashboard and the other popovers
+  are unverified by eye in any theme.
 - `adapters/input.js` (uiohook events, key translation on real keyboards),
   `adapters/active-window.js` (PowerShell, osascript, xdotool) and
   `adapters/sender.js` (SendKeys, System Events, xdotool paste and caret

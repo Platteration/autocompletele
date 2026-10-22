@@ -12,6 +12,8 @@
 const { execFile, execFileSync } = require("node:child_process");
 const os = require("node:os");
 
+// How long the application gets to read the clipboard after the paste key
+// went out, before the person's previous clipboard text is put back.
 const RESTORE_DELAY_MS = 600;
 
 function run(command, args, input) {
@@ -84,11 +86,17 @@ function join(platform, parts) {
 }
 
 /**
- * @param {{clipboard?:{readText:Function, writeText:Function}, platform?:string, notify?:Function}} options
+ * The clipboard may answer synchronously or with promises (Electron's API
+ * returns promises in the pinned version); every call is awaited.
+ * @param {{clipboard?:{readText:Function, writeText:Function}, platform?:string, notify?:Function,
+ *   impl?:object, restoreDelayMs?:number}} options  `impl` replaces parts of the
+ *   platform's implementation (available, keys, ...): tests use it instead of a real tool.
  */
 function createSender(options) {
   const settings = Object.assign({ platform: process.platform, notify: () => {} }, options || {});
-  const impl = platforms[settings.platform] || null;
+  const own = platforms[settings.platform] || null;
+  const impl = settings.impl && typeof settings.impl === "object" ? Object.assign({}, own, settings.impl) : own;
+  const delay = Number.isFinite(Number(settings.restoreDelayMs)) && Number(settings.restoreDelayMs) >= 0 ? Number(settings.restoreDelayMs) : RESTORE_DELAY_MS;
   let clipboard = settings.clipboard || null;
   if (!clipboard) {
     try {
@@ -98,8 +106,10 @@ function createSender(options) {
     }
   }
   let queue = Promise.resolve();
+  let active = 0;          // jobs queued or running
   let restoreTimer = null;
-  let saved = null;
+  let saved = null;        // {text}, or {unknown} when it could not be read: the clipboard before the first paste of a run of jobs
+  let wrote = null;        // what the last paste of the run put on the clipboard
 
   function isAvailable() {
     return !!impl && !!clipboard && impl.available();
@@ -112,33 +122,72 @@ function createSender(options) {
     return "typing is unavailable";
   }
 
-  function stash() {
-    if (saved == null) {
-      try {
-        saved = clipboard.readText();
-      } catch (error) {
-        saved = "";
-      }
+  // The person's clipboard text is kept once per run of jobs (a whole Forms
+  // fill), then the text to paste is written and awaited before any key is
+  // sent. Nothing is put back until the run's last keys went out and the
+  // application had RESTORE_DELAY_MS to read the clipboard: a restore on a
+  // timer that started before a slow tool sent the paste key pasted the
+  // person's previous clipboard (a copied password) into the field instead.
+  async function putOnClipboard(text) {
+    let current = null;
+    try {
+      const value = await clipboard.readText();
+      current = typeof value === "string" ? value : "";
+    } catch (error) {
+      current = null;
     }
-    if (restoreTimer) clearTimeout(restoreTimer);
+    // The first paste of a run keeps what was there; a later one keeps a copy
+    // made since the previous paste instead, so that copy is what comes back.
+    // What could not be read is never put back: writing "" in its place would
+    // empty a clipboard that may have held the person's text.
+    if (saved == null) saved = current == null ? { unknown: true } : { text: current };
+    else if (current != null && (wrote == null || !sameText(current, wrote))) saved = { text: current };
+    await clipboard.writeText(text);
+    wrote = text;
+  }
+
+  function sameText(a, b) {
+    return String(a == null ? "" : a).replace(/\r\n/g, "\n") === String(b == null ? "" : b).replace(/\r\n/g, "\n");
+  }
+
+  async function restore() {
+    const previous = saved;
+    const mine = wrote;
+    saved = null;
+    wrote = null;
+    if (previous.unknown) return;
+    try {
+      // A copy made since the paste (by the person, or by actle elsewhere) is kept.
+      if (!sameText(await clipboard.readText(), mine)) return;
+      await clipboard.writeText(previous.text);
+    } catch (error) {
+      // Losing the previous clipboard text is a nuisance, not a failure of the insertion.
+    }
+  }
+
+  // A job enqueued before the timer fires cancels it (see enqueue): its run restores at its end.
+  function scheduleRestore() {
+    if (saved == null) return;
     restoreTimer = setTimeout(() => {
       restoreTimer = null;
-      const previous = saved;
-      saved = null;
-      try {
-        clipboard.writeText(previous);
-      } catch (error) {
-        // Losing the previous clipboard text is a nuisance, not a failure of the insertion.
-      }
-    }, RESTORE_DELAY_MS);
+      queue = queue.then(restore);
+    }, delay);
   }
 
   function enqueue(work) {
+    active++;
+    if (restoreTimer) {
+      clearTimeout(restoreTimer);
+      restoreTimer = null;
+    }
     const job = queue.then(work).catch((error) => {
       settings.notify("Could not type into this application: " + error.message);
       return { ok: false, error: error.message };
     });
-    queue = job.then(() => undefined);
+    queue = job.then(() => {
+      active--;
+      if (active === 0) scheduleRestore();
+    });
     return job;
   }
 
@@ -152,8 +201,7 @@ function createSender(options) {
       const back = Math.max(0, Array.from(text).length - Array.from(text.slice(0, cursorOffset)).length);
       const steps = [impl.backspaces(backspaces)];
       if (text) {
-        stash();
-        clipboard.writeText(text);
+        await putOnClipboard(text);
         steps.push(impl.paste());
       }
       steps.push(impl.left(back));
@@ -162,7 +210,11 @@ function createSender(options) {
     });
   }
 
-  /** Remove an expansion that was just inserted and type the trigger back. */
+  /**
+   * Remove an expansion that was just inserted and type the trigger back.
+   * charsBeforeCaret and charsAfterCaret count characters (code points), as
+   * the engine reports them: one Backspace or Delete each.
+   */
   function undo(action) {
     const before = Math.max(0, Math.floor(Number(action && action.charsBeforeCaret) || 0));
     const after = Math.max(0, Math.floor(Number(action && action.charsAfterCaret) || 0));
@@ -171,8 +223,7 @@ function createSender(options) {
       if (!isAvailable()) throw new Error(unavailableReason());
       const steps = [impl.backspaces(before), impl.deletes(after)];
       if (trigger) {
-        stash();
-        clipboard.writeText(trigger);
+        await putOnClipboard(trigger);
         steps.push(impl.paste());
       }
       await impl.keys(join(settings.platform, steps));

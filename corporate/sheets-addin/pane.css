@@ -23,4 +23,9 @@ button.completion:hover { border-color: var(--accent); }
 details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
 summary { cursor: pointer; color: var(--accent); }
 .hint, .summary { color: var(--muted); margin: 8px 0; }
-.actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.origin:not(:empty) { margin: 8px 0; padding: 8px; border: 1px solid var(--accent); border-radius: 8px; }
+.origin p, .confirm { margin: 0 0 8px; }
+.formula, ul.preview { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+.formula { margin: 0; }
+ul.preview { list-style: none; margin: 8px 0 0; padding: 0; color: var(--muted); }

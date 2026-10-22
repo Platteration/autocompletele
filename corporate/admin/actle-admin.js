@@ -8,7 +8,12 @@
 //   node admin/actle-admin.js layers <org.json> [<team.json> ...]
 //   node admin/actle-admin.js report <report.json> [...] [--policy <file>] [--rate N] [--currency C] [--csv <file>]
 //   node admin/actle-admin.js suggestions <file.json> [...] [--policy <file>] [--min-desks N] [--out <library.json>]
-//   node admin/actle-admin.js file <document> [...] --policy <file> [--apply]
+//   node admin/actle-admin.js file <document> [...] --policy <file> [--apply] [-- <document> ...]
+//
+// The command comes first. Each command accepts only its own options; `--`
+// ends the options, so everything after it is a document or file name. With
+// options, file, report and suggestions take documents only with a folder
+// part (./a.txt, inbox/*) or after `--`.
 "use strict";
 
 const fs = require("node:fs");
@@ -35,27 +40,117 @@ const USAGE = `actle Corporate admin tool
                                   rank phrases people suggested; write a library to review
   file <document> [...] --policy <file> [--apply]
                                   show how the policy's filing rules would name and file documents;
-                                  --apply renames and moves them (blanks nothing filled are left alone)`;
+                                  --apply renames and moves them (blanks nothing filled are left alone)
 
-function parseArgs(argv) {
+  The command comes first; each takes only the options shown, and only --pub
+  may be given more than once. "--" ends the options: everything after it is
+  a document. A wildcard such as * can put a file named like an option on the
+  command line, so file, report and suggestions take, alongside options, only
+  documents named with a folder (folder/*, ./*) or after "--", and an option
+  that is also the name of a file in the current folder is refused.
+  --csv and --out never replace an existing file.`;
+
+// The options each command accepts: "flag" stands alone, "value" takes the
+// next argument once, "values" may be given more than once.
+const OPTIONS = {
+  keygen: {},
+  sign: { key: "value", serial: "value", layer: "value", out: "value", "allow-warnings": "flag" },
+  verify: { pub: "values" },
+  validate: {},
+  layers: { json: "flag" },
+  report: { policy: "value", rate: "value", currency: "value", csv: "value" },
+  suggestions: { policy: "value", "min-desks": "value", out: "value" },
+  file: { policy: "value", apply: "flag" },
+  help: {},
+};
+
+// The commands an administrator points at a wildcard of desk files. A * in a
+// folder someone else can write to may expand to a file named --apply or
+// --csv, which can be deleted again before the tool looks (so the file check
+// in parseArgs can be raced). Only a wildcard without a folder in it (*,
+// *.json) puts such a name on the command line as an option; inbox/* gives
+// inbox/--apply, a document. So with options given, these commands refuse a
+// document named without a folder before "--": the other names the same
+// wildcard produced give it away, whether or not the planted file is still there.
+const WILDCARD_COMMANDS = new Set(["file", "report", "suggestions"]);
+
+function hasFolderPart(name) {
+  return name.includes("/") || (path.sep === "\\" && name.includes("\\"));
+}
+
+function existsHere(name) {
+  try {
+    fs.lstatSync(name);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Split the command line into the command's documents and options. A shell
+ * wildcard can expand to a file named "--apply" or "--policy", so an option
+ * that is also the name of a file here is refused rather than obeyed, as are
+ * options the command does not take, repeated single options and an option
+ * value that is itself an option. After "--" everything is a name. That file
+ * check can be raced (the planted file deleted after the shell expanded the
+ * wildcard), so with options the WILDCARD_COMMANDS also refuse a document
+ * named without a folder before "--", which does not depend on timing.
+ */
+function parseArgs(argv, options) {
+  const exists = options && typeof options.exists === "function" ? options.exists : existsHere;
+  const args = argv.slice();
+  if (args[0] === "--help") args[0] = "help";
+  const command = args[0];
   const positional = [];
   const flags = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg.startsWith("--")) {
-      const name = arg.slice(2);
-      if (name === "allow-warnings" || name === "json" || name === "apply") {
-        flags[name] = true;
-      } else {
-        const value = argv[++i];
-        if (value === undefined) throw new Error("--" + name + " needs a value");
-        (flags[name] = flags[name] || []).push(value);
-      }
-    } else {
+  if (command === undefined) return { positional, flags };
+  if (command.startsWith("--")) throw new Error("put the command first (" + command + " is an option)");
+  positional.push(command);
+  const accepted = Object.hasOwn(OPTIONS, command) ? OPTIONS[command] : {};
+  let ended = false;
+  let bare = null;
+  for (let i = 1; i < args.length; i++) {
+    const arg = args[i];
+    if (ended || !arg.startsWith("--")) {
+      if (!ended && bare === null && !hasFolderPart(arg)) bare = arg;
       positional.push(arg);
+      continue;
     }
+    if (arg === "--") {
+      ended = true;
+      continue;
+    }
+    if (exists(arg)) {
+      throw new Error(arg + " is also the name of a file here, so a wildcard may have put it on the command line; it is not read as an option. Run the tool from another folder and name the documents as folder/*");
+    }
+    const name = arg.slice(2);
+    const kind = Object.hasOwn(accepted, name) ? accepted[name] : null;
+    if (!kind) throw new Error(command + " does not take " + arg);
+    if (kind === "flag") {
+      flags[name] = true;
+      continue;
+    }
+    const value = args[++i];
+    if (value === undefined) throw new Error(arg + " needs a value");
+    if (value.startsWith("--")) throw new Error(arg + " needs a value, not the option " + value);
+    if (kind === "value" && flags[name]) throw new Error(arg + " is given more than once");
+    (flags[name] = flags[name] || []).push(value);
+  }
+  if (WILDCARD_COMMANDS.has(command) && bare !== null && Object.keys(flags).length) {
+    throw new Error(bare + " is named without a folder, so it may come from a wildcard such as * in this folder, which can also put a file named like an option on the command line; with options, name documents as ./" + bare + " or folder/*, or put them after --");
   }
   return { positional, flags };
+}
+
+/** Write `text` to a file that must not exist yet: an output option never replaces a desk's report or anything else. */
+function writeNew(file, text) {
+  try {
+    fs.writeFileSync(file, text, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if (error.code === "EEXIST") throw new Error(file + " already exists; it was not replaced (name a new file)");
+    throw error;
+  }
 }
 
 function one(flags, name) {
@@ -233,7 +328,7 @@ function run(argv, io) {
         if (merged.unused.length) out("\nnever used: " + merged.unused.map((s) => (s.kind ? s.kind + " " : "") + s.trigger).join(", "));
         const csvFile = one(args.flags, "csv");
         if (csvFile) {
-          fs.writeFileSync(csvFile, report.toCsv(merged), "utf8");
+          writeNew(csvFile, report.toCsv(merged));
           out("\nCSV written to " + csvFile);
         }
         return merged.desks ? 0 : 1;
@@ -261,7 +356,7 @@ function run(argv, io) {
         }
         const target = one(args.flags, "out");
         if (target) {
-          fs.writeFileSync(target, JSON.stringify(suggestions.toLibrary(ranked.suggestions), null, 2) + "\n", "utf8");
+          writeNew(target, JSON.stringify(suggestions.toLibrary(ranked.suggestions), null, 2) + "\n");
           out("\nlibrary written to " + target + "; review it, then add it to the policy's library and sign");
         }
         return ranked.desks ? 0 : 1;
@@ -274,26 +369,36 @@ function run(argv, io) {
         for (const warning of policy.warnings) err("warning: " + warning);
         if (!policy.filing.rules.length && !policy.filing.fallback) throw new Error("the policy has no filing rules");
         const apply = !!args.flags.apply;
+        out(apply ? "APPLYING: documents are renamed and moved" : "DRY RUN: nothing is renamed or moved (add --apply to file them)");
         let problems = 0;
         for (const file of rest) {
+          // Only regular files are documents: a folder, link or device given by a wildcard is left alone, as on the desk.
+          let stat;
+          try {
+            stat = fs.lstatSync(file);
+          } catch (error) {
+            err(file + ": " + error.message);
+            problems++;
+            continue;
+          }
+          if (!stat.isFile()) {
+            err(file + ": not a file (" + (stat.isDirectory() ? "a folder" : stat.isSymbolicLink() ? "a symbolic link" : "not a regular file") + "), skipped");
+            problems++;
+            continue;
+          }
           const read = extract.extractText(file);
           if (read.error && !read.bytes) {
             err(file + ": " + read.error);
             problems++;
             continue;
           }
-          let modified = Date.now();
-          try {
-            modified = fs.statSync(file).mtimeMs;
-          } catch (error) {
-            modified = Date.now();
-          }
-          const proposal = filer.propose({ name: path.basename(file), ext: read.ext, text: read.text, modified }, policy.filing);
+          const proposal = filer.propose({ name: path.basename(file), ext: read.ext, text: read.text, modified: stat.mtimeMs }, policy.filing);
           if (!proposal) {
             out(file + ": no rule applies");
             continue;
           }
-          const folder = proposal.folder || path.dirname(file);
+          // The folder resolves as on the desk: `~` is the home folder, a relative folder sits next to the document.
+          const folder = filer.resolveFolder(file, proposal);
           const why = (proposal.matched.length ? "matched " + proposal.matched.join(", ") : proposal.rule.id === "fallback" ? "no rule matched" : "by extension")
             + (read.unsupported ? "; file name only (" + (read.ext || "no extension") + " is not read)" : read.error ? "; " + read.error : "");
           out(file + "\n  rule:   " + proposal.rule.label + " (" + why + ")\n  name:   " + proposal.name + "\n  folder: " + folder
@@ -306,10 +411,8 @@ function run(argv, io) {
           }
           try {
             fs.mkdirSync(folder, { recursive: true });
-            const name = filer.uniqueName(proposal.name, (candidate) => fs.existsSync(path.join(folder, candidate)));
-            const target = path.join(folder, name);
-            fs.renameSync(file, target);
-            out("  filed as " + target);
+            // Never overwrites, even when a desk files the same name into the same folder at the same moment.
+            out("  filed as " + filer.moveDocument(file, folder, proposal.name).path);
           } catch (error) {
             err("  could not file: " + error.message);
             problems++;

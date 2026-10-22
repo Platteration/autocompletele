@@ -455,7 +455,11 @@
         if (!r.ok) alert(r.error);
       });
       const reveal = el("button", { class: "plain", text: "Reveal" });
-      reveal.addEventListener("click", () => api.revealFiled(entry.path));
+      // By index entry id: main.js reveals only what the filing index holds.
+      reveal.addEventListener("click", async () => {
+        const r = await api.revealFiled(entry.id);
+        if (r && r.ok === false) announce(r.error);
+      });
       body.append(el("tr", {}, [
         el("td", { text: entry.filedAt ? new Date(entry.filedAt).toLocaleString() : "" }),
         el("td", { class: "mono", text: entry.originalName }),

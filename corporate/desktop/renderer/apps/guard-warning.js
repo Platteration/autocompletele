@@ -50,7 +50,9 @@
     head.append(tag);
     item.append(head, line("", hit.message));
     if (Array.isArray(hit.findings) && hit.findings.length) item.append(line("path", "Found " + hit.findings.map(describeFinding).join("; ")));
-    if (hit.fix) {
+    // A warning raised by the key that may have sent the message offers no fix: it would land in the next message.
+    if (hit.fix && state.leftField) item.append(line("path", "Raised as the message went out: check it and correct it by hand."));
+    if (hit.fix && !state.leftField) {
       const button = document.createElement("button");
       button.className = "primary";
       button.type = "button";

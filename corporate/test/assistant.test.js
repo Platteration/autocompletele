@@ -177,3 +177,22 @@ test("a policy refresh keeps the learning session and field state of the field b
   assert.equal(assistant.engine.session, null);
   assert.equal(assistant.corpusInfo().sessions, 1);
 });
+
+test("deleting what was learned tells the apps, so an app's own learned data goes too", () => {
+  const dataDir = temp();
+  const calls = [];
+  const assistant = createAssistant({
+    dataDir,
+    appIds: ["forms", "notes"],
+    apps: {
+      forms: () => ({ id: "forms", onClearLearning: () => calls.push(["forms"]) }),
+      notes: () => ({ id: "notes", onClearLearning: () => { throw new Error("disk full"); } }),
+    },
+    log: (line) => calls.push(["log", line]),
+  });
+  const info = assistant.clearLearning();
+  assert.equal(info.sessions, 0);
+  assert.deepEqual(calls.filter(([who]) => who === "forms"), [["forms"]], "the app hears it once");
+  assert.deepEqual(calls.filter(([, line]) => /onClearLearning/.test(line)), [["log", "app notes onClearLearning failed: disk full"]], "an app that fails is logged and does not stop the deletion");
+  assert.equal(assistant.audit().filter((e) => e.event === "corpus-deleted").length, 1);
+});

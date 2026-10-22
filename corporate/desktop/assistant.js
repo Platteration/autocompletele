@@ -294,6 +294,8 @@ function createAssistant(options) {
     store.saveSuggestions([]);
     cachedCandidates = null;
     audit({ event: "corpus-deleted", by: "person", sessions: before.sessions + before.locked });
+    // Apps that keep learned data of their own (Forms' stored sessions) delete it too.
+    notifyApps("onClearLearning");
     emit("candidates", candidates());
     return corpusInfo();
   }
@@ -523,8 +525,8 @@ function createAssistant(options) {
     const read = core.extract.extractText(file);
     const proposal = core.filer.propose({ name: path.basename(file), ext: read.ext, text: read.text, modified: stat.mtimeMs }, policy.filing, answers);
     if (!proposal) return null;
-    // A relative folder in a rule is relative to where the document is.
-    const folder = proposal.folder ? path.resolve(path.dirname(file), expandHome(proposal.folder)) : path.dirname(file);
+    // A relative folder in a rule is relative to where the document is (the admin tool resolves it the same way).
+    const folder = core.filer.resolveFolder(file, proposal);
     return Object.assign({}, proposal, {
       path: file,
       fileName: path.basename(file),
@@ -534,18 +536,6 @@ function createAssistant(options) {
       inPlace: !proposal.folder,
       read: { kind: read.kind, unsupported: read.unsupported, truncated: read.truncated, error: read.error },
     });
-  }
-
-  function moveFile(from, to) {
-    if (fs.lstatSync(from).isSymbolicLink()) throw new Error("symbolic links are not filed");
-    try {
-      fs.renameSync(from, to);
-    } catch (error) {
-      if (error.code !== "EXDEV") throw error;
-      // Another drive or share: copy without overwriting, then remove the original.
-      fs.copyFileSync(from, to, fs.constants.COPYFILE_EXCL);
-      fs.unlinkSync(from);
-    }
   }
 
   /**
@@ -573,14 +563,16 @@ function createAssistant(options) {
     } catch (error) {
       return { ok: false, error: "The folder " + folder + " cannot be created: " + error.message };
     }
-    const finalName = core.filer.uniqueName(name, (candidate) => fs.existsSync(path.join(folder, candidate)));
-    const target = path.join(folder, finalName);
-    if (target === proposal.path) return { ok: false, error: "The file already has this name." };
+    // The name is claimed and the file moved in one step, so a document another
+    // desk files under the same name at the same moment is never replaced.
+    let moved;
     try {
-      moveFile(proposal.path, target);
+      moved = core.filer.moveDocument(proposal.path, folder, name);
     } catch (error) {
       return { ok: false, error: "Could not move the file: " + error.message };
     }
+    const target = moved.path;
+    const finalName = moved.name;
     const entry = {
       id: crypto.randomUUID(),
       path: target,
@@ -593,6 +585,8 @@ function createAssistant(options) {
       values: proposal.values,
       filedAt: settings.now(),
       ext: proposal.ext,
+      size: moved.size,
+      mtimeMs: moved.mtimeMs,
     };
     filingIndex = core.filer.addEntry(filingIndex, entry);
     saveFilingIndex();
@@ -601,22 +595,32 @@ function createAssistant(options) {
     return { ok: true, id: entry.id, from: proposal.path, to: target, name: finalName, folder, rule: proposal.rule };
   }
 
-  /** Put a filed document back where it came from, under its old name. */
+  /**
+   * Put a filed document back where it came from, under its old name (or the
+   * next free one). Only the document that was filed moves: anything else now
+   * at the filed path is left where it is, and so is the index entry.
+   */
   function undoFiling(id) {
     const entry = filingIndex.entries.find((e) => e.id === id);
     if (!entry) return { ok: false, error: "This filing is no longer in the index." };
-    if (!fs.existsSync(entry.path)) {
+    let stat;
+    try {
+      stat = fs.lstatSync(entry.path);
+    } catch (error) {
       filingIndex = core.filer.removeEntry(filingIndex, id);
       saveFilingIndex();
       return { ok: false, error: "The file is no longer at " + entry.path + "; it was removed from the index." };
+    }
+    if (!stat.isFile()) return { ok: false, changed: true, error: "The item at " + entry.path + " is not the document that was filed; it was left where it is." };
+    // Entries filed by an earlier version carry no size or time to compare.
+    if ((entry.size != null && stat.size !== entry.size) || (entry.mtimeMs != null && stat.mtimeMs !== entry.mtimeMs)) {
+      return { ok: false, changed: true, error: "The document at " + entry.path + " has changed since it was filed; it was left where it is." };
     }
     const originalDir = entry.originalPath ? path.dirname(entry.originalPath) : entry.folder;
     const originalName = entry.originalName || path.basename(entry.originalPath || entry.name);
     try {
       fs.mkdirSync(originalDir, { recursive: true });
-      const name = core.filer.uniqueName(originalName, (candidate) => fs.existsSync(path.join(originalDir, candidate)));
-      const target = path.join(originalDir, name);
-      moveFile(entry.path, target);
+      const target = core.filer.moveDocument(entry.path, originalDir, originalName).path;
       filingIndex = core.filer.removeEntry(filingIndex, id);
       saveFilingIndex();
       audit({ event: "document-unfiled", rule: entry.rule, from: entry.path, to: target });

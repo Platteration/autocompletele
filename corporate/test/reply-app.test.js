@@ -8,6 +8,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const orgPolicy = require("../core/org-policy.js");
+const signing = require("../core/policy-signing.js");
 const metrics = require("../core/metrics.js");
 const { loadApps } = require("../desktop/apps/index.js");
 const replyApp = require("../desktop/apps/reply/app.js");
@@ -226,6 +227,54 @@ test("dashboard channels: info lists replies, blanks, counts and library warning
   assert.deepEqual(assistant.invoke("reply:stats").stats, { "late-delivery": { offered: 9, inserted: 0, editedBeforeSend: 0 } }, "stored counts are cleaned on read");
   const unknown = assistant.invoke("reply:nope");
   assert.equal(unknown.ok, false);
+});
+
+test("a pick popover opened before the organisation paused the desk pastes nothing after the pause", async () => {
+  const pair = signing.generateKeyPair();
+  const URL = "https://intranet.example/org.signed.json";
+  const layer = { layer: "org", serial: 1, organization: "Example Logistics", reply: SAMPLE };
+  const served = { [URL]: JSON.stringify(signing.signPolicy(layer, pair.privateKey)) };
+  const dataDir = temp();
+  const assistant = createAssistant({ dataDir, now: () => NOW, appIds: ["reply"], deployment: { policySources: [{ layer: "org", label: "Organisation", url: URL }], publicKeys: [pair.publicKey] }, fetch: async (url) => ({ ok: true, status: 200, text: async () => served[url] }) });
+  await assistant.refreshPolicy();
+  const app = assistant.app("reply");
+  const shell = asyncShell(MESSAGE);
+  const action = app.trayItems(shell)[0].click(shell);
+  assert.equal(action.popover, "pick", "opened while the policy was live");
+  served[URL] = JSON.stringify(signing.signPolicy(Object.assign({}, layer, { serial: 2, paused: { message: "Incident" } }), pair.privateKey));
+  assert.equal((await assistant.refreshPolicy()).paused, true);
+  const refused = await app.popovers.pick.submit(action, { index: 0, answers: { promise: "Friday" } }, shell);
+  assert.deepEqual(refused, { ok: false, error: "Paused by your organisation." });
+  assert.equal(replyApp.PAUSED, refused.error);
+  assert.deepEqual(shell.calls.order, [], "neither closed for a paste nor pasted");
+  assert.equal(assistant.ledger.entries().length, 0);
+  assert.equal(assistant.audit().some((e) => e.event === "reply-inserted"), false);
+  assert.equal(assistant.invoke("reply:stats").stats["late-delivery"].inserted, 0);
+});
+
+test("an Insert whose pause arrives while the focus goes back to the compose window pastes nothing", async () => {
+  const pair = signing.generateKeyPair();
+  const URL = "https://intranet.example/org.signed.json";
+  const layer = { layer: "org", serial: 1, organization: "Example Logistics", reply: SAMPLE };
+  const served = { [URL]: JSON.stringify(signing.signPolicy(layer, pair.privateKey)) };
+  const assistant = createAssistant({ dataDir: temp(), now: () => NOW, appIds: ["reply"], deployment: { policySources: [{ layer: "org", label: "Organisation", url: URL }], publicKeys: [pair.publicKey] }, fetch: async (url) => ({ ok: true, status: 200, text: async () => served[url] }) });
+  await assistant.refreshPolicy();
+  const app = assistant.app("reply");
+  const shell = asyncShell(MESSAGE);
+  const action = app.trayItems(shell)[0].click(shell);
+  assert.equal(action.popover, "pick");
+  // Electron's settle() waits for the focus to go back to the compose window; the pause lands meanwhile.
+  shell.settle = async () => {
+    served[URL] = JSON.stringify(signing.signPolicy(Object.assign({}, layer, { serial: 2, paused: { message: "Incident" } }), pair.privateKey));
+    assert.equal((await assistant.refreshPolicy()).paused, true);
+  };
+  const refused = await app.popovers.pick.submit(action, { index: 0, answers: { promise: "Friday" } }, shell);
+  assert.deepEqual(refused, { ok: false, error: "Paused by your organisation.", close: true });
+  assert.deepEqual(shell.calls.order, ["closePopover"], "closed for the paste, then nothing pasted");
+  assert.deepEqual(shell.calls.notified, ["Paused by your organisation."], "the popover is gone, so a notification says why");
+  assert.equal(assistant.ledger.entries().length, 0);
+  assert.equal(assistant.audit().some((e) => e.event === "reply-inserted"), false);
+  assert.equal(assistant.invoke("reply:stats").stats["late-delivery"].inserted, 0);
 });
 
 test("the simulation walks through the sample headlessly, with or without replies in the policy", () => {

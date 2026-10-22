@@ -52,6 +52,21 @@ function formulaLike(value) {
   return /^[=+\-@\t\r]/.test(text) && !/^[-+]?\d+(?:[.,]\d+)?$/.test(text);
 }
 
+/**
+ * The first text cell of a block's rows that is formulaLike, 1-based, with
+ * its first character; null when there is none. Numbers and booleans are
+ * written in the general format and never read as a formula.
+ */
+function formulaCell(rows) {
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < rows[r].length; c++) {
+      const cell = rows[r][c];
+      if (typeof cell === "string" && formulaLike(cell)) return { row: r + 1, column: c + 1, first: cell[0] };
+    }
+  }
+  return null;
+}
+
 /** Collects one vocabulary: case-insensitive duplicates and conflicting aliases are warned and skipped. */
 function vocabularyBuilder(warnings) {
   const values = [];
@@ -144,6 +159,10 @@ function normalizeBlock(raw, index, seen, warnings) {
   const width = rows.reduce((max, row) => Math.max(max, row.length), 0);
   if (!width || rows.length * width > DEFAULTS.maxBlockCells) return warnings.push(where + " ignored: " + (width ? "more than " + DEFAULTS.maxBlockCells + " cells" : "every row is empty")), null;
   if (rows.some((row) => row.some((cell) => cell != null && !["string", "number", "boolean"].includes(typeof cell)))) return warnings.push(where + " ignored: cells must be text, numbers or booleans"), null;
+  // Rows are written as values, which a host may evaluate as a formula; the
+  // `formula` field is the one way to write a formula, and its text is shown.
+  const formula = formulaCell(rows);
+  if (formula) return warnings.push(where + " ignored: the cell in row " + formula.row + ", column " + formula.column + " starts with " + JSON.stringify(formula.first) + ", which a cell would read as a formula"), null;
   seen.add(trigger);
   // Ragged rows are padded: a range is written as a rectangle.
   return { trigger, label, rows: rows.map((row) => Array.from({ length: width }, (_, i) => (row[i] == null ? "" : row[i]))) };

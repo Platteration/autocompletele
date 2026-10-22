@@ -21,12 +21,16 @@ class Node {
   all(test, out = []) { if (test(this)) out.push(this); for (const c of this.children) c.all(test, out); return out; }
   find(test) { return this.all(test)[0] || null; }
   button(label) { return this.find((n) => n.tagName === "button" && n.textContent === label); }
+  // One focus for all fake documents: the element focus() was last called on, as document.activeElement.
+  focus() { focused.node = this; }
 }
+
+const focused = { node: null };
 
 /** A document with one element the pages look up by id ("pane"). */
 function fakeDocument(ids) {
   const byId = Object.assign({}, ids || {});
-  return { createElement: (tag) => new Node(tag), getElementById: (id) => byId[id] || null, byId };
+  return { createElement: (tag) => new Node(tag), getElementById: (id) => byId[id] || null, byId, get activeElement() { return focused.node; } };
 }
 
 const document = fakeDocument();

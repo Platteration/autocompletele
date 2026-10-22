@@ -159,7 +159,7 @@ test("learnFieldSets proposes the fields filled together, with varying text as b
   const refund = proposals[0];
   assert.deepEqual(refund.fields, { category: "Refund", priority: "P2", sla: "48", notes: "Hi [[name]], your refund is on its way." });
   assert.deepEqual(refund.templated, ["notes"], "names that share nothing are not a template");
-  assert.equal(refund.label, "Refund / P2");
+  assert.deepEqual(proposals.map((p) => p.label), ["Learned record 1", "Learned record 2", "Learned record 3", "Learned record 4"], "a number, never a learned value: the label travels to the dashboard, the palette and the record");
   assert.equal(proposals[1].fields.tag, "\\[[vip]]", "typed brackets stay literal");
   assert.ok(!Object.hasOwn(proposals[2].fields, "card"), "a card number is never proposed");
   assert.equal(proposals[3].fields.category, "Complaint");

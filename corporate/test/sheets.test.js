@@ -227,6 +227,28 @@ test("formulaLike stops values a cell would evaluate, but not plain numbers", ()
   for (const value of ["-5", "+3.5", "Acme", "a=b", "CC-100"]) assert.equal(sheets.formulaLike(value), false, value);
 });
 
+test("a block whose text cell a host would read as a formula is dropped with a warning naming the cell; numbers, signed numbers and formula blocks stay", () => {
+  // Rows are written as values, which Excel and Google Sheets may evaluate; the `formula` field is the one way to write a formula.
+  for (const [cell, first] of [["=HYPERLINK(\"https://example.invalid/\",\"Approved\")", "="], ["+1+1", "+"], ["-cmd|' /C calc'!A0", "-"], ["@SUM(A1:A2)", "@"], ["\tTAB", "\t"], ["\rCR", "\r"]]) {
+    const out = sheets.normalizeSheets({ blocks: [{ trigger: "/sig", label: "Signature block", rows: [["Name", "Approved"], ["Kim", cell]] }] });
+    assert.deepEqual(out.blocks, [], JSON.stringify(cell));
+    assert.deepEqual(out.warnings, ["sheets block /sig ignored: the cell in row 2, column 2 starts with " + JSON.stringify(first) + ", which a cell would read as a formula"]);
+  }
+  assert.deepEqual(sheets.normalizeSheets({ blocks: [{ trigger: "/two", rows: [["ok", "=1"], ["+2", "x"]] }] }).warnings, ["sheets block /two ignored: the cell in row 1, column 2 starts with \"=\", which a cell would read as a formula"], "the first such cell is named");
+  const kept = [
+    { trigger: "/ok", label: "Plain", rows: [["-5", "+3.5", -5, true], ["a=b", "CC-100", "", 0]] },
+    { trigger: "/f", label: "Total", formula: "=SUM(A1:A2)" },
+  ];
+  assert.deepEqual(sheets.normalizeSheets({ blocks: kept }), { vocabularies: {}, columns: [], blocks: kept, warnings: [] }, "signed numbers as text, numbers, booleans and a formula block are kept");
+  const pasted = sheets.parseConfig(JSON.stringify({ version: 1, sheets: { blocks: [{ trigger: "/sig", rows: [["=1+1"]] }, kept[1]] } }));
+  assert.deepEqual(pasted.config.blocks, [kept[1]], "a pasted policy loses the block too");
+  assert.deepEqual(pasted.warnings, ["sheets block /sig ignored: the cell in row 1, column 1 starts with \"=\", which a cell would read as a formula"]);
+  const policy = require("../core/org-policy.js").parse({ sheets: { blocks: [{ trigger: "/sig", rows: [["@SUM(A1)"]] }] } });
+  assert.deepEqual(policy.sheets.blocks, []);
+  assert.ok(policy.warnings.includes("sheets block /sig ignored: the cell in row 1, column 1 starts with \"@\", which a cell would read as a formula"), "the policy warns, so it is not signed without --allow-warnings");
+  assert.deepEqual(sheets.exportConfig({ blocks: [{ trigger: "/sig", rows: [["=1"]] }] }).blocks, [], "and the export for the add-in never carries it");
+});
+
 test("suggest gathers the column rule, a counts-only profile, completions and a block hit for one cell", () => {
   const values = "Acme Zebra Freight\nacme logistics gmbh\nACME\n\n21.10.2026";
   const result = sheets.suggest({ header: "Customer", sheet: "Orders 2026", text: "acm", values }, config);

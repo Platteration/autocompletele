@@ -14,6 +14,7 @@ const { simulate } = require("./simulate.js");
 const ID = "reply";
 const TRAY_LABEL = "Reply to the copied message…";
 const PALETTE_LABEL = "Reply to copied message";
+const PAUSED = "Paused by your organisation.";
 const DATA_VERSION = 1;
 // Popover: heading and hint, one block per candidate, one input row per open blank, the error line and the buttons.
 const SIZE = Object.freeze({ width: 560, base: 150, candidate: 88, blank: 62, max: 720 });
@@ -39,6 +40,11 @@ function createApp(host) {
   function config() {
     const section = host.policy().reply;
     return section && Array.isArray(section.replies) ? section : core.normalizeReplies(null);
+  }
+
+  function isPaused() {
+    const paused = host.policy().paused;
+    return !!(paused && paused.active);
   }
 
   function library() {
@@ -145,20 +151,29 @@ function createApp(host) {
    * itself; main.js tolerates its own second close.
    */
   function submit(state, payload, from) {
+    // A popover opened before the organisation paused the desk pastes nothing after it.
+    if (isPaused()) return { ok: false, error: PAUSED };
     const prepared = prepare(state, payload);
     if (!prepared.ok) return prepared;
     from.closePopover();
-    // Give the focus back to the compose window before the paste keystroke
-    // (shell.settle; a stand-in without it answers at once).
-    const paste = () => from.sender.replace({ backspaces: 0, text: prepared.text, cursorOffset: prepared.cursorOffset });
-    const settled = typeof from.settle === "function" ? from.settle() : null;
-    const sent = settled && typeof settled.then === "function" ? settled.then(paste) : paste();
     // A paste the sender could not perform is reported by the sender's own notification and counts nothing.
     const after = (result) => (!result || result.ok === false
       ? { ok: false, error: "Could not insert the reply" + (result && result.error ? ": " + result.error : ".") }
       : record(prepared, state));
-    // Electron's sender answers with a promise; the headless simulator's stand-in answers at once so its walk-through prints in order.
-    return sent && typeof sent.then === "function" ? sent.then(after) : after(sent);
+    const paste = () => {
+      // A pause that arrived while the focus went back pastes nothing; the popover is closed, so a notification says why.
+      if (isPaused()) {
+        from.notify(PAUSED);
+        return { ok: false, error: PAUSED, close: true };
+      }
+      const sent = from.sender.replace({ backspaces: 0, text: prepared.text, cursorOffset: prepared.cursorOffset });
+      // Electron's sender answers with a promise; the headless simulator's stand-in answers at once so its walk-through prints in order.
+      return sent && typeof sent.then === "function" ? sent.then(after) : after(sent);
+    };
+    // Give the focus back to the compose window before the paste keystroke
+    // (shell.settle; a stand-in without it answers at once).
+    const settled = typeof from.settle === "function" ? from.settle() : null;
+    return settled && typeof settled.then === "function" ? settled.then(paste) : paste();
   }
 
   function info() {
@@ -261,4 +276,4 @@ function createApp(host) {
   return app;
 }
 
-module.exports = { createApp, TRAY_LABEL, PALETTE_LABEL };
+module.exports = { createApp, TRAY_LABEL, PALETTE_LABEL, PAUSED };
