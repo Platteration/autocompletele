@@ -13,7 +13,7 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `version` | `1`. A newer number is accepted with a warning; unknown fields are ignored. |
 | `serial` | Positive integer, required for a signed policy. Raise it every time the policy changes; desks refuse a signed policy whose serial is lower than the one they already accepted for that source, or the same serial with different content. |
 | `layer` | Required for a signed policy: the name of the layer it is for, matching the `layer` of the deployment source it is published at. A desk refuses a policy signed for another layer, so an old organisation policy cannot be replayed at a team's location. |
-| `paused` | Kill switch. `true` or `{ "message": "…" }` pauses every desk that receives the policy: nothing is expanded, offered or learned, and the dashboard and tray offer no way to resume it. Nothing is deleted. Remove it (or set `{ "active": false }`) to resume. It is an administrative control, not a security boundary: `deployment.json` lives in the person's own data folder, so someone who edits that file can leave central management. |
+| `paused` | Kill switch. `true` or `{ "message": "…" }` pauses every desk that receives the policy: nothing is expanded, offered or learned, and the dashboard and tray offer no way to resume it. Nothing is deleted. When the pause reaches a running desk, an open popover and the search palette close (what was typed into a fill-in popover is discarded); documents waiting to be filed stay queued and are proposed again after the resume (the queue is kept in memory, so a restart empties it). Remove it (or set `{ "active": false }`) to resume. It is an administrative control, not a security boundary: `deployment.json` lives in the person's own data folder, so someone who edits that file can leave central management. |
 | `organization` | Name shown on the dashboard. |
 | `typing.charsPerMinute` | Typing-speed assumption behind "time saved" (default 200, which is 40 words per minute). Changing it re-estimates history. |
 | `typing.secondsPerAttachment` | Time credited for each document attached through a shortcut (default 20). |
@@ -28,7 +28,7 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `documents.shortcuts[]` | `trigger` (for example `/sld`), `label`, and `documents[]` with `title`, `path` (file path or URL), optional `tags` and `description`. Triggers follow the same boundary rule as text shortcuts and lose to a text shortcut with the same trigger. |
 | `filing.watch[]` | Folders where new documents land: `path` (a leading `~` is the person's home folder), optional `label`, `recursive` (default false). A person can turn a policy folder off on their desk and add folders of their own. |
 | `filing.fields` | Values a naming rule can use, by blank name: `values` (the organisation's spellings, matched as whole words, case-insensitive), `aliases` (`{ "ACME": "Acme Logistics GmbH" }`), `pattern` (regular expression, first match; `group` picks a capture group). The built-in blanks `date`, `year`, `month`, `day`, `original` (the old name without extension) and `ext` cannot be redefined. |
-| `filing.rules[]` | In order, first match wins: `id`, `label`, `when` (`keywords` with `match` `any` (default) or `all`, matched in the document's text and its file name; `extensions` to limit the rule to some file types; one of the two is required), `name` (a `[[blank]]` template; no path separators) and `folder` (a template too; empty renames in place; a relative folder is relative to the document's own folder). |
+| `filing.rules[]` | In order, first match wins: `id`, `label`, `when` (`keywords` with `match` `any` (default) or `all`, matched in the document's text and its file name; `extensions` to limit the rule to some file types; one of the two is required), `name` (a `[[blank]]` template; no path separators) and `folder` (a template too; empty renames in place; a leading `~` is the home folder of the person, or of the account running `actle-admin file`; a relative folder is relative to the document's own folder, on the desk and in `actle-admin file` alike). |
 | `filing.fallback` | `name`, `folder`, `label` for documents no rule matches. Without it, such documents are left alone. |
 | `filing.dateOrder` | `dmy` (default) or `mdy`: how `21/10/2026`-style dates are read. ISO dates and written months are unambiguous. |
 | `learning.minCount` | Distinct messages a text must recur in before it is proposed (default 3, minimum 2). |
@@ -52,7 +52,7 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `sheets.columns[].vocabulary` | Name of a vocabulary above (unknown names skip the rule). The column offers the vocabulary's values first, then its own values; column spellings and aliases of a vocabulary value count towards it and are not offered themselves. A vocabulary column whose values look like numbers or dates still completes from the vocabulary. |
 | `sheets.columns[].kind` | `label`, `notes`, `number` or `date`. `label` or `notes` override what the column's values suggest (`notes` completes only the sentence being typed, from sentences that recur in at least 2 cells); `number` or `date` switch completion off for the column, since a rule with a kind has no vocabulary. |
 | `sheets.blocks` | List of `{ trigger, label, rows }` or `{ trigger, label, formula }`. The trigger starts with `/`, has no spaces and is unique; it fires only when it ends at the caret after a word boundary. `label` defaults to the trigger. |
-| `sheets.blocks[].rows` | Rows of text, numbers or booleans written as a rectangle from the selected cell (ragged rows are padded with `""`; text cells get the text format, numbers and booleans the general one); at most 10,000 cells. |
+| `sheets.blocks[].rows` | Rows of text, numbers or booleans written as a rectangle from the selected cell (ragged rows are padded with `""`; text cells get the text format, numbers and booleans the general one); at most 10,000 cells. A text cell that a cell would read as a formula (leading `=`, `+`, `-`, `@`, tab or CR, unless a plain signed number) skips the whole block with a warning naming its row and column; use `formula` to write a formula. The add-in lists the rows under the Insert button before writing them; rows from a configuration a document carries are written only after a confirmation naming the range they replace. |
 | `sheets.blocks[].formula` | Starts with `=`; written into the selected cell as a formula. A block with both `rows` and `formula` is skipped. |
 | `forms.records[]` | Named field sets. `id` (a repeated id is renamed with `-dup` and warned), `label` (default: the id), `trigger` (optional; typed to open the record; a trigger another record already has is dropped with a warning and the record stays palette-only; at typing time a library shortcut or document set with the same trigger wins), `fields` (field name → text; numbers and booleans are written as text, other values are dropped with a warning; a record without fields is dropped). Values may hold `[[blank]]` templates, filled from a lookup row or the person's answers. |
 | `forms.lookups[]` | Local lists that fill fields from a key. `id`, `key` (required: the column that holds the key), `keyPattern` (optional regular expression; a key is also found inside longer text, such as a copied subject line, where it stands as a whole word; an invalid pattern is dropped with a warning and exact matching stays), `rows[]` (objects; a row without the key column, or repeating a key case-insensitively, is dropped with a warning; non-text values are dropped). A lookup without usable rows is dropped. The row's columns fill form fields and record blanks of the same name. |
@@ -63,7 +63,7 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `guard.packs[]` | Rule packs: `id` (default `pack-<n>`, a duplicate gets `-dup`), `label`, `rules[]`. A pack without a usable rule, or that is not an object, is skipped with a warning. |
 | `guard.packs[].rules[]` | `id` (default `<pack>-<n>`, a duplicate gets `-dup`), `label`, `message` (required), `keywords` with `match` `any` (default) or `all` and `caseSensitive` (default false), `detect` (detectors below), `unless` phrases that silence the rule when one appears anywhere in the field text (case and spacing ignored), `apps` (process names the rule is limited to; the "Try it" box needs the application typed in to try them), `severity` `warn` (default), `info` or `block` (a label: nothing is blocked), `recipients` `any` (default) or `external`. A rule needs keywords or detectors and a message, else it is skipped with a warning; an unreadable severity or recipients value warns and uses the default. Each rule fires once per field until the focus moves. |
 | `guard.packs[].rules[].detect` | `card-number` (Luhn check), `iban` (mod 97), `email`, `phone`, `national-id` (with `countries` from US, GB, ES, FR; all four by default; unknown countries warned, a rule with none supported skipped), `forbidden-phrase` (needs `phrases`), `internal-code` (needs `internalCodes`), `secret` (labelled passwords and tokens, long tokens). Findings are shown masked; a secret shows only its label and stars. |
-| `guard.packs[].rules[].fix` | `{ "kind": "text", "text": "…", "position": "end" (default) or "start" }`, `{ "kind": "shorthand", "trigger": "…" }` or `{ "kind": "remove", "with": "…" }` (a plain string is a text fix). Text at the end and a shortcut are typed at the caret and counted as a `guard` insert; a `remove` fix and a text fix at the start put a corrected copy of what was typed in the field on the clipboard, and are refused when the field holds 4,000 characters or more (the engine keeps only the last 4,000). Every fix is refused once the focus moved since the warning was raised. A shorthand fix uses the policy library's shortcut (the person's own only when the policy has none with that trigger) and refuses a shortcut with `[[blanks]]`. An unusable fix is dropped with a warning; the rule stays, without a Fix button. |
+| `guard.packs[].rules[].fix` | `{ "kind": "text", "text": "…", "position": "end" (default) or "start" }`, `{ "kind": "shorthand", "trigger": "…" }` or `{ "kind": "remove", "with": "…" }` (a plain string is a text fix). Text at the end and a shortcut are typed at the caret and counted as a `guard` insert; a `remove` fix and a text fix at the start put a corrected copy of what was typed in the field on the clipboard, and are refused when the field holds 4,000 characters or more (the engine keeps only the last 4,000); such a fix is reported only once the copy is on the clipboard, and a copy that fails is reported with the warning left open. Every fix is refused once the focus moved since the warning was raised, while the organisation has paused actle, and for a warning raised by a key that may have sent the message (Enter, Tab or a shortcut). A shorthand fix uses the policy library's shortcut (the person's own only when the policy has none with that trigger) and refuses a shortcut with `[[blanks]]`. An unusable fix is dropped with a warning; the rule stays, without a Fix button. |
 | `notes.author` | Name of the blank that is prefilled with the person's name and remembered after each insert (default `author`). Must be a blank name (`author` or `[[author]]`, no brackets or line breaks inside), else it is ignored with a warning. |
 | `notes.dateOrder` | `dmy` (default) or `mdy`: how `3/11/2026`-style dates in due phrases are read. ISO dates and written months are unambiguous. Anything else is ignored with a warning. |
 | `notes.actions` | The action block: `heading` (default `Action items`), `patterns` (words that make a sentence an action item, default `TODO`, `ACTION`; empty entries are dropped with a warning), `empty` (the line written when there are no items, default `None`). `false` switches the block off by default; a document with its own `actions` object switches it back on for that document. A value that is not an object or `false` is ignored with a warning. |
@@ -97,7 +97,10 @@ found values are inserted literally. Enter closes the popover, then pastes
 the text through the clipboard where the person was writing; a paste the
 desk cannot perform is reported by actle's own notification and counts
 nothing. Nothing is offered when the clipboard is empty, no reply fits, the
-policy has no replies, or actle is paused.
+policy has no replies, or actle is paused. Insert in a popover opened before
+a pause is refused ("Paused by your organisation."); a pause that arrives
+while the focus goes back to the compose window stops the paste, with a
+notification.
 
 Stored on the desk: `apps/reply.json` with offered and inserted counts per
 reply id; one metrics line per paste (kind `reply`, the reply id, keystrokes
@@ -125,11 +128,17 @@ as text (number format `@`); a notes cell whose typed start looks like a formula
 (`=`, `+`, `-`, `@`) is left alone with a message. A `/` trigger typed in the pane
 inserts the block's rows or formula at the selected cell.
 
-Stored: the configuration in the workbook's document settings (Excel) or the
-spreadsheet's document properties (Google, pieces of at most 8,192 UTF-8 bytes,
-count written last), plus a copy in the browser's localStorage; on the desk,
+Stored: the configuration pasted into the add-in's Settings, in the browser's
+localStorage (the copy that applies in every document) and in the workbook's
+document settings (Excel) or the spreadsheet's document properties (Google, pieces
+of at most 8,192 UTF-8 bytes, count written last); on the desk,
 `apps/sheets-config.json` and the last export's time and counts (`apps/sheets.json`);
-the audit gets `sheets-config-exported` with counts only. Never stored or sent: cell
+the audit gets `sheets-config-exported` with counts only. A configuration a document
+carries in its own settings is only offered, with what it would change; it applies
+only when the person chooses it, for that session, and is never copied into the
+browser or erased by saving an empty Settings box. A formula or rows from it are
+written only after a confirmation that shows the formula, or the rows and the range
+they replace. Never stored or sent: cell
 contents, what is typed in the pane or in "Try it". No data leaves the spreadsheet
 (the Excel pane loads Office.js from Microsoft's CDN; nothing else is fetched). No
 metrics are recorded for Sheets, because the desk never inserts text for it.
@@ -138,21 +147,21 @@ metrics are recorded for Sheets, because the desk never inserts text for it.
 
 Fill a whole form at once from a named record. Section `forms` (`records`, `lookups`, `forms`), parsed by `core/forms.js` and run by `desktop/apps/forms/`.
 
-On a desk: with the caret in the form's first field, typing a record's trigger, or picking the record in the search palette (a record without a trigger is listed as `form:<id>`), opens the plan popover. It names the form matched to the window that had the focus; with no match the record's fields are filled in record order. The Reference box runs the lookups (exact key, or a key pattern inside longer text); when the popover opens the clipboard is tried once and a key found there pre-fills the reference. The row's columns fill form fields of the same name and the record's `[[blanks]]`; blanks still open are asked in the popover, which also lists the fields Tab will pass over. Fill is refused, with the popover kept open, while a blank is open or the form has none of the record's fields. Otherwise the popover closes first, so the keys reach the form and not actle's own window; the Electron shell then waits 150 ms for the focus to return, each value is pasted in Tab order with one Tab per form field between two values, and the first paste deletes the typed trigger (on its own when the first value belongs to a later field). Selectors are shown, not used. A key that fails stops the fill: a notification names the field it stopped at, nothing is counted or stored, and there is no retry from the popover. A complete fill is one `form` insert named by the record id (an own record's fill: `own-record`), with the typed trigger, a typed reference and typed answers subtracted. A paused policy offers no record.
+On a desk: with the caret in the form's first field, typing a record's trigger, or picking the record in the search palette (a record without a trigger is listed as `form:<id>`), opens the plan popover. It names the form matched to the window that had the focus; with no match the record's fields are filled in record order. The Reference box runs the lookups (exact key, or a key pattern inside longer text); when the popover opens the clipboard is tried once and a key found there pre-fills the reference. The row's columns fill form fields of the same name and the record's `[[blanks]]`; blanks still open are asked in the popover, which also lists the fields Tab will pass over. Fill is refused, with the popover kept open, while a blank is open or the form has none of the record's fields. Otherwise the popover closes first, so the keys reach the form and not actle's own window; the Electron shell then waits 150 ms for the focus to return, each value is pasted in Tab order with one Tab per form field between two values, and the first paste deletes the typed trigger (on its own when the first value belongs to a later field). Selectors are shown, not used. A key that fails stops the fill: a notification names the field it stopped at, nothing is counted or stored, and there is no retry from the popover. A complete fill is one `form` insert named by the record id (an own record's fill: `own-record`), with the typed trigger, a typed reference and typed answers subtracted. A paused policy offers no record, and Fill in a popover opened before the pause is refused ("Paused by your organisation."). A pause that arrives during the 150 ms wait stops the fill before its first key, with a notification; a fill that has started typing finishes.
 
-Stored in `apps/forms.json`: own records accepted from proposals (id `own-` + 8 hex characters of the proposal digest, label, trigger, fields, the form learned on, when); fills made on a matched form as the form id and the field values, at most 500 (oldest dropped); dismissed proposals as `sha256:` digests. The file is plain JSON, so names and e-mail addresses from lookup rows are readable on the desk (the learning corpus, by contrast, is encrypted). The audit file gets `form-filled`, `form-record-accepted`, `form-proposal-dismissed`, `form-record-deleted` and `form-sessions-cleared` with ids and counts.
+Stored in `apps/forms.json`: own records accepted from proposals (id `own-` + 8 hex characters of the proposal digest, label, trigger, fields, the form learned on, when); fills made on a matched form as the form id and only the values that came from the policy (record text none of whose blanks the person answered, and lookup-row columns; what the person types into the popover is never written), at most 500 (oldest dropped), removed once older than `retention.corpusDays` (at start and at every fill; a fill without a time counts as expired), all deleted by "Clear stored fills" on the Forms tab and by "Delete learned text" on the Learning tab (that button is enabled only while learn-mode text is stored); dismissed proposals as `sha256:` digests. The file is plain JSON, so names and e-mail addresses from lookup rows are readable on the desk (the learning corpus, by contrast, is encrypted). The audit file gets `form-filled`, `form-record-accepted`, `form-proposal-dismissed`, `form-record-deleted` and `form-sessions-cleared` with ids and counts.
 
-Never stored: the value of a field whose name contains, as a whole word (split at case changes, digits and punctuation), password, passwd, passcode, passphrase, pwd, PIN, secret, token, OTP or API key (`userPin`, `api-key` and `password2` count; `secretary`, `tokenizer` and `pinned` do not); a value the capture scrubber would mask (card numbers, labelled secrets); a fill made without a matched form; the clipboard text (only a key found in it travels, in the popover state); a value, reference or answer in the audit file.
+Never stored: the value of a field whose name contains, as a whole word (split at case changes, digits and punctuation), password, passwd, passcode, passphrase, pass, pwd, PIN, secret, token, OTP, API key, credential(s), CVV, CVC, IBAN, BIC, SSN, NINO, DNI or NIR (`userPin`, `api-key`, `password2` and `payeeIBAN` count; `secretary`, `tokenizer`, `pinned` and `passenger` do not, and neither do other names such as `accountNumber` or `passportNumber`); a record field whose template has a blank named that way; a value the capture scrubber would mask (card numbers, labelled secrets, long tokens) or on which Guard's `iban` or `national-id` (US, GB, ES, FR) detector fires; anything typed into the popover (answers, and every field that carries one); a fill made without a matched form; the clipboard text (only a lookup key found in it reaches the popover); a value, reference or answer in the audit file.
 
-Learning: field sets filled together in at least 3 fills of one form with at least 2 constant fields are proposed; text that differs from fill to fill becomes a blank. A proposal whose fields equal an existing record (policy or own), or one that was dismissed, is not shown. Accepting needs a trigger of at most 40 characters without spaces that no record, library shortcut, document set or notes document uses; without a label the proposal's own label is kept. A policy record with an own record's id hides the own record (warned on the tab); one with its trigger takes the trigger and the own record stays palette-only.
+Learning: field sets filled together in at least 3 fills of one form with at least 2 constant fields are proposed; text that differs from fill to fill becomes a blank. A proposal whose fields equal an existing record (policy or own), or one that was dismissed, is not shown. Accepting needs a trigger of at most 40 characters without spaces that no record, library shortcut, document set or notes document uses. A proposal is labelled "Learned record N on <form label>" (the form's id when the policy no longer has the form), N being the lowest number for which no record and no earlier proposal has that label, never with a learned value; the dashboard prefills that label as the record's name, which the person may change, and an empty name keeps it. A fill of an own record notifies "Filled N fields." without its label. A policy record with an own record's id hides the own record (warned on the tab); one with its trigger takes the trigger and the own record stays palette-only.
 
 Limits: nothing is read from the form, so the caret must be in the form's first field when the trigger is typed and a form's fields must be listed in the application's Tab order; the Forms tab shows the first 20 rows of a lookup; there is no tray entry.
 
 ## Guard
 
-actle Guard checks what a person types against the organisation's rule packs (policy section `guard`, parsed by `core/guard.js`, desktop app `desktop/apps/guard/`). At every word end the engine hands the text typed or inserted in the current field since it got the focus (the last 4,000 characters, held in memory only, and only while the policy has rule packs) to the core. A rule that fires opens the "Before you send" window, which never takes the focus, with the rule's label, a severity tag, the message, the findings masked (a card number shows its last four digits, a secret only its label and stars), a Fix button when the rule has one, and Dismiss. The shell shows one such window at a time: a warning or offer that fires at a later word end replaces it, and the warnings left in it count as unanswered. Each rule fires once per field until the focus moves. A severity is a label; nothing is blocked.
+actle Guard checks what a person types against the organisation's rule packs (policy section `guard`, parsed by `core/guard.js`, desktop app `desktop/apps/guard/`). At every word end, including a word ended by Enter, Tab or a shortcut key such as Ctrl+Enter (the usual ways a message is sent), the engine hands the text typed or inserted in the current field since it got the focus (the last 4,000 characters, held in memory only, and only while the policy has rule packs) to the core. The desk observes keys and cannot hold one back, so a warning raised by the key that sends a message appears as the message goes out, and comes without a fix (where the rule has one, the window says to check the message and correct it by hand); it is still recorded as raised. The last word before a mouse click (on Send, for example) is not checked, because a click resets what actle holds of the field. No field text is held and nothing is checked in a secure-input field or in the credential prompts, password managers and terminals actle recognises by process name or window title (see Capture modes). A rule that fires opens the "Before you send" window, which never takes the focus, with the rule's label, a severity tag, the message, the findings masked (a card number shows its last four digits, a secret only its label and stars), a Fix button when the rule has one, and Dismiss. The shell shows one such window at a time: a warning or offer that fires at a later word end replaces it, and the warnings left in it count as unanswered. Each rule fires once per field until the focus moves. A severity is a label; nothing is blocked.
 
-Fixes: a text fix at the end and a shorthand fix are typed at the caret and counted as a `guard` insert (keystrokes saved = the inserted text). A `remove` fix and a text fix at the start cannot edit text already in the field, because the shell only types at the caret: a corrected copy of what actle saw typed in the field goes to the clipboard with a notification saying it covers only that text, to paste over it; nothing is counted. When the field holds 4,000 characters or more the copy would start mid-word, so the clipboard fix is refused with a message to correct by hand. Every fix is refused once the focus moved since the warning was raised (the window stays open across applications), so nothing is ever typed into another application; Dismiss still answers it. A shorthand fix uses the policy library's shortcut (the person's own only when the policy has none with that trigger) and refuses a shortcut with `[[blanks]]`, telling the person to type the trigger. While a fix is pasting, the window takes no other answer.
+Fixes: a text fix at the end and a shorthand fix are typed at the caret and counted as a `guard` insert (keystrokes saved = the inserted text). A `remove` fix and a text fix at the start cannot edit text already in the field, because the shell only types at the caret: a corrected copy of what actle saw typed in the field goes to the clipboard with a notification saying it covers only that text, to paste over it; nothing is counted. When the field holds 4,000 characters or more the copy would start mid-word, so the clipboard fix is refused with a message to correct by hand. Every fix is refused while the organisation has paused actle, and once the focus moved since the warning was raised (the window stays open across applications), so nothing is ever typed into another application; Dismiss still answers it. A shorthand fix uses the policy library's shortcut (the person's own only when the policy has none with that trigger) and refuses a shortcut with `[[blanks]]`, telling the person to type the trigger. While a fix is pasting, the window takes no other answer.
 
 Recipients: the shell cannot read them, so rules with `recipients: "external"` fire while typing only when `guard.assumeExternal` is `true`. The Guard tab's "Try it" box runs the same check on a pasted text with recipients (comma-separated) and, optionally, an application typed in, and counts and audits nothing.
 
@@ -202,6 +211,12 @@ On a managed desk, IT installs `deployment.json` in the app's data folder:
 }
 ```
 
+If IT creates that folder, it should belong to the person's account: actle
+makes the folder and its own files in it private to that account (0700 and
+0600) when it starts, and leaves files owned by another account, such as a
+`deployment.json` installed as root, as they are. On Windows these modes do
+not apply; the profile's permissions do.
+
 * Sources are layers, most general first. Later layers win field by field;
   shortcuts merge by trigger, keyword rules by `id`, document sets by
   trigger, and a later layer's capture rules are tried before an earlier
@@ -248,8 +263,9 @@ node admin/actle-admin.js report reports/*.json --policy org.json --rate 38 --cu
 ```
 
 prints desks, hours saved, estimated value, totals per team, organisation
-shortcuts by use and the ones nobody used, and writes the same as CSV. An
-unreadable report is skipped with a warning.
+shortcuts by use and the ones nobody used, and writes the same as CSV to a
+new file (`--csv` never replaces an existing file: name a new one, or delete
+the old one first). An unreadable report is skipped with a warning.
 
 ## Phrase suggestions from desks
 
@@ -264,8 +280,9 @@ node admin/actle-admin.js suggestions incoming/*.json --policy org.json --min-de
 
 Each text counts once per desk (newest file wins); texts already in the
 policy library are left out; the trigger most desks chose is kept unless the
-library already uses it. `--out` writes a `shorthands.json`-format file to
-review and then add to the policy's `library` before signing.
+library already uses it. `--out` writes a new `shorthands.json`-format file
+(it never replaces an existing one) to review and then add to the policy's
+`library` before signing.
 
 ## Document filing
 
@@ -274,10 +291,27 @@ file appears and has stopped growing, the desk reads it locally (plain text,
 `.docx` and `.xlsx`; a PDF or image is judged by its file name only), picks
 the first rule whose keywords appear, fills the rule's `name` and `folder`
 templates from the text, and shows a popover: the name (editable), any blank
-the text did not fill, and the folder. Enter files it; Esc leaves the file
-untouched; "Never for this folder" turns that folder off on this desk. A
-document is never overwritten (a second copy gets ` (2)`), a name with an
-unfilled blank is refused, and every filing can be undone from the Filing tab.
+the text did not fill, and the folder. The popover appears without taking the
+keyboard focus, and neither files nor turns a folder off until the person
+clicks its name, a blank or a button (a click in its first 0.7 seconds on
+screen does not count, and once the popover loses the focus it needs a new
+click). Then Enter files it, and "Never for this folder" turns off on this
+desk every watch still on that proposes the document (its own folder, or a
+watched folder above it with `recursive: true`), or says so and stays open
+when no such watch is left. Skip, or Esc in the popover, leaves the file
+untouched at any time. A document is never overwritten, even when two desks, or a desk and
+`actle-admin file --apply`, file the same name into the same folder at the
+same moment (a second copy gets ` (2)`); a name with an unfilled blank is
+refused; and a filing can be undone from the Filing tab while the filed
+document is unchanged (when the file at the filed path has another size or
+modification time, or is not a file, Undo leaves it and its entry where they
+are). A name is cut to 150 characters as Windows counts them (most emoji count
+as two) and to 200 bytes before any ` (2)` is added; an extension longer than
+16 letters or digits counts as part of the name. Each folder name that the
+rule's `folder` template produces is cut to 255 characters and 255 bytes. A
+name whose part
+before the first dot is one Windows reserves for a device (CON, NUL, COM1,
+CONIN$ and the like) gets a `_` in front, on every platform.
 
 What is kept: `filing-index.json` in the data folder holds each filed
 document's new name and path, old name and path, the rule and the values
@@ -292,20 +326,41 @@ node admin/actle-admin.js file samples/*.pdf samples/*.docx --policy org.json   
 node admin/actle-admin.js file samples/*.docx --policy org.json --apply                 # rename and move
 ```
 
+The output starts with DRY RUN or APPLYING. Folders, symbolic links and
+anything else that is not a file are skipped with a message. Each command
+takes only its own options, and `--` ends them. A wildcard such as `*` can put
+a file named like an option (`--apply`) on the command line, so with options,
+`file`, `report` and `suggestions` take documents only when they are named
+with a folder (`samples/*`, `./*`) or come after `--`; an option that is also
+the name of a file in the current folder is refused too.
+
 ## Capture modes
 
 * **off**: the assistant ignores the application entirely, including triggers.
 * **triggers**: a rolling buffer of the last 200 characters is matched against
   triggers and document shortcuts and is never written anywhere. This is what
   the personal Windows app does in every application. While the policy has
-  keyword rules, the text of the current field (up to 4,000 characters) is
-  also held in memory to check them, and dropped when the focus moves.
+  keyword rules or Guard packs, the text of the current field (up to 4,000
+  characters) is also held in memory to check them, and dropped when the focus
+  moves. A word ended by Enter, Tab, a shortcut key or a caret key raises
+  warnings only (keyword warnings without their insert, Guard warnings without
+  a fix), because the key may have sent the message or left the window;
+  offers wait for the next word typed in the field. No field text is held,
+  and no keyword rule or Guard check runs, in the credential prompts, password
+  managers and terminals actle recognises.
 * **learn**: in addition, the text typed in that application is kept per
   field session (until the focus moves), scrubbed, and stored under the data
   folder so the phrase miner can propose shortcuts and fill-in templates.
 
 Learn mode is never applied to credential prompts, password managers,
-terminals or secure-input fields, even when a rule asks for it, and card
-numbers, labelled secrets ("password: …") and long token-like strings are
-masked before a session is stored. The person can see, pause and delete the
+terminals or secure-input fields, even when a rule asks for it. actle
+recognises a secure-input field by the system's flag (macOS), and the others
+by process name (password managers and keyrings; terminals and SSH clients
+such as PuTTY, mintty and MobaXterm; the system's credential and elevation
+prompts, polkit agents, GnuPG pinentry and ssh-askpass; on Linux also by the
+15-character name the kernel reports) and by window titles with sign-in or
+password words in English, German, French, Spanish, Portuguese or Dutch; a
+window it does not recognise is treated like any other. Card numbers,
+labelled secrets ("password: …") and long token-like strings are masked
+before a session is stored. The person can see, pause and delete the
 learning corpus from the dashboard at any time.

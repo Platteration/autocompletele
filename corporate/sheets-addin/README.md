@@ -43,7 +43,7 @@ node build.js --out /tmp/x # the same files under another folder
 ```
 
 The build reads `../core/sheets.js`, follows its relative `require` calls
-(`core/personal.js`, `core/phrase-miner.js`, the personal edition's
+(`core/personal.js`, `core/phrase-miner.js`, `core/policy-pattern.js`, the personal edition's
 `expander.js`, `template.js` and `palette.js`), wraps each module in a tiny
 CommonJS shim and writes one script that sets `window.ActleSheets` to the
 core's exports (`normalizeSheets`, `columnFor`, `createColumnProfile`,

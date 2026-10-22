@@ -56,8 +56,10 @@ there are not shown; when no watch that is on covers the document any more
 says so and stays open. The Filing tab lists watched folders (a policy
 folder can be turned off on this desk; turning one off or removing your own
 also drops the documents still waiting from it), the rules, and filed
-documents with Undo and Reveal. "File existing documents…" proposes a
-filing for each document already in a folder, one at a time. When the
+documents with Undo (refused, with the file left where it is, when the filed
+document has changed since it was filed) and Reveal. "File existing
+documents…" proposes a filing for each document already in a folder, one at
+a time. When the
 organisation pauses the desk, an open popover and the search palette close
 (what was typed into a fill-in popover is discarded); documents waiting to
 be filed stay in the queue, the one whose popover closed first, and are
@@ -94,11 +96,11 @@ The export is logged in the audit (counts only); nothing from the tab is typed i
 
 Put the caret in the first field of a form and type a record's trigger (or pick the record in the search palette). A popover shows the form matched to the window, the values about to be typed, the fields Tab will pass over, and the blanks still open. Copy an order or customer reference first and the lookup row fills the customer fields; or type it into the Reference box. Enter closes the popover and fills the form: the trigger is deleted, each value is pasted and Tab moves on, once per field in between. Selectors from the policy are shown but not used, so the form's fields must be in Tab order. If a key fails, a notification names the field it stopped at and nothing is counted.
 
-The Forms tab lists the organisation's records, lookups (first 20 rows) and forms, your own records (Delete), the proposals learned from your fills (Accept with a trigger of your choice, or Dismiss), a box to try a reference, and Clear for the stored fills. Fills are stored only when a form matched; values of fields named with the word password, PIN, secret, token, OTP or API key, and anything the scrubber masks, are never stored.
+The Forms tab lists the organisation's records, lookups (first 20 rows) and forms, your own records (Delete), the proposals learned from your fills (Accept under a name and a trigger of your choice, or Dismiss), a box to try a reference, and Clear for the stored fills. Fills are stored only when a form matched, and only with the values that come from the record itself and the organisation's lookup lists: nothing you type into the popover, no value of a field whose name has a word such as password, PIN, credential, CVV, IBAN or SSN in it, and no card number, labelled secret, long token, IBAN or US, UK, Spanish or French national ID number found in a value. Fills older than the policy's `retention.corpusDays` go at start and at every fill; Clear deletes them all, and so does "Delete learned text" while that button is enabled.
 
 ## Guard
 
-When a compliance rule of your organisation fires on what you type, a small "Before you send" window appears beside your work without taking the focus: each warning shows the rule, its severity, the message and what was found, masked. **Add the text** or **Insert …** types the fix where the caret is. **Copy corrected text** puts a corrected copy of what you typed in this field on the clipboard, because actle cannot change what is already in the field: select that text and paste over it (refused for messages of 4,000 characters or more). **Dismiss** records that you saw the warnings. A later warning or offer replaces the window, and a fix clicked after you moved to another window is refused: type it by hand. Rules for outside recipients only warn while typing when the policy says so (`assumeExternal`), since the recipients of a message cannot be read.
+When a compliance rule of your organisation fires on what you type, a small "Before you send" window appears beside your work without taking the focus: each warning shows the rule, its severity, the message and what was found, masked. A word ended by Enter, Tab or a shortcut such as Ctrl+Enter counts too; actle cannot hold a key back, so the warning for the word that sent a message appears just after it went out, and without a fix: the window says to check the message and correct it by hand. Nothing is checked in the terminals, password managers and sign-in windows actle recognises, and it keeps no field text there. **Add the text** or **Insert …** types the fix where the caret is. **Copy corrected text** puts a corrected copy of what you typed in this field on the clipboard, because actle cannot change what is already in the field: select that text and paste over it (refused for messages of 4,000 characters or more). **Dismiss** records that you saw the warnings. A later warning or offer replaces the window, and a fix clicked after you moved to another window, or while your organisation has paused actle, is refused: type it by hand. Rules for outside recipients only warn while typing when the policy says so (`assumeExternal`), since the recipients of a message cannot be read.
 
 The Guard tab in the dashboard lists the rule packs, counts the warnings raised, fixed, dismissed and left unanswered per rule, and has a "Try it" box to check a text with recipients and an application typed in. Only rule ids and outcomes are recorded; what you typed never is.
 
@@ -120,18 +122,22 @@ Everything is in Electron's `userData` folder for the app
 | ----------------- | --------------------------------------------------------------- |
 | `library.json`    | Own shortcuts, in the shared `shorthands.json` format (version 1) |
 | `policy.json`     | The organisation policy, if one was installed                   |
-| `settings.json`   | Enabled flag, own capture rules, typing-speed override, palette hotkey (`paletteShortcut`, an Electron accelerator; `""` turns it off) |
+| `settings.json`   | Enabled flag, own capture rules, typing-speed override, `shiftEnterForNewlines` and `startWithSystem`, own watch folders and the policy folders turned off, the desk id (`installId`, generated by actle), the Notes author, palette hotkey (`paletteShortcut`, an Electron accelerator: a function key, or a chord with Command, Super or Meta, or with Control and no Alt/Option/AltGr, so it never takes a typed character away; `""` turns it off; anything else falls back to the default). Other keys are dropped. |
 | `metrics.jsonl`   | One line per insert: time, kind, application, keystrokes saved, whether the shortcut was the organisation's or the person's |
 | `corpus.jsonl`    | Scrubbed text from learn-mode applications, each record encrypted (AES-256-GCM), pruned by retention |
 | `corpus.key`      | The corpus key, itself encrypted by the operating system keychain (Electron `safeStorage`) |
 | `learned.json`    | SHA-256 digests of proposals the person dismissed (no readable text) |
 | `suggestions.json` | Proposals the person chose to suggest to the organisation, readable, until exported, removed or deleted with the learned text |
 | `filing-index.json` | Documents filed by the filing rules: new and old name and path, rule, values found (a client, a reference); never document text |
-| `apps/<app>.json`  | The suite's per-app data: reply counts, forms fill sessions and own records, the notes author, the last Sheets export; `apps/sheets-config.json` is the exported add-in configuration |
+| `apps/<app>.json`  | The suite's per-app data: reply counts, forms fill sessions (values from the policy only) and own records, the notes author, the last Sheets export; `apps/sheets-config.json` is the exported add-in configuration |
 | `deployment.json` | Managed desks only: signed policy sources and pinned public keys, written by IT |
 | `policy-cache/`   | Last good copy of each signed policy layer                     |
 | `policy-state.json` | Hash of the policy last applied and each source's status     |
 | `audit.jsonl`     | Policy changes, failing or recovering sources, capture-rule changes, corpus key and deletion events, documents filed or unfiled (paths only); never typed text |
+
+The files actle writes there are created readable by your account only
+(0600) and its folders 0700, and older ones your account owns are tightened
+when actle starts; on Windows the profile's permissions apply.
 
 Learned text is only written encrypted, with one exception the person
 chooses: proposals they mark "Suggest to organisation" are kept readable in
@@ -143,7 +149,9 @@ encryption is encrypted on the next start. Records the current key cannot
 open are kept untouched, never dropped, and the key file is never replaced
 while such records exist. The Learning tab shows how much text is stored;
 "Delete learned text" removes it together with the dismissed-proposal
-digests and any suggestions not yet exported.
+digests, any suggestions not yet exported and the fills Forms stored for
+learning; the button is enabled only while learned text is stored, and the
+Forms tab's "Clear stored fills" deletes the fills at any time.
 
 A file that cannot be parsed is moved aside (`*.corrupt-<timestamp>`), the
 dashboard shows a warning, and the app starts with defaults. Nothing refuses
@@ -166,8 +174,10 @@ to start over a bad file.
   IME composition are not handled; keep triggers to ASCII such as `sig/`.
 - The listener observes keys and cannot swallow them, so the character that
   completes a trigger lands in the field and is deleted with the rest.
-  Expansions are pasted, so the previous clipboard text is restored shortly
-  after each insert.
+  Expansions are pasted, so the previous clipboard text is restored about
+  0.6 s after the last paste of an insert (or of a whole Forms fill) was
+  sent, unless something else was copied in the meantime or the clipboard
+  could not be read before the paste.
 
 ## Simulation
 

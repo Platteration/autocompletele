@@ -13,7 +13,8 @@
 //     popovers: { "warning": { file: "apps/guard-popover", size: (action) => ({ width, height }), submit: async (state, payload, shell) => result } },
 //     palette: { items: () => [...], choose: (choice) => action|null },   // optional palette contributions, kind "app:guard"
 //     trayItems: () => [{ label, click }],                                // optional
-//     onPolicy(policy), onSettings(settings), onFocus(context), onStart(shell), onStop(),   // optional
+//     onPolicy(policy), onSettings(settings), onFocus(context), onClearLearning(), onStart(shell), onStop(),   // optional
+//                                        // onClearLearning: after "Delete learned text"; the app deletes what it learned itself; a throw is logged
 //     simulate(sim),                      // optional headless walk-through for desktop/simulate.js
 //   }
 //
