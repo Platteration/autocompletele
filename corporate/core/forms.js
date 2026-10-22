@@ -42,9 +42,15 @@ function uniqueId(raw, fallback, ids, warnings, kind) {
 }
 
 /** A key pattern only counts where it stands as a whole word: "A-123456" is not order "A-12345". */
-function boundaryPattern(pattern) {
-  return new RegExp("(?<![\\p{L}\\p{N}_])(?:" + pattern + ")(?![\\p{L}\\p{N}_])", "giu");
+function boundarySource(pattern) {
+  return "(?<![\\p{L}\\p{N}_])(?:" + pattern + ")(?![\\p{L}\\p{N}_])";
 }
+
+// Patterns from the policy are checked for backtracking shapes at load and run
+// through the guarded runner on capped text (core/policy-pattern.js).
+const policyPattern = require("./policy-pattern.js");
+const LOOKUP_MAX = 4000;
+const TITLE_MAX = 1000;
 
 function normalizeRecord(raw, index, warnings, ids, triggers) {
   if (!isObject(raw)) {
@@ -88,13 +94,10 @@ function normalizeLookup(raw, index, warnings, ids) {
   }
   let keyPattern = null;
   if (raw.keyPattern != null) {
-    try {
-      // Compiled here exactly as lookup() uses it, so a bad pattern is a policy warning, not a crash on paste.
-      boundaryPattern(asText(raw.keyPattern));
-      keyPattern = asText(raw.keyPattern) || null;
-    } catch (error) {
-      warnings.push("form lookup " + where + " keyPattern ignored: invalid pattern (" + error.message + ")");
-    }
+    // Checked exactly as lookup() runs it, so a bad or backtracking pattern is a policy warning, not a hang on paste.
+    const refused = policyPattern.check(asText(raw.keyPattern), "u") || policyPattern.check(boundarySource(asText(raw.keyPattern)), "giu");
+    if (refused) warnings.push("form lookup " + where + " keyPattern ignored: " + refused);
+    else keyPattern = asText(raw.keyPattern) || null;
   }
   const seen = new Set();
   const rows = [];
@@ -132,10 +135,9 @@ function normalizeForm(raw, index, warnings, ids) {
     return null;
   }
   if (title) {
-    try {
-      new RegExp(title, "iu");
-    } catch (error) {
-      warnings.push("form " + where + " ignored: invalid title pattern (" + error.message + ")");
+    const refused = policyPattern.check(title, "iu");
+    if (refused) {
+      warnings.push("form " + where + " ignored: " + (refused.startsWith("invalid pattern") ? "invalid title pattern" + refused.slice("invalid pattern".length) : "title pattern refused: " + refused));
       return null;
     }
   }
@@ -187,7 +189,7 @@ function findForm(context, config) {
   const title = String(ctx.title == null ? "" : ctx.title);
   for (const form of config && Array.isArray(config.forms) ? config.forms : []) {
     if (form.match.process.length && !form.match.process.includes(process)) continue;
-    if (form.match.title && !new RegExp(form.match.title, "iu").test(title)) continue;
+    if (form.match.title && !policyPattern.test(form.match.title, "iu", title, TITLE_MAX)) continue;
     return form;
   }
   return null;
@@ -214,7 +216,7 @@ function lookup(value, config) {
   if (exact) return exact;
   for (const entry of lookups) {
     if (!entry.keyPattern) continue;
-    for (const match of text.matchAll(boundaryPattern(entry.keyPattern))) {
+    for (const match of policyPattern.matchAll(boundarySource(entry.keyPattern), "giu", text, LOOKUP_MAX)) {
       const found = hit([entry], "pattern", match[0]);
       if (found) return found;
     }

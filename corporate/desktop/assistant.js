@@ -12,6 +12,7 @@ const core = require("../core/index.js");
 const learning = require("./learning.js");
 const { loadCorpusKey } = require("./corpus-key.js");
 const { loadApps } = require("./apps/index.js");
+const { createPatternRunner } = require("./pattern-runner.js");
 
 function readPolicyFile(filePath) {
   try {
@@ -28,6 +29,15 @@ function createAssistant(options) {
   const log = typeof settings.log === "function" ? settings.log : () => {};
 
   let userSettings = store.loadSettings();
+
+  // Policy patterns run with a time budget on the desk: one that backtracks
+  // for too long is stopped, disabled for the session and reported once.
+  core.policyPattern.setRunner(createPatternRunner({ budgetMs: settings.patternBudgetMs }), (source, flags) => {
+    const line = "a policy pattern took too long and was turned off until restart: /" + source + "/" + flags;
+    warnings.push(line);
+    log(line);
+    audit({ event: "policy-pattern-disabled", pattern: source, flags });
+  });
 
   // Learned text is only ever written encrypted. Without a usable keychain
   // key, sessions are not stored and the dashboard says so.

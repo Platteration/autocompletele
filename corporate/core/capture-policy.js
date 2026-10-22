@@ -37,15 +37,10 @@ function list(value) {
   return one ? [one] : [];
 }
 
-function regex(pattern) {
-  const source = asText(pattern);
-  if (!source) return null;
-  try {
-    return new RegExp(source, "i");
-  } catch (error) {
-    return null;
-  }
-}
+// Window-title patterns come from the policy: checked for backtracking shapes
+// at load and run through the guarded runner (core/policy-pattern.js).
+const policyPattern = require("./policy-pattern.js");
+const TITLE_MAX = 1000;
 
 /** Normalise one application rule; returns null (and a warning) when unusable. */
 function normalizeRule(raw, warnings, index) {
@@ -62,8 +57,9 @@ function normalizeRule(raw, warnings, index) {
     bundleIds: list(match.bundleId).map((id) => id.toLowerCase()),
     titlePattern: asText(match.title),
   };
-  if (rule.titlePattern && !regex(rule.titlePattern)) {
-    warnings.push("capture rule " + rule.id + " ignored: invalid title pattern");
+  const refused = rule.titlePattern ? policyPattern.check(rule.titlePattern, "i") : null;
+  if (refused) {
+    warnings.push("capture rule " + rule.id + " ignored: " + (refused.startsWith("invalid pattern") ? "invalid title pattern" : "title pattern refused: " + refused));
     return null;
   }
   if (!rule.processes.length && !rule.bundleIds.length && !rule.titlePattern) {
@@ -90,10 +86,7 @@ function ruleMatches(rule, context) {
   if (process && rule.processes.includes(process)) return true;
   const bundleId = asText(context.bundleId).toLowerCase();
   if (bundleId && rule.bundleIds.includes(bundleId)) return true;
-  if (rule.titlePattern) {
-    const pattern = regex(rule.titlePattern);
-    if (pattern && pattern.test(asText(context.title))) return true;
-  }
+  if (rule.titlePattern && policyPattern.test(rule.titlePattern, "i", asText(context.title), TITLE_MAX)) return true;
   return false;
 }
 

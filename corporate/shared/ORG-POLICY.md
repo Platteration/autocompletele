@@ -171,6 +171,22 @@ Minutes, handovers and logs in the organisation's house style. Policy section `n
 * **Never stored.** The note, its headings, the answers and the clipboard text are written nowhere by actle; the dashboard's "Try it" box works on the pasted text in memory only.
 * **Limits.** The document a copied note came from is not known: only its block heading is matched. Dates in due phrases follow `dateOrder`. `paused` stops the triggers and palette items (engine and assistant) and the tray entry and Insert (the app). A document without blanks still opens the popover (Enter inserts it). Closing the popover gives the editor the focus back on Windows and Linux; on macOS only the shell can hide actle's own windows, which the app cannot do. Phrasings from earlier notes (`core/notes.js` `phrasings`) are not offered: no corpus of notes is kept.
 
+## Patterns in the policy
+
+Several fields take a regular expression: capture `match.title`, filing
+`fields.*.pattern`, forms `lookups[].keyPattern` and `forms[].match.title`,
+guard `internalCodes`, reply `extract.*.pattern`, sheets `columns[].match`.
+They run on what people type, copy and file, so a pattern that backtracks
+catastrophically would freeze the desk. Each is checked when the policy is
+read and refused with a warning (so `actle-admin sign` refuses the policy)
+when it is longer than 256 characters, uses a backreference, repeats a group
+that itself repeats (`(a+)+`), repeats a group of alternatives without a bound
+(`(a|b)*`; use a character class `[ab]*` instead), or has more than four
+unbounded repeats. On the desk each pattern also runs with a 50 ms budget on
+capped text; one that runs out is turned off until the next start, with a
+dashboard warning and an audit line (`policy-pattern-disabled`). The Sheets
+add-in has the load-time check and the caps, not the budget.
+
 ## Central distribution (signed policies)
 
 On a managed desk, IT installs `deployment.json` in the app's data folder:

@@ -9,6 +9,7 @@
 const { expander, template } = require("./personal.js");
 const { keywordPattern, MATCH } = require("./keyword-rules.js");
 const { findDate, DATE_ORDERS } = require("./filer.js");
+const policyPattern = require("./policy-pattern.js");
 
 const DEFAULTS = Object.freeze({ max: 3, maxChars: 20000 });
 const MAX_LIMIT = 10;
@@ -54,13 +55,10 @@ function normalizeExtractor(name, raw, where, warnings) {
   if (hasPattern === (spec.after != null)) return skip("needs exactly one of `pattern` or `after`");
   if (!hasPattern) return asText(spec.after) ? { name, after: asText(spec.after) } : skip("empty `after` label");
   const pattern = asText(spec.pattern);
-  let groups;
-  try {
-    // Compiled here so a bad pattern is a policy warning, not a crash while answering mail.
-    groups = new RegExp(pattern + "|", "iu").exec("").length - 1;
-  } catch (error) {
-    return skip("invalid pattern (" + error.message + ")");
-  }
+  // Checked here so a bad or backtracking pattern is a policy warning, not a hang while answering mail.
+  const refused = policyPattern.check(pattern, "iu");
+  if (refused) return skip(refused);
+  const groups = new RegExp(pattern + "|", "iu").exec("").length - 1;
   const group = spec.group == null ? 0 : spec.group;
   if (!Number.isInteger(group) || group < 0 || group > groups) return skip("group must be a whole number from 0 to " + groups);
   return { name, pattern, group };
@@ -198,7 +196,7 @@ function findNames(text) {
 
 function runExtractor(text, extractor) {
   if (extractor.pattern != null) {
-    const match = new RegExp(extractor.pattern, "iu").exec(text);
+    const match = policyPattern.exec(extractor.pattern, "iu", text, DEFAULTS.maxChars);
     return match && match[extractor.group] != null ? asText(match[extractor.group]) : "";
   }
   // "after a label": the rest of that line, without the separator after the label.

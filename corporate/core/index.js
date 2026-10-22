@@ -12,6 +12,7 @@ module.exports = {
   phraseMiner: require("./phrase-miner.js"),
   keywordRules: require("./keyword-rules.js"),
   documents: require("./documents.js"),
+  policyPattern: require("./policy-pattern.js"),
   extract: require("./extract.js"),
   filer: require("./filer.js"),
   paletteSearch: require("./palette-search.js"),

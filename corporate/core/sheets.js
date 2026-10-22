@@ -8,6 +8,9 @@
 
 const { expander } = require("./personal.js");
 const { normalize, splitSentences } = require("./phrase-miner.js");
+const policyPattern = require("./policy-pattern.js");
+// Column rules see a header or sheet name, never more than this.
+const NAME_MAX = 200;
 
 const KINDS = Object.freeze(["label", "notes", "number", "date"]);
 const DEFAULTS = Object.freeze({
@@ -103,13 +106,10 @@ function normalizeColumn(raw, index, vocabularies, warnings) {
   for (const part of ["header", "sheet"]) {
     if (raw.match[part] == null) continue;
     const pattern = asText(raw.match[part]);
-    try {
-      // Compiled here so a bad pattern is a policy warning, not a crash while typing.
-      new RegExp(pattern, "iu");
-      match[part] = pattern;
-    } catch (error) {
-      return warnings.push(where + " ignored: invalid " + part + " pattern (" + error.message + ")"), null;
-    }
+    // Checked here so a bad or backtracking pattern is a policy warning, not a hung pane while typing.
+    const refused = policyPattern.check(pattern, "iu");
+    if (refused) return warnings.push(where + " ignored: " + (refused.startsWith("invalid pattern") ? "invalid " + part + " pattern" + refused.slice("invalid pattern".length) : part + " pattern refused: " + refused)), null;
+    match[part] = pattern;
   }
   if (!match.header && !match.sheet) return warnings.push(where + " ignored: match needs a header or sheet pattern"), null;
   const vocabulary = asText(raw.vocabulary);
@@ -180,7 +180,7 @@ function normalizeSheets(raw) {
 /** The first column rule, in policy order, whose header and sheet patterns both hold; null when none does. */
 function columnFor(header, sheet, config) {
   const columns = config && Array.isArray(config.columns) ? config.columns : [];
-  return columns.find((column) => ["header", "sheet"].every((part) => column.match[part] == null || new RegExp(column.match[part], "iu").test(asText(part === "header" ? header : sheet)))) || null;
+  return columns.find((column) => ["header", "sheet"].every((part) => column.match[part] == null || policyPattern.test(column.match[part], "iu", asText(part === "header" ? header : sheet), NAME_MAX))) || null;
 }
 
 function cellKind(value) {

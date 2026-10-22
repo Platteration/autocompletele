@@ -10,6 +10,9 @@
 
 const { containsCardNumber, baseName } = require("./capture-policy.js");
 const { keywordPattern, createState, MATCH } = require("./keyword-rules.js");
+const policyPattern = require("./policy-pattern.js");
+// The engine keeps at most 4,000 characters of a field; a "Try it" box gets the same cap.
+const CHECK_MAX = 4000;
 
 const SEVERITIES = Object.freeze(["info", "warn", "block"]);
 const RECIPIENTS = Object.freeze(["any", "external"]);
@@ -131,7 +134,7 @@ const SCANNERS = {
   "internal-code"(text, options) {
     const out = [];
     for (const re of options.codes || []) {
-      for (const m of text.matchAll(re)) if (m[0]) out.push(span("internal-code", m, mask(m[0], 3, 0)));
+      for (const m of policyPattern.matchAll(re.source, re.flags, text, CHECK_MAX)) if (m[0]) out.push(span("internal-code", m, mask(m[0], 3, 0)));
     }
     return out;
   },
@@ -234,11 +237,10 @@ function normalizeGuard(raw) {
     else if (!guard.internalDomains.includes(domain)) guard.internalDomains.push(domain);
   }
   for (const pattern of list(source.internalCodes)) {
-    try {
-      guard.internalCodes.push(new RegExp(pattern, "g"));
-    } catch (error) {
-      warnings.push("guard internal code " + pattern + " ignored: invalid pattern (" + error.message + ")");
-    }
+    // Checked for backtracking shapes here; run through the guarded runner at each word end.
+    const refused = policyPattern.check(pattern, "g");
+    if (refused) warnings.push("guard internal code " + pattern + " ignored: " + refused);
+    else guard.internalCodes.push(new RegExp(pattern, "g"));
   }
   if (source.packs != null && !Array.isArray(source.packs)) warnings.push("guard packs ignored: not a list");
   const packIds = new Set();

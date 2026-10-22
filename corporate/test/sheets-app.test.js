@@ -155,7 +155,7 @@ test("build.js writes the bundle and the Apps Script includes, byte for byte the
   const first = build.build({ out: a });
   const second = build.build({ out: b });
   assert.deepEqual(first.files, ["dist/sheets-core.js", "apps-script/sheets-core.html", "apps-script/pane.html"]);
-  assert.deepEqual(first.modules, ["corporate/core/sheets.js", "corporate/core/personal.js", "chrome-extension/src/expander.js", "chrome-extension/src/template.js", "chrome-extension/src/palette.js", "corporate/core/phrase-miner.js"]);
+  assert.deepEqual(first.modules, ["corporate/core/sheets.js", "corporate/core/personal.js", "chrome-extension/src/expander.js", "chrome-extension/src/template.js", "chrome-extension/src/palette.js", "corporate/core/phrase-miner.js", "corporate/core/policy-pattern.js"]);
   assert.equal(first.out, a);
   for (const file of first.files) {
     const one = fs.readFileSync(path.join(a, file), "utf8");
@@ -315,7 +315,7 @@ test("simulate walks through the sample section, exports the live policy and bui
     /typed "\/vat" -> insert VAT at 19%: =ROUND\(B2\*0\.19, 2\)/,
     /policy section: 2 vocabularies, 3 column rules, 2 blocks, 0 warnings/,
     /exported add-in configuration to apps\/sheets-config\.json; audit: sheets-config-exported/,
-    /add-in bundle: dist\/sheets-core\.js, apps-script\/sheets-core\.html, apps-script\/pane\.html \(\d+ bytes from 6 modules\); in a browser sandbox "acm" -> Acme Logistics GmbH/,
+    /add-in bundle: dist\/sheets-core\.js, apps-script\/sheets-core\.html, apps-script\/pane\.html \(\d+ bytes from 7 modules\); in a browser sandbox "acm" -> Acme Logistics GmbH/,
   ]) assert.match(log, expected);
   assert.ok(fs.existsSync(path.join(dataDir, "apps", "sheets-config.json")));
   const bare = desk({});

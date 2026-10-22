@@ -10,6 +10,9 @@
 const { template } = require("./personal.js");
 const { keywordPattern, MATCH } = require("./keyword-rules.js");
 const capture = require("./capture-policy.js");
+const policyPattern = require("./policy-pattern.js");
+// Documents are searched up to the extraction cap; the desk runs each policy pattern with a time budget.
+const SEARCH_MAX = 200000;
 
 const BUILTIN_FIELDS = Object.freeze(["date", "year", "month", "day", "original", "ext"]);
 const DATE_ORDERS = Object.freeze(["dmy", "mdy"]);
@@ -85,15 +88,14 @@ function normalizeField(name, raw, warnings) {
   }
   if (spec.pattern != null) {
     const pattern = asText(spec.pattern);
-    try {
-      // Compiled once here so an invalid pattern is a policy warning, not a crash at filing time.
-      new RegExp(pattern, "iu");
-      out.pattern = pattern;
-      out.group = Number.isInteger(spec.group) && spec.group > 0 ? spec.group : 0;
-    } catch (error) {
-      warnings.push("filing field " + name + " ignored: invalid pattern (" + error.message + ")");
+    // Checked here so an invalid or backtracking pattern is a policy warning, not a hang or a crash at filing time.
+    const refused = policyPattern.check(pattern, "iu");
+    if (refused) {
+      warnings.push("filing field " + name + " ignored: " + refused);
       return null;
     }
+    out.pattern = pattern;
+    out.group = Number.isInteger(spec.group) && spec.group > 0 ? spec.group : 0;
   }
   if (!out.values.length && !Object.keys(out.aliases).length && !out.pattern) {
     warnings.push("filing field " + name + " ignored: needs values, aliases or a pattern");
@@ -232,7 +234,7 @@ function findListValue(text, field) {
 }
 
 function findPatternValue(text, field) {
-  const match = new RegExp(field.pattern, "iu").exec(String(text));
+  const match = policyPattern.exec(field.pattern, "iu", String(text), SEARCH_MAX);
   if (!match) return null;
   const value = field.group ? match[field.group] : match[0];
   return value == null ? null : String(value);

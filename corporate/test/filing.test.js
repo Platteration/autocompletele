@@ -51,6 +51,8 @@ test("a proposal reads the document, names it from the rule and says what it cou
   assert.deepEqual(proposal.read, { kind: "docx", unsupported: false, truncated: false, error: null });
   const pdf = path.join(inbox, "Invoice_9.pdf");
   fs.writeFileSync(pdf, "%PDF");
+  // A PDF is filed by name, so its date comes from the file: pin it to the desk's clock, not today's.
+  fs.utimesSync(pdf, new Date(2026, 9, 21, 10), new Date(2026, 9, 21, 10));
   const byName = assistant.filingProposal(pdf);
   assert.equal(byName.rule.id, "invoice");
   assert.equal(byName.read.unsupported, true);
