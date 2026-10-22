@@ -207,7 +207,15 @@ async function submitPopover(payload) {
       for (const doc of chosen) shell.showItemInFolder(doc.path);
     }
     if (chosen.length) {
-      clipboard.writeText(chosen.map((doc) => doc.path).join("\n"));
+      // Electron 44 writes the clipboard asynchronously: nothing is reported as copied until the write landed.
+      const failed = await Promise.resolve()
+        .then(() => clipboard.writeText(chosen.map((doc) => doc.path).join("\n")))
+        .then(() => null, (error) => (error && error.message) || String(error));
+      if (failed) {
+        assistant.log("documents: the clipboard could not be written: " + failed);
+        notify("The file paths could not be copied (" + failed + ").");
+        return { ok: false, error: failed };
+      }
       if (state.backspaces) await sender.replace({ backspaces: state.backspaces, text: "", cursorOffset: 0 });
       assistant.recordInsert({ kind: "document", trigger: state.trigger, count: chosen.length });
       notify(chosen.length + " file path" + (chosen.length === 1 ? "" : "s") + " copied. Paste or drag them into the attachment area.");
@@ -470,7 +478,8 @@ async function choosePalette(choice) {
   // Give the focus back to the application the person was writing in.
   if (process.platform === "darwin") app.hide();
   await new Promise((resolve) => setTimeout(resolve, 150));
-  const action = assistant.paletteChoose(choice);
+  // An app's choice may wait for the clipboard (Electron 44 reads it asynchronously).
+  const action = await assistant.paletteChoose(choice);
   if (!action) return { ok: false };
   if (action.type === "expand") {
     await sender.replace(action);

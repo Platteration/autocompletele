@@ -152,10 +152,23 @@ function createApp(host) {
       if (field.length >= DEFAULTS.maxFieldText) return { ok: false, error: TOO_LONG };
       const corrected = guard.applyFix(field, live);
       if (corrected === field) return { ok: false, error: field ? "Nothing to correct in the text actle saw in this field." : "actle saw no text in this field; correct it by hand." };
-      from.clipboard.writeText(corrected);
-      from.notify(CLIPBOARD_NOTE);
-      record(hit, "fixed");
-      return { ok: true, rule: rule.id, via: "clipboard", inserted: 0 };
+      const copied = () => {
+        from.notify(CLIPBOARD_NOTE);
+        record(hit, "fixed");
+        return { ok: true, rule: rule.id, via: "clipboard", inserted: 0 };
+      };
+      const failed = (error) => {
+        const reason = error && error.message || String(error);
+        delete hit.outcome;
+        host.log("guard: the clipboard could not be written: " + reason);
+        return { ok: false, error: "The corrected text could not be copied (" + reason + "); correct it by hand." };
+      };
+      // Marked while the write is pending, as insert() does for a paste.
+      hit.outcome = "fixing";
+      let written;
+      try { written = from.clipboard.writeText(corrected); } catch (error) { return failed(error); }
+      // Electron 44 writes asynchronously: report the fix only once the text is on the clipboard.
+      return written && typeof written.then === "function" ? written.then(copied, failed) : copied();
     }
     if (rule.fix.kind === "text") {
       const fixed = guard.applyFix(field, live);

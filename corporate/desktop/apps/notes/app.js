@@ -92,14 +92,22 @@ function createApp(host) {
     host.appData(ID).save(normalizeData(data));
   }
 
+  // Electron 44's clipboard answers with a promise (readText(): Promise<string>);
+  // the tests' and the simulator's stand-ins answer at once. Either way the
+  // caller gets text, or a promise of text, never a rejection.
   function readClipboard(from) {
-    try {
-      const text = from.clipboard.readText();
-      return String(text == null ? "" : text);
-    } catch (error) {
-      host.log("notes: the clipboard could not be read: " + error.message);
+    const fail = (error) => {
+      host.log("notes: the clipboard could not be read: " + (error && error.message || error));
       return "";
+    };
+    let value;
+    try {
+      value = from.clipboard.readText();
+    } catch (error) {
+      return fail(error);
     }
+    const text = (v) => String(v == null ? "" : v);
+    return value && typeof value.then === "function" ? value.then(text, fail) : text(value);
   }
 
   /**
@@ -235,7 +243,11 @@ function createApp(host) {
       from.notify("Paused by your organisation.");
       return { ok: false, error: "paused" };
     }
-    const text = readClipboard(from);
+    return then(readClipboard(from), (text) => rebuild(from, via, text));
+  }
+
+  /** The second half of updateClipboard(), once the copied note is in hand. */
+  function rebuild(from, via, text) {
     if (!text.trim()) {
       from.notify("Copy your note first, then choose \"" + TRAY_LABEL + "\" again.");
       return { ok: false, error: "clipboard empty" };
@@ -252,13 +264,23 @@ function createApp(host) {
       from.notify(NONE_FOUND);
       return { ok: true, items: 0, changed: false };
     }
+    const failed = (error) => {
+      host.log("notes: the clipboard could not be written: " + (error && error.message || error));
+      from.notify("The clipboard could not be written: " + (error && error.message || error));
+      return { ok: false, error: "clipboard: " + (error && error.message || error) };
+    };
+    let written;
     try {
-      from.clipboard.writeText(updated);
+      written = from.clipboard.writeText(updated);
     } catch (error) {
-      host.log("notes: the clipboard could not be written: " + error.message);
-      from.notify("The clipboard could not be written: " + error.message);
-      return { ok: false, error: "clipboard: " + error.message };
+      return failed(error);
     }
+    // Electron 44 writes asynchronously: tell the person only once the note is on the clipboard.
+    if (written && typeof written.then === "function") return written.then(() => reportUpdate(from, via, items, updated, text), failed);
+    return reportUpdate(from, via, items, updated, text);
+  }
+
+  function reportUpdate(from, via, items, updated, text) {
     from.notify(UPDATED);
     const data = loadData();
     data.actionUpdates += 1;

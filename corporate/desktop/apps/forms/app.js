@@ -134,14 +134,22 @@ function createApp(host) {
     return core.findForm(lastContext, config());
   }
 
+  // Electron 44's clipboard answers with a promise (readText(): Promise<string>);
+  // the tests' and the simulator's stand-ins answer at once. Either way the
+  // caller gets text, or a promise of text, never a rejection.
   function readClipboard(from) {
-    try {
-      const text = from.clipboard.readText();
-      return String(text == null ? "" : text);
-    } catch (error) {
-      host.log("forms: the clipboard could not be read: " + error.message);
+    const fail = (error) => {
+      host.log("forms: the clipboard could not be read: " + (error && error.message || error));
       return "";
+    };
+    let value;
+    try {
+      value = from.clipboard.readText();
+    } catch (error) {
+      return fail(error);
     }
+    const text = (v) => String(v == null ? "" : v);
+    return value && typeof value.then === "function" ? value.then(text, fail) : text(value);
   }
 
   /**
@@ -191,12 +199,20 @@ function createApp(host) {
     if (!record || paused()) return null;
     const form = currentForm();
     let reference = "";
+    // The trigger path cannot wait: with Electron 44's asynchronous clipboard
+    // the popover asks for the reference itself once it is open (forms:clipboardReference).
+    let clipboardPending = false;
     if (shell) {
-      const hit = core.lookup(readClipboard(shell), config());
-      if (hit) reference = hit.key;
+      const copied = readClipboard(shell);
+      if (copied && typeof copied.then === "function") {
+        clipboardPending = true;
+      } else {
+        const hit = core.lookup(copied, config());
+        if (hit) reference = hit.key;
+      }
     }
     const prepared = prepare(record.id, form ? form.id : "", reference, {});
-    return { popover: "plan", recordId: record.id, formId: form ? form.id : null, reference, via, record: prepared.record, form: prepared.form, lookup: prepared.lookup, plan: prepared.plan, notes: { noForm: NO_FORM_NOTE, selectors: SELECTORS_NOTE } };
+    return { popover: "plan", recordId: record.id, formId: form ? form.id : null, reference, clipboardPending, via, record: prepared.record, form: prepared.form, lookup: prepared.lookup, plan: prepared.plan, notes: { noForm: NO_FORM_NOTE, selectors: SELECTORS_NOTE } };
   }
 
   /** A key that failed: the popover is gone by now, so the person is told through a notification, and nothing is counted. */
@@ -409,6 +425,16 @@ function createApp(host) {
     ipc: {
       "forms:info": () => info(),
       "forms:lookup": (payload) => ({ ok: true, hit: core.lookup(payload && payload.text != null ? String(payload.text) : "", config()) }),
+      // The key of the lookup row the copied text names, or "": the copied text itself never reaches the page.
+      "forms:clipboardReference": () => {
+        if (!shell || paused()) return { ok: true, reference: "" };
+        const keyOf = (text) => {
+          const hit = core.lookup(text, config());
+          return { ok: true, reference: hit ? hit.key : "" };
+        };
+        const copied = readClipboard(shell);
+        return copied && typeof copied.then === "function" ? copied.then(keyOf) : keyOf(copied);
+      },
       "forms:plan": (payload) => preview(payload && payload.recordId, payload && payload.formId, payload && payload.reference, payload && payload.answers),
       "forms:acceptProposal": (payload) => acceptProposal(payload || {}),
       "forms:dismissProposal": (payload) => dismissProposal(payload || {}),

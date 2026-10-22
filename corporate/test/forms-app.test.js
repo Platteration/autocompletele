@@ -83,7 +83,7 @@ test("the sample section parses with no warnings and the app loads through the r
   const [app] = loadApps({ policy: () => parsed, engine: { library: [] }, appData: () => ({ load: () => ({}), save: () => {} }), now: () => NOW, log: () => {} }, { ids: ["forms"] });
   assert.equal(app.id, "forms");
   assert.equal(app.title, "Forms");
-  assert.deepEqual(Object.keys(app.ipc), ["forms:info", "forms:lookup", "forms:plan", "forms:acceptProposal", "forms:dismissProposal", "forms:deleteOwnRecord", "forms:clearSessions"]);
+  assert.deepEqual(Object.keys(app.ipc), ["forms:info", "forms:lookup", "forms:clipboardReference", "forms:plan", "forms:acceptProposal", "forms:dismissProposal", "forms:deleteOwnRecord", "forms:clearSessions"]);
   assert.equal(app.extension.id, "forms");
   assert.equal(app.popovers.plan.file, "apps/forms-plan");
   assert.equal(typeof app.popovers.plan.submit, "function");
@@ -992,6 +992,50 @@ test("the plan popover page shows the form, the steps with the fields Tab passes
   let refused = 0;
   await runPage("forms-plan.js", other, { getPopover: async () => ({ kind: "template" }), closePopover: () => { refused += 1; } }).done;
   assert.equal(refused, 1, "a state that is not Forms' closes the popover");
+});
+
+test("with Electron 44's promise clipboard the plan popover asks for the reference key once open, and a typed reference wins", async () => {
+  const settle = async () => { for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve)); };
+  for (const typedFirst of [false, true]) {
+    const { assistant, app, submit } = desk();
+    const shell = asyncShell("");
+    shell.clipboard.readText = () => Promise.resolve("Re: order A-54321 arrived damaged");
+    app.onStart(shell);
+    const [action] = open(assistant, TICKET, "refund/");
+    assert.equal(action.clipboardPending, true);
+    assert.equal(action.reference, "");
+    const popover = state(action);
+    const dom = createDom();
+    dom.page();
+    const held = [];
+    const asked = [];
+    const actle = {
+      getPopover: async () => popover,
+      invoke: (channel, payload) => {
+        asked.push(channel);
+        const answer = Promise.resolve(assistant.invoke(channel, payload));
+        return channel === "forms:clipboardReference" ? new Promise((resolve) => held.push(() => resolve(answer))) : answer;
+      },
+      submitPopover: (payload) => submit(popover, payload, shell),
+      closePopover: () => {},
+    };
+    await runPage("forms-plan.js", dom, actle).done;
+    const $ = (id) => dom.document.getElementById(id);
+    assert.deepEqual(asked.filter((c) => c === "forms:clipboardReference").length, 1);
+    if (typedFirst) {
+      $("reference").value = "A-10021";
+      await $("reference").dispatch("input");
+    }
+    held.forEach((release) => release());
+    await settle();
+    if (typedFirst) {
+      assert.equal($("reference").value, "A-10021", "the clipboard answer does not overwrite what the person typed");
+      assert.match($("lookup").textContent, /^Reference A-10021 \(orders\)/);
+    } else {
+      assert.equal($("reference").value, "A-54321");
+      assert.equal($("lookup").textContent, "Reference A-54321 (orders): orderRef = A-54321; customer = John Smith; email = john.smith@example.com");
+    }
+  }
 });
 
 test("the dashboard page shows records, lookups, forms, proposals and own records, tries a lookup, accepts, dismisses, deletes, clears and skips idle re-renders", async () => {

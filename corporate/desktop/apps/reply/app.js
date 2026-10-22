@@ -78,14 +78,22 @@ function createApp(host) {
     };
   }
 
+  // Electron 44's clipboard answers with a promise (readText(): Promise<string>);
+  // the tests' and the simulator's stand-ins answer at once. Either way the
+  // caller gets text, or a promise of text, never a rejection.
   function readClipboard(from) {
-    try {
-      const text = from.clipboard.readText();
-      return String(text == null ? "" : text);
-    } catch (error) {
-      host.log("reply: the clipboard could not be read: " + error.message);
+    const fail = (error) => {
+      host.log("reply: the clipboard could not be read: " + (error && error.message || error));
       return "";
+    };
+    let value;
+    try {
+      value = from.clipboard.readText();
+    } catch (error) {
+      return fail(error);
     }
+    const text = (v) => String(v == null ? "" : v);
+    return value && typeof value.then === "function" ? value.then(text, fail) : text(value);
   }
 
   /**
@@ -103,7 +111,12 @@ function createApp(host) {
       from.notify("Your organisation has not set up any replies.");
       return null;
     }
-    const text = readClipboard(from);
+    const copied = readClipboard(from);
+    return copied && typeof copied.then === "function" ? copied.then((text) => rankCopied(from, text, extra)) : rankCopied(from, copied, extra);
+  }
+
+  /** The second half of offer(), once the copied text is in hand. */
+  function rankCopied(from, text, extra) {
     if (!text.trim()) {
       from.notify("Copy the message you are answering first, then choose Reply again.");
       return null;
@@ -260,9 +273,12 @@ function createApp(host) {
     trayItems: () => [{
       label: TRAY_LABEL,
       click: (from) => {
-        const action = offer(from, { via: "tray" });
-        if (action) from.handleAction(action);
-        return action;
+        const open = (action) => {
+          if (action) from.handleAction(action);
+          return action;
+        };
+        const offered = offer(from, { via: "tray" });
+        return offered && typeof offered.then === "function" ? offered.then(open) : open(offered);
       },
     }],
     onStart: (started) => { shell = started; },

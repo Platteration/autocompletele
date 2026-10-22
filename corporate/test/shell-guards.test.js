@@ -340,7 +340,7 @@ function fakeElectron(dataDir) {
     static getAllWindows() { return record.windows.filter((w) => !w.destroyed); }
     static getFocusedWindow() { return null; }
   }
-  class Tray extends EventEmitter { setToolTip() {} setContextMenu() {} }
+  class Tray extends EventEmitter { setToolTip() {} setContextMenu(menu) { record.trayMenu = menu; } }
   class Notification { constructor(options) { this.body = options.body; } show() { record.notified.push(this.body); } static isSupported() { return true; } }
   return {
     record,
@@ -348,7 +348,11 @@ function fakeElectron(dataDir) {
       app, BrowserWindow, Tray, Notification,
       Menu: { buildFromTemplate: (template) => template },
       ipcMain: { handle: (channel, fn) => record.handlers.set(channel, fn) },
-      clipboard: { readText: () => "", writeText: () => {} },
+      // As in Electron 44, which the desktop app pins: both calls answer with a promise.
+      clipboard: {
+        readText: () => Promise.resolve(record.copied || ""),
+        writeText: (text) => (record.clipboardFails ? Promise.reject(new Error(record.clipboardFails)) : Promise.resolve().then(() => { record.copied = text; })),
+      },
       shell: { showItemInFolder: (p) => record.revealed.push(p) },
       nativeImage: { createFromBitmap: () => ({}) },
       dialog: {
@@ -633,4 +637,40 @@ test("the dashboard's Reveal buttons send what filing:reveal accepts (a static c
   const calls = (file) => [...fs.readFileSync(path.join(DESKTOP, "renderer", file), "utf8").matchAll(/revealFiled\(([^)]*)\)/g)].map((m) => m[1]);
   assert.deepEqual(calls("dashboard.js"), ["entry.id"]);
   assert.deepEqual(calls(path.join("apps", "sheets.js")), ["last.path"], "the path sheets:info returns, which the reveal test above accepts");
+});
+
+test("main.js waits for the promise clipboard: an app's palette choice opens its popover, and document paths count as copied only once written", async (t) => {
+  const dataDir = temp("actle-shell-data-");
+  fs.copyFileSync(path.join(__dirname, "..", "shared", "org-policy.example.json"), path.join(dataDir, "policy.json"));
+  const shell = await shellDesk(dataDir);
+  t.after(shell.quit);
+  shell.record.copied = "Hello,\n\nMy order A-55120 has still not arrived and is delayed.\n\nKind regards,\nJane Smith";
+  const reply = (await shell.invoke("palette:search", "reply")).find((item) => item.kind === "app:reply");
+  assert.ok(reply);
+  assert.deepEqual(await shell.invoke("palette:choose", reply), { ok: true });
+  assert.equal(shell.popovers("reply-pick.html").length, 1, "the pick popover opened once the clipboard answered");
+  const picked = await shell.invoke("popover:get");
+  assert.equal(picked.candidates[0].id, "late-delivery");
+  await shell.invoke("popover:close");
+  const entry = (shell.record.trayMenu || []).find((item) => item.label === "Reply to the copied message…");
+  assert.ok(entry, JSON.stringify((shell.record.trayMenu || []).map((item) => item.label)));
+  await entry.click();
+  assert.equal(shell.popovers("reply-pick.html").length, 2, "the tray entry opened it too");
+  await shell.invoke("popover:close");
+
+  const documents = async () => {
+    const set = (await shell.invoke("palette:search", "/sld")).find((item) => item.kind === "documents");
+    assert.deepEqual(await shell.invoke("palette:choose", set), { ok: true });
+    assert.equal((await shell.invoke("popover:get")).kind, "documents");
+  };
+  const copiedNotes = () => shell.record.notified.filter((body) => /copied/.test(body));
+  await documents();
+  shell.record.clipboardFails = "locked";
+  assert.deepEqual(await shell.invoke("popover:submit", { action: "copy", selected: [0, 1] }), { ok: false, error: "locked" });
+  assert.deepEqual(copiedNotes(), ["The file paths could not be copied (locked)."]);
+  shell.record.clipboardFails = null;
+  await documents();
+  await shell.invoke("popover:submit", { action: "copy", selected: [0, 1] });
+  assert.equal(shell.record.copied, "S:/Shared/Logistics/commercial-invoice.docx\nS:/Shared/Logistics/packing-list.xlsx");
+  assert.equal(copiedNotes()[1], "2 file paths copied. Paste or drag them into the attachment area.");
 });

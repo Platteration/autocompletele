@@ -94,6 +94,15 @@
   $("reference").value = planned.reference;
   render();
   $("reference").addEventListener("input", replan);
+  // The desk could not read the clipboard while the trigger was being typed: ask once now, and plan again with it.
+  if (state.clipboardPending && !$("reference").value) {
+    window.actle.invoke("forms:clipboardReference").then((result) => {
+      if (result && result.reference && !$("reference").value) {
+        $("reference").value = result.reference;
+        replan();
+      }
+    }, () => {});
+  }
   $("plan-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const given = {};
