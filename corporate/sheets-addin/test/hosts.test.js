@@ -1,14 +1,17 @@
 // The two host bridges and the sidebar page, driven headlessly: taskpane.js
 // against a fake Excel workbook behind Office.js, apps-script/Code.gs against
 // fake SpreadsheetApp and PropertiesService, the inline script of
-// Sidebar.html against a deferred google.script.run; plus the manifest and
-// the pages as text. The real hosts were not run here (README.md).
+// Sidebar.html against a deferred google.script.run; plus the manifest the
+// example configuration builds and the pages as text. The real hosts were not
+// run here (README.md).
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 const sheets = require("../../core/sheets.js");
+const { buildPackage } = require("../build.js");
 const { SAMPLE_SECTION } = require("../../desktop/apps/sheets/sample.js");
 // The add-in cannot load the desk's name table and repeats the name; the menu, sidebar and manifest checks hold it to the table.
 const NAME = require("../../desktop/apps/index.js").NAMES.sheets.name;
@@ -245,6 +248,17 @@ test("Code.gs adds the menu, opens the sidebar and serves the includes", () => {
   assert.equal(gs.include("sheets-core"), "<!-- include sheets-core -->");
 });
 
+test("Code.gs adds the same menu when the add-on is installed into an open spreadsheet, in any authorization mode", () => {
+  const { fake, gs } = appsScript({ sheets: {}, active: {} });
+  // Google runs onInstall(e) instead of onOpen(e) when the add-on is installed from inside Sheets.
+  gs.onInstall({ authMode: "NONE" });
+  assert.equal(fake.ui.menus.length, 1);
+  assert.equal(fake.ui.menus[0].title, NAME);
+  assert.deepEqual(fake.ui.menus[0].items, [["Open sidebar", "showSidebar"]]);
+  gs.onOpen({ authMode: "LIMITED" });
+  assert.deepEqual(fake.ui.menus[1].items, [["Open sidebar", "showSidebar"]]);
+});
+
 test("the sidebar page talks to Code.gs through google.script.run, asks for 5000 rows, and skips a poll while one is pending", async () => {
   const { fake, gs } = appsScript({ sheets: { "Orders 2026": ORDERS }, active: { sheet: "Orders 2026", row: 4, col: 2 }, properties: {} });
   gs.saveConfig(CONFIG);
@@ -325,15 +339,29 @@ function xmlBalanced(xml) {
   return stack.length === 0;
 }
 
+/**
+ * The manifest the example configuration builds with --dev (placeholder GUID, https://localhost:3000).
+ * manifest.template.xml is not a manifest; sheets-addin/test/package.test.js checks a real one.
+ */
+function exampleManifest() {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), "extle-hosts-"));
+  try {
+    buildPackage({ config: JSON.parse(fs.readFileSync(path.join(ADDIN, "extle.config.example.json"), "utf8")), out, dev: true });
+    return fs.readFileSync(path.join(out, "excel", "manifest.xml"), "utf8");
+  } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+}
+
 test("the Office manifest, the pages and the Apps Script files are consistent with the build", () => {
-  const manifest = fs.readFileSync(path.join(ADDIN, "manifest.xml"), "utf8");
+  const manifest = exampleManifest();
   assert.equal(xmlBalanced(manifest), true);
   assert.equal(xmlBalanced("<a><b></a>"), false);
   assert.match(manifest, /<Id>7b1f6c9a-0000-4000-8000-000000000001<\/Id>/);
   assert.match(manifest, /<SourceLocation DefaultValue="https:\/\/localhost:3000\/taskpane.html"\/>/);
   assert.match(manifest, /<Set Name="ExcelApi" MinVersion="1.7"\/>/);
-  assert.equal([...manifest.matchAll(/https:\/\/(?!localhost:3000)/g)].length, 0, "every URL is the documented placeholder");
-  assert.match(manifest, /placeholder GUID/);
+  assert.equal([...manifest.matchAll(/https:\/\/(?!localhost:3000)/g)].length, 0, "every URL comes from the example configuration");
+  assert.match(manifest, /A development package, for testing on this computer only\./, "the example's placeholders build only with --dev, and the manifest says so");
   const page = fs.readFileSync(path.join(ADDIN, "taskpane.html"), "utf8");
   for (const src of ["https://appsforoffice.microsoft.com/lib/1/hosted/office.js", "dist/sheets-core.js", "pane.js", "taskpane.js"]) assert.ok(page.includes('src="' + src + '"'), src);
   assert.equal([...page.matchAll(/src="https?:/g)].length, 1, "Office.js is the one external script");
@@ -348,14 +376,14 @@ test("the Office manifest, the pages and the Apps Script files are consistent wi
 });
 
 test("the manifest and the task pane page name the add-in extle; the Description and LongStrings stay within their documented lengths", () => {
-  const manifest = fs.readFileSync(path.join(ADDIN, "manifest.xml"), "utf8");
+  const manifest = exampleManifest();
   const attr = (pattern) => (manifest.match(pattern) || [])[1];
   assert.equal(attr(/<DisplayName DefaultValue="([^"]*)"\/>/), NAME);
   assert.ok(attr(/<Description DefaultValue="([^"]*)"\/>/).startsWith(NAME + ": "));
   assert.equal(attr(/<bt:String id="actle\.Group\.Label" DefaultValue="([^"]*)"\/>/), NAME, "the ribbon group");
   assert.equal(attr(/<bt:String id="actle\.OpenPane\.Label" DefaultValue="([^"]*)"\/>/), "Open " + NAME, "the button and its supertip title");
   assert.ok(attr(/<bt:String id="actle\.OpenPane\.Tip" DefaultValue="([^"]*)"\/>/).startsWith("Open the " + NAME + " pane: "));
-  assert.match(manifest, /<ProviderName>actle<\/ProviderName>/, "the provider stays actle");
+  assert.match(manifest, /<ProviderName>actle<\/ProviderName>/, "the example configuration's provider stays actle");
   // learn.microsoft.com/javascript/api/manifest: Description up to 250 characters, a LongStrings string up to 250.
   // The DisplayName and the ShortStrings are pinned exactly to NAMES.sheets.name ("extle", pinned in
   // test/apps-registry.test.js), so their 125-character limits need no check of their own.

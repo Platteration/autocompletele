@@ -91,7 +91,7 @@ counting anything; counts live in `apps/reply.json`, the message is never stored
 
 ## extle: Excel and Google Sheets
 
-The **extle** tab shows the organisation's vocabularies, column rules and `/` blocks from the policy's `sheets` section. The assistant cannot see spreadsheet cells, so completing happens in the Excel task pane or Google Sheets sidebar from `corporate/sheets-addin/` (its README covers build, sideload, deploy and tests).
+The **extle** tab shows the organisation's vocabularies, column rules and `/` blocks from the policy's `sheets` section. The assistant cannot see spreadsheet cells, so completing happens in the Excel task pane or Google Sheets sidebar from `corporate/sheets-addin/` (its INSTALL.md covers the package build, installing in Excel and Google Sheets and deploying to the organisation; its README covers the build and tests).
 The column rules table marks a strict rule ("strict: only its values"): that column completes only to its vocabulary, and the add-in can check it, replace aliases and turn on list validation.
 **Try it**: enter a column header (and sheet name), paste the column's values one per line and type what the cell would hold or a `/` trigger to see what the add-in would offer; a strict column offers only its list's values.
 **Export add-in configuration** writes the section to `apps/sheets-config.json` in the data folder and shows the path (or why it could not be written); paste that file's contents into the add-in's Settings. **Show file** opens the folder.

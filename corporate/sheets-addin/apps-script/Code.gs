@@ -13,8 +13,15 @@ var USAGE_KEY = "actleSheetsUsage";
 var CHUNK_BYTES = 8192;   // a property value holds at most 9 KB, measured in bytes, so chunks are cut by UTF-8 size
 var MAX_ROWS_CAP = 20000; // the sidebar asks for 5000; an odd client cannot ask for the whole sheet
 
+// In a published add-on the caption is ignored and the item goes under Extensions. Nothing here
+// needs authorization, so the menu is built the same way in every authorization mode.
 function onOpen() {
   SpreadsheetApp.getUi().createMenu("extle").addItem("Open sidebar", "showSidebar").addToUi();
+}
+
+/** Installed from inside Sheets, the spreadsheet is already open, so onOpen has not run: add the menu now. */
+function onInstall(e) {
+  onOpen(e);
 }
 
 function showSidebar() {

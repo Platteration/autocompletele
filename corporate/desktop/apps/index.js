@@ -45,13 +45,13 @@ const APP_IDS = Object.freeze(["reply", "sheets", "forms", "guard", "notes"]);
 // than loaded through this registry; its name is listed here so the six are in
 // one place. The dashboard pages (renderer/apps/<id>.js, index.html and
 // dashboard.js) cannot load this file and repeat the names, and so does the
-// extle add-in in sheets-addin/ (manifest.xml, taskpane.html, taskpane.js,
-// pane.js, build.js and apps-script/Code.gs and Sidebar.html), which runs in
-// Excel and Apps Script.
+// extle add-in in sheets-addin/ (manifest.template.xml, taskpane.html,
+// taskpane.js, pane.js, build.js and apps-script/Code.gs and Sidebar.html),
+// which runs in Excel and Apps Script.
 // test/apps-registry.test.js holds each tab's first heading, the factle tab
 // and dashboard.js's "Delete learned text" question to this table; each tab's
 // error line is pinned as a literal in that app's own test.
-// sheets-addin/test/hosts.test.js holds the manifest's names, the task pane's
+// sheets-addin/test/hosts.test.js holds the generated manifest's names, the task pane's
 // title and the Apps Script menu and sidebar title to NAMES.sheets.name; the
 // add-in's other messages are pinned as literals in its tests.
 const NAMES = Object.freeze({

@@ -78,7 +78,7 @@
   function renderAddin(section, helpers, info) {
     const { api, el, announce } = helpers;
     section.append(el("h2", { class: "mt", text: "Excel and Google Sheets add-in" }));
-    section.append(el("p", { class: "hint", text: "The add-in lives in " + info.addin.folder + (info.addin.present ? "" : " (not found on this computer)") + "; its README says how to build, sideload and deploy it. Export the configuration, then paste the file's contents into the add-in's settings." }));
+    section.append(el("p", { class: "hint", text: "The add-in lives in " + info.addin.folder + (info.addin.present ? "" : " (not found on this computer)") + "; its INSTALL.md says how to build the package and install it in Excel and Google Sheets. Export the configuration, then paste the file's contents into the add-in's settings." }));
     const exportButton = el("button", { class: "primary", text: "Export add-in configuration" });
     exportButton.addEventListener("click", async () => {
       let r;

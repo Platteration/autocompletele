@@ -2,3 +2,6 @@
 dist/
 apps-script/sheets-core.html
 apps-script/pane.html
+# Written by build.js in package mode (INSTALL.md), and the organisation's own configuration for it.
+package/
+extle.config.json
