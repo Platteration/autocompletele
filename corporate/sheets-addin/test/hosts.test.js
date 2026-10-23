@@ -10,6 +10,8 @@ const path = require("node:path");
 const vm = require("node:vm");
 const sheets = require("../../core/sheets.js");
 const { SAMPLE_SECTION } = require("../../desktop/apps/sheets/sample.js");
+// The add-in cannot load the desk's name table and repeats the name; the menu, sidebar and manifest checks hold it to the table.
+const NAME = require("../../desktop/apps/index.js").NAMES.sheets.name;
 const { Node, fakeDocument, sandboxed, plain, storageOf, fakeExcel, fakeAppsScript, fakeGoogleRun } = require("./fakes.js");
 
 const ADDIN = path.join(__dirname, "..");
@@ -111,7 +113,8 @@ test("Office.onReady builds the pane in Excel and says so elsewhere; the pane th
 
 test("a task pane that cannot start says so under the extle name", async () => {
   const { host, root, bridge } = excelPane({ sheets: { S: [["a"]] }, active: { sheet: "S", address: "A1" } });
-  // Any error out of the pane's start(); here the fake refuses the selection handler.
+  // A stand-in for any error out of the pane's start(): the throw reaches the bridge's .catch. It is not how
+  // Office.js reports a failed registration: that goes to an optional AsyncResult callback, which taskpane.js does not pass.
   host.Office.context.document.addHandlerAsync = () => { throw new Error("no selection events"); };
   bridge.start({ host: host.Office.HostType.Excel });
   await new Promise((resolve) => setImmediate(resolve));
@@ -232,10 +235,10 @@ test("Code.gs keeps the configuration in document properties cut by UTF-8 bytes,
 test("Code.gs adds the menu, opens the sidebar and serves the includes", () => {
   const { fake, gs } = appsScript({ sheets: {}, active: {} });
   gs.onOpen();
-  assert.equal(fake.ui.menus[0].title, "extle");
+  assert.equal(fake.ui.menus[0].title, NAME);
   assert.deepEqual(fake.ui.menus[0].items, [["Open sidebar", "showSidebar"]]);
   gs.showSidebar();
-  assert.deepEqual(fake.ui.sidebars, [{ file: "Sidebar", title: "extle" }]);
+  assert.deepEqual(fake.ui.sidebars, [{ file: "Sidebar", title: NAME }]);
   assert.equal(gs.include("sheets-core"), "<!-- include sheets-core -->");
 });
 
@@ -298,7 +301,7 @@ test("a sidebar that cannot start says so under the extle name", async () => {
   const { gs } = appsScript({ sheets: { S: [["a"]] }, active: { sheet: "S", row: 1, col: 1 }, properties: {} });
   const server = fakeGoogleRun({ getActiveCellContext: gs.getActiveCellContext, loadConfig: gs.loadConfig, saveConfig: gs.saveConfig });
   const root = new Node("div");
-  // Any error out of the pane's start(); here the page cannot set up its poll.
+  // A stand-in for any error out of the pane's start(): the throw reaches the page's .catch. A browser's setInterval does not throw.
   const globals = { google: { script: { run: server.run } }, document: fakeDocument({ pane: root }), localStorage: storageOf(), ActleSheets: sheets, setInterval: () => { throw new Error("no timers"); } };
   const sandbox = sandboxed(path.join(ADDIN, "pane.js"), globals);
   const html = fs.readFileSync(path.join(ADDIN, "apps-script", "Sidebar.html"), "utf8");
@@ -341,22 +344,23 @@ test("the Office manifest, the pages and the Apps Script files are consistent wi
   assert.deepEqual(appsscript.oauthScopes, ["https://www.googleapis.com/auth/spreadsheets.currentonly", "https://www.googleapis.com/auth/script.container.ui"], "the current spreadsheet only");
 });
 
-test("the add-in is named extle wherever Excel shows it, within the manifest's documented lengths", () => {
+test("the manifest and the task pane page name the add-in extle; the Description and LongStrings stay within their documented lengths", () => {
   const manifest = fs.readFileSync(path.join(ADDIN, "manifest.xml"), "utf8");
   const attr = (pattern) => (manifest.match(pattern) || [])[1];
-  assert.equal(attr(/<DisplayName DefaultValue="([^"]*)"\/>/), "extle");
-  assert.match(attr(/<Description DefaultValue="([^"]*)"\/>/), /^extle: /);
-  assert.equal(attr(/<bt:String id="actle\.Group\.Label" DefaultValue="([^"]*)"\/>/), "extle", "the ribbon group");
-  assert.equal(attr(/<bt:String id="actle\.OpenPane\.Label" DefaultValue="([^"]*)"\/>/), "Open extle", "the button and its supertip title");
-  assert.match(attr(/<bt:String id="actle\.OpenPane\.Tip" DefaultValue="([^"]*)"\/>/), /^Open the extle pane: /);
+  assert.equal(attr(/<DisplayName DefaultValue="([^"]*)"\/>/), NAME);
+  assert.ok(attr(/<Description DefaultValue="([^"]*)"\/>/).startsWith(NAME + ": "));
+  assert.equal(attr(/<bt:String id="actle\.Group\.Label" DefaultValue="([^"]*)"\/>/), NAME, "the ribbon group");
+  assert.equal(attr(/<bt:String id="actle\.OpenPane\.Label" DefaultValue="([^"]*)"\/>/), "Open " + NAME, "the button and its supertip title");
+  assert.ok(attr(/<bt:String id="actle\.OpenPane\.Tip" DefaultValue="([^"]*)"\/>/).startsWith("Open the " + NAME + " pane: "));
   assert.match(manifest, /<ProviderName>actle<\/ProviderName>/, "the provider stays actle");
   // learn.microsoft.com/javascript/api/manifest: Description up to 250 characters, a LongStrings string up to 250.
-  // The DisplayName and the ShortStrings are pinned exactly, so their 125-character limits need no check of their own.
+  // The DisplayName and the ShortStrings are pinned exactly to NAMES.sheets.name ("extle", pinned in
+  // test/apps-registry.test.js), so their 125-character limits need no check of their own.
   assert.ok(attr(/<Description DefaultValue="([^"]*)"\/>/).length <= 250);
   const strings = (block) => [...(manifest.match(new RegExp("<bt:" + block + ">([\\s\\S]*?)</bt:" + block + ">")) || ["", ""])[1].matchAll(/DefaultValue="([^"]*)"/g)].map((m) => m[1]);
-  assert.deepEqual(strings("ShortStrings"), ["extle", "Open extle"]);
+  assert.deepEqual(strings("ShortStrings"), [NAME, "Open " + NAME]);
   assert.equal(strings("LongStrings").length, 1);
   assert.ok(strings("LongStrings").every((text) => text.length <= 250));
   const page = fs.readFileSync(path.join(ADDIN, "taskpane.html"), "utf8");
-  assert.match(page, /<title>extle<\/title>/);
+  assert.ok(page.includes("<title>" + NAME + "</title>"));
 });

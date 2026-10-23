@@ -199,9 +199,13 @@ column is marked "first rows only".
    the project settings). With `clasp`, `clasp push` from `apps-script/` does
    the same.
 3. Reload the spreadsheet: the **extle** menu opens the sidebar.
-4. For every sheet in the organisation, publish the script as a Workspace
-   add-on or editor add-on from the Apps Script project (Deploy → New
-   deployment) and install it for the domain.
+4. For every sheet in the organisation, publish the script as an editor
+   add-on from the Apps Script project (Deploy → New
+   deployment) and install it for the domain. Menus and HTML sidebars are a
+   feature of editor add-ons; Google Workspace add-ons use cards instead. A
+   published add-on does not show the **extle** caption from `Code.gs`: its
+   menu appears under Extensions with the name the add-on is published
+   under, so publish it as extle.
 
 The sidebar gets no selection events from Google Sheets, so it asks the
 server for the selection every 2 seconds, one request at a time (a tick that

@@ -86,6 +86,13 @@ test("validate and layers report the effective policy", () => {
   assert.match(broken.err, /not valid JSON/);
 });
 
+test("validate lists the suite apps by name with the policy section each one reads", () => {
+  const example = cli(["validate", path.join(__dirname, "..", "shared", "org-policy.example.json")]);
+  assert.equal(example.code, 0, example.err);
+  assert.equal(example.out.split("\n").find((line) => line.startsWith("suite apps:")),
+    "suite apps:       mactle (reply: 4 replies), extle (sheets: 2 vocabularies), cactle (forms: 3 records), gactle (guard: 3 packs), dactle (notes: 3 documents)");
+});
+
 test("file shows how documents would be named and files them only with --apply", () => {
   const dir = temp();
   const extract = require("../core/extract.js");

@@ -236,7 +236,8 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
 - Usage reports travel as files the person saves; an upload to a collection
   point is not built, deliberately, so nothing leaves a desk without the
   person's action.
-- The suite apps were not run in Electron, Excel or Google Sheets here (no
+- The suite apps were not run in Electron, Excel, Google Sheets, Word or
+  Google Docs here (no
   display, no Office, no Google account); each is exercised headlessly by its
   tests and the simulator. cactle fills fields in Tab order only (selectors
   from the policy are shown, not used); gactle cannot change text already in a

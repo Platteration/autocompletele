@@ -234,6 +234,17 @@ test("the palette lists the documents and the action-items entry; a document ope
   assert.deepEqual(off.app.palette.items().map((i) => i.trigger), ["/mins"], "no action-items entry when the policy switches the block off");
 });
 
+test("in an application whose capture mode is off a typed trigger does nothing, while the palette and the tray entry still work there", () => {
+  // ORG-POLICY.md, Capture modes and the dactle chapter, say exactly this.
+  const { assistant, app } = desk({ capture: { apps: [{ id: "editor", label: "Editor", match: { process: WINDOW.process }, mode: "off" }] } });
+  assert.deepEqual(open(assistant, "Weekly sync /mins"), [], "the typed trigger");
+  assert.equal(assistant.engine.mode, "off");
+  assert.deepEqual(assistant.paletteSearch("minutes").map((i) => [i.kind, i.trigger]), [["app:notes", "/mins"]]);
+  assert.equal(assistant.paletteChoose({ kind: "app:notes", trigger: "/mins", query: "min" }).popover, "fill");
+  const shell = fakeShell(NOTE);
+  assert.deepEqual(app.trayItems(shell)[0].click(shell), { ok: true, items: 3, changed: true });
+});
+
 test("the tray entry rebuilds the action block on the clipboard, counts nothing in the metrics, and says when there is nothing to do", () => {
   const { assistant, app, dataDir } = desk();
   const shell = fakeShell(NOTE);

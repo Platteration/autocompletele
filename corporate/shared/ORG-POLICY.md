@@ -344,7 +344,10 @@ the name of a file in the current folder is refused too.
 
 ## Capture modes
 
-* **off**: the assistant ignores the application entirely, including triggers.
+* **off**: the assistant ignores what is typed in the application: no trigger,
+  document shortcut, keyword rule or gactle check runs, and nothing is
+  learned. The search palette and the apps' tray entries do not check the
+  capture mode, so they still work there.
 * **triggers**: a rolling buffer of the last 200 characters is matched against
   triggers and document shortcuts and is never written anywhere. This is what
   the personal Windows app does in every application. While the policy has

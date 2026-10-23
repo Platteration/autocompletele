@@ -24,6 +24,8 @@ const report = require("../core/report.js");
 const suggestions = require("../core/suggestions.js");
 const extract = require("../core/extract.js");
 const filer = require("../core/filer.js");
+// The suite apps' names; the policy keeps the section keys (desktop/apps/index.js loads no app at require time).
+const { NAMES } = require("../desktop/apps/index.js");
 
 const USAGE = `actle Corporate admin tool
 
@@ -188,7 +190,7 @@ function summary(policy) {
   lines.push("filing rules:     " + policy.filing.rules.map((r) => r.id).concat(policy.filing.fallback ? ["(fallback)"] : []).join(", ") + (policy.filing.watch.length ? "; watching " + policy.filing.watch.map((w) => w.path).join(", ") : ""));
   const suite = [["reply", (policy.reply.replies || []).length, "replies"], ["sheets", Object.keys(policy.sheets.vocabularies || {}).length, "vocabularies"],
     ["forms", (policy.forms.records || []).length, "records"], ["guard", (policy.guard.packs || []).length, "packs"], ["notes", (policy.notes.documents || []).length, "documents"]]
-    .filter(([, count]) => count > 0).map(([name, count, what]) => name + " (" + count + " " + what + ")");
+    .filter(([, count]) => count > 0).map(([section, count, what]) => NAMES[section].name + " (" + section + ": " + count + " " + what + ")");
   if (suite.length) lines.push("suite apps:       " + suite.join(", "));
   lines.push("typing speed:     " + policy.typing.charsPerMinute + " characters per minute");
   return lines.join("\n");
