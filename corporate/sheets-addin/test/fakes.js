@@ -23,6 +23,8 @@ class Node {
   button(label) { return this.find((n) => n.tagName === "button" && n.textContent === label); }
   // One focus for all fake documents: the element focus() was last called on, as document.activeElement.
   focus() { focused.node = this; }
+  // HTMLTextAreaElement.select(): the whole text is selected (and the element has the focus).
+  select() { focused.node = this; this.selected = true; }
 }
 
 const focused = { node: null };
@@ -244,6 +246,8 @@ function fakeExcel(spec) {
 /**
  * A Google spreadsheet behind the Apps Script services Code.gs touches.
  * spec: { sheets: { name: [[display text]] }, active: { sheet, row, col } (1-based), properties: {}, limit: bytes per property, failAt: nth setProperty throws,
+ *         userProperties: {}, userFailAt: nth setProperty of the user store throws, storeLimit: bytes of keys and values one store holds
+ *         (500,000 when not given; Google's quota page gives 500 KB per store and does not say how it counts, so keys are counted too),
  *         maxRows: { name: rows } (Sheet.getMaxRows; 1000 or the grid's length when not given), refuseRule: "message" (setDataValidation throws),
  *         formulas: { name: { A1: "=..." } } (Range.getFormulas of those cells; "" for any other cell),
  *         protect: { name: [A1] } (setNumberFormat and setValue on one of these cells throw) }
@@ -255,10 +259,11 @@ function fakeAppsScript(spec) {
   for (const [name, rows] of Object.entries(spec.sheets || {})) grids[name] = rows.map((row) => row.slice());
   let active = Object.assign({}, spec.active);
   const props = new Map(Object.entries(spec.properties || {}));
+  const userProps = new Map(Object.entries(spec.userProperties || {}));
   const limit = spec.limit || 9216;
+  const storeLimit = spec.storeLimit || 500000;
   const ui = { menus: [], sidebars: [] };
   const validations = {};
-  let sets = 0;
   // Formulas by sheet, keyed by single-cell A1.
   const formulas = {};
   for (const [name, cells] of Object.entries(spec.formulas || {})) formulas[name] = new Map(Object.entries(cells));
@@ -339,19 +344,28 @@ function fakeAppsScript(spec) {
     createTemplateFromFile: (name) => ({ evaluate: () => ({ setTitle: (title) => ({ file: name, title }) }) }),
     createHtmlOutputFromFile: (name) => ({ getContent: () => "<!-- include " + name + " -->" }),
   };
-  const properties = {
-    getProperty: (key) => (props.has(key) ? props.get(key) : null),
-    setProperty: (key, value) => {
-      sets++;
-      if (spec.failAt && sets === spec.failAt) throw new Error("property write failed");
-      if (Buffer.byteLength(String(value), "utf8") > limit) throw new Error("value of " + key + " exceeds " + limit + " bytes");
-      props.set(key, String(value));
-      calls.push(["setProperty", key, String(value).length]);
-    },
-    deleteProperty: (key) => { props.delete(key); calls.push(["deleteProperty", key]); },
-  };
-  const PropertiesService = { getDocumentProperties: () => properties };
-  return { globals: { SpreadsheetApp, HtmlService, PropertiesService }, calls, props, ui, grids, validations, formulas, select: (sheet, row, col) => { active = { sheet, row, col }; } };
+  // A Properties store; the user store records its calls with a "user." prefix.
+  function store(map, failAt, prefix) {
+    let sets = 0;
+    const size = () => [...map].reduce((total, [key, value]) => total + Buffer.byteLength(key, "utf8") + Buffer.byteLength(value, "utf8"), 0);
+    return {
+      getProperty: (key) => (map.has(key) ? map.get(key) : null),
+      setProperty: (key, value) => {
+        sets++;
+        if (failAt && sets === failAt) throw new Error("property write failed");
+        if (Buffer.byteLength(String(value), "utf8") > limit) throw new Error("value of " + key + " exceeds " + limit + " bytes");
+        const before = map.has(key) ? Buffer.byteLength(key, "utf8") + Buffer.byteLength(map.get(key), "utf8") : 0;
+        if (size() - before + Buffer.byteLength(key, "utf8") + Buffer.byteLength(String(value), "utf8") > storeLimit) throw new Error("the property store is full");
+        map.set(key, String(value));
+        calls.push([prefix + "setProperty", key, String(value).length]);
+      },
+      deleteProperty: (key) => { map.delete(key); calls.push([prefix + "deleteProperty", key]); },
+    };
+  }
+  const properties = store(props, spec.failAt, "");
+  const userProperties = store(userProps, spec.userFailAt, "user.");
+  const PropertiesService = { getDocumentProperties: () => properties, getUserProperties: () => userProperties };
+  return { globals: { SpreadsheetApp, HtmlService, PropertiesService }, calls, props, userProps, ui, grids, validations, formulas, select: (sheet, row, col) => { active = { sheet, row, col }; } };
 }
 
 /**

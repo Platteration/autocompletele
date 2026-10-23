@@ -12,7 +12,9 @@ typed into the pane's input inserts the policy's block of rows or formula at
 the selected cell. In a strict column (a column rule with `strict: true`) only
 the list's values are offered, and the pane can check the column against the
 list, replace aliases with the list's spelling and turn the spreadsheet's own
-list validation on or off (see "A strict column" below).
+list validation on or off (see "A strict column" below). The pane counts what
+it writes and hands the counts to the desk as a text the person copies (see
+"Usage counts for the desk" below).
 
 Both hosts run the same logic: `core/sheets.js` bundled into one browser
 script, and `pane.js`, the shared pane, which talks to the host only through a
@@ -27,7 +29,7 @@ sheets-addin/
   taskpane.html, .js       Excel task pane (Office.js from Microsoft's CDN is the only external script)
   manifest.xml             Office add-in manifest with placeholders (see below)
   apps-script/
-    Code.gs                Google Sheets server side: menu, sidebar, read the selection, write a cell, replace aliases, list validation
+    Code.gs                Google Sheets server side: menu, sidebar, read the selection, write a cell, replace aliases, list validation, keep the usage counts
     Sidebar.html           the sidebar page; includes the two generated files
     sheets-core.html       generated: the bundle in a <script> tag
     pane.html              generated: pane.css and pane.js in <style> and <script> tags
@@ -47,12 +49,13 @@ node build.js --out /tmp/x # the same files under another folder
 ```
 
 The build reads `../core/sheets.js`, follows its relative `require` calls
-(`core/personal.js`, `core/phrase-miner.js`, `core/policy-pattern.js`, the personal edition's
+(`core/personal.js`, `core/phrase-miner.js`, `core/policy-pattern.js`,
+`core/sheets-usage.js` and the `core/metrics.js` it counts graphemes with, the personal edition's
 `expander.js`, `template.js` and `palette.js`), wraps each module in a tiny
 CommonJS shim and writes one script that sets `window.ActleSheets` to the
 core's exports (`normalizeSheets`, `columnFor`, `createColumnProfile`,
 `complete`, `blockFor`, `importCsv`, `formulaLike`, `suggest`, `checkColumn`,
-`exportConfig`, `parseConfig`, `organizationItems`). The script starts with a two-line
+`exportConfig`, `parseConfig`, `organizationItems`, and `usage`, the usage model). The script starts with a two-line
 `Object.hasOwn` polyfill, the one ES2022 call the core makes, so an older
 Office webview (WebKit before Safari 15.4) can run it; everything else the
 bundle uses is ES2020 or older. It touches no network and is deterministic:
@@ -282,7 +285,8 @@ Limits, and where they come from:
 
 No data leaves the spreadsheet: the bundle makes no network request, and
 nothing typed in the pane or read from cells is sent anywhere. The Excel page
-loads Office.js from Microsoft's CDN; nothing else is fetched.
+loads Office.js from Microsoft's CDN; nothing else is fetched. The usage counts
+leave only when the person copies them (below), and hold no cell text.
 
 ## What is written
 
@@ -319,6 +323,120 @@ loads Office.js from Microsoft's CDN; nothing else is fetched.
   spilled cell in an Excel without ExcelApi 1.12, are not recognised and are
   overwritten, see above); list validation is a rule on the column's cells,
   not a value. Both wait for a confirmation.
+
+## Usage counts for the desk
+
+The pane counts what it writes, so the desk's statistics and the
+organisation's usage reports include spreadsheet work. The add-in makes no
+network request, and an Office page (HTTPS) or Apps Script (Google's servers)
+cannot be assumed to reach the desk, so the counts travel the way the
+configuration does, the other way round: as a text the person copies from the
+pane and pastes into the desk's extle tab. The model is `core/sheets-usage.js`.
+
+What is counted:
+
+- A completion written into a cell, and a block or formula written by
+  **Insert** (for a document's configuration, by **Write the formula** or
+  **Write the rows**). Nothing else: a completion the pane refuses (a start a
+  cell could read as a formula), a write the host refuses or that fails, an
+  **Insert** that only opens a confirmation, **Cancel**, **Check this
+  column**, the replacement of aliases and list validation count nothing.
+- Per day (the computer's local date) and per counter: the number of uses and
+  the keystrokes saved, which are the graphemes written minus the graphemes in
+  the pane's box before (never below 0), counted as the desk counts its own
+  inserts. Rows count each cell's text plus one keystroke for each move to the
+  next cell.
+- The counter's name: the vocabulary's name for a vocabulary completion (a
+  strict column's too), the trigger for a block or formula, and only from the
+  organisation's configuration, the browser copy. A completion from the
+  column's own values or a notes sentence has no name. While the document's
+  own configuration is in use, every use is counted under source `document`
+  with no name: that configuration's names are the document author's text.
+
+Limits (`LIMITS` in `core/sheets-usage.js`): the newest 120 days are kept, and
+older days are dropped (a day after today, from a clock that went back or a
+time zone crossed westwards, is kept until there are 120); 12 names a day, a
+further name is counted without it; a name of 1 to 40 characters with no
+control character and no emoji or other character outside the Basic
+Multilingual Plane, any other is counted without it; 100,000 uses a counter a
+day (a use past it is not counted) and 100,000,000 keystrokes. With these the
+longest text the pane can write is 273,931 bytes
+(`test/sheets-usage.test.js` builds it), under a Google user property
+store's 500 KB.
+
+The text is JSON: `format` `"extle-usage"`, `version` 1, `instance` (32
+hexadecimal characters made once by the add-in with `crypto.getRandomValues`,
+which also works in pages that are not HTTPS
+([MDN](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues));
+`Math.random` where a host has no Web Crypto API), and `days`, each a list of
+`[kind, source, name, uses, keystrokes]`:
+
+```
+{"format":"extle-usage","version":1,"instance":"9f3c…","days":{"2026-10-23":[["completion","vocabulary","customers",3,48],["block","formula","/vat",1,14],["completion","column","",2,9]]}}
+```
+
+It never holds cell text, what was typed, sheet, workbook, file or document
+names, cell addresses or times of day.
+
+Where the counts are kept:
+
+- Excel: the task pane's `localStorage`, key `actleSheetsUsage`. For state
+  that follows a person from one document to the next, Microsoft's page on
+  persisting add-in state names browser storage, or the add-in's own online
+  service keyed by the signed-in user, which this add-in does not have; the
+  document settings travel with the file, and `OfficeRuntime.storage` belongs
+  to the SharedRuntime 1.1 requirement set (custom functions and the shared
+  runtime), which this manifest does not declare
+  ([persisting add-in state](https://learn.microsoft.com/en-us/office/dev/add-ins/develop/persisting-add-in-state-and-settings),
+  [OfficeRuntime.Storage](https://learn.microsoft.com/en-us/javascript/api/office-runtime/officeruntime.storage)).
+  The same page suggests prefixing `localStorage` keys with
+  `Office.context.partitionKey` where it is defined; the pane does not, for
+  the configuration or the counts.
+- Google Sheets: the person's user properties for this script
+  (`PropertiesService.getUserProperties()`), not the sidebar's
+  `localStorage`, which may not persist. Only that person can read them, and
+  only through this script
+  ([PropertiesService](https://developers.google.com/apps-script/reference/properties/properties-service)),
+  so for a script added to one spreadsheet they belong to that spreadsheet's
+  script, and for the published add-on to every spreadsheet it runs in. They
+  are cut into pieces of at most 8,192 UTF-8 bytes with the count written
+  last, like the configuration; one value holds 9 KB and one store 500 KB
+  ([quotas](https://developers.google.com/apps-script/guides/services/quotas)).
+  A save that fails halfway leaves no counts stored until the pane's next
+  save, which writes them all again; a sidebar opened in between starts
+  with none. No scope was added to `appsscript.json`: whether the Properties
+  service needs one of its own could not be confirmed, since Google's pages
+  could not be opened here; the document properties already run under the
+  same manifest.
+- The **Usage** section says where the counts are kept, or that they are
+  kept for this session only and why: the browser cannot keep them, or the
+  stored counts could not be read, and then nothing is written over them. A
+  save that fails is said ("The latest counts could not be kept (...)");
+  counting goes on, and the next use saves again. Stored text that is not a
+  usage text is replaced, and the pane says so. One save runs at a time; uses
+  counted while it is on its way go with the next.
+- Several panes share one store: task panes in two workbooks of one browser,
+  or a person's sidebars in two spreadsheets of the published add-on. A save
+  therefore reads what is stored first and adds only the uses this pane
+  counted since its own last save, and **Copy for the desk** reads the store
+  before it writes the text, so it holds what the other panes saved. In Excel
+  the read and the write follow each other with nothing in between; in
+  Google they are two calls to Code.gs, and two sidebars that save in the
+  same moment can still lose one's uses, since nothing locks the store. A
+  read that fails keeps the uses for the next save.
+
+Handing them over: **Usage** in the pane shows today's and the last 7 days'
+uses and keystrokes saved. **Copy for the desk** puts the text into the
+read-only box below it, selects it and tries `navigator.clipboard.writeText`.
+An Office or Apps Script frame may refuse that: the clipboard needs the
+frame's `clipboard-write` permission, which Office add-in frames have been
+reported to lack
+([office-js issue 1991](https://github.com/OfficeDev/office-js/issues/1991));
+the status line then says to copy the selected text by hand. On the desk,
+paste it into **Usage from the add-in** on the extle tab and choose
+**Import** (`corporate/desktop/README.md`). Importing the same text again adds
+nothing and a later text adds only what is new, so the pane never needs to be
+reset.
 
 ## Excel: sideload and deploy
 
@@ -394,7 +512,12 @@ spellings, list validation on and off, a list the host cannot take, a host
 without the API, a host error, a document's strict rule, and a question or
 check from the document's configuration after Stop using it or Save while
 the organisation's makes the same column strict) and the full-width formula
-guard.
+guard; and the usage counts: only writes that succeeded, with the
+vocabulary's name or the trigger, none for a document's configuration, a
+stored text continued, a browser that cannot keep, read or save them, a
+bridge store used instead of the browser and never written after a failed
+read, one save at a time, two panes sharing one store, an older core without
+the usage model, and **Copy for the desk** with and without the clipboard.
 `hosts.test.js` evaluates `taskpane.js` against a fake Excel workbook behind
 the Office.js objects it touches (used range at row 1 and lower, header-only
 and empty sheets, the 5,000-row clip, the order of number format and value,
@@ -409,9 +532,14 @@ changed is skipped, a formula cell is left, in Excel a spilled cell is left
 where ExcelApi 1.12 is there, a protected cell stops the writes with the
 cells written before it), list rule, clearing, the Excel limits (255 characters,
 a comma in a value), the missing ExcelApi 1.8, and a Google sheet with no row
-below the header. `corporate/test/sheets-app.test.js`
-covers the build, the bundle in a sandbox with and without `Object.hasOwn`,
-the desktop channels and the dashboard tab.
+below the header; and the usage counts: `Code.gs` keeps them in the user
+properties in pieces (the longest text fits one store), the sidebar reads
+them before the selection and saves them after a write, the Excel task pane
+keeps them in `localStorage`. `corporate/test/sheets-usage.test.js` covers the
+usage model (names, caps, days, the merge, the longest text, the parser's refusals), and
+`corporate/test/sheets-app.test.js` the build, the bundle in a sandbox with
+and without `Object.hasOwn`, the desktop channels (the import included), the
+usage reports and the dashboard tab.
 
 ## Not verified here
 
@@ -473,6 +601,15 @@ Google account or a browser:
   next (Excel on each platform; the Apps Script sidebar's sandbox) was not
   checked. Where it does not, the organisation's copy does not carry over
   and each document's own configuration is offered instead.
+- The usage counts ran against the fakes only. Not checked in a real host:
+  that Excel's task pane keeps `localStorage` from one session and document
+  to the next on each platform; that Apps Script's user properties need no
+  scope beyond `appsscript.json` and keep the pieces as the fake does (how
+  Google counts a store's 500 KB, keys included or not, was not found); the
+  daily quota for property reads and writes (a third-party page gives
+  50,000; Google's could not be read), which a save per use spends a few of;
+  how long a `google.script.run` save takes; and whether either frame lets
+  `navigator.clipboard.writeText` through.
 - `manifest.xml` has not been validated by Office or sideloaded; the icons it
   references are not shipped.
 - The pane's layout (`pane.css`), including the document configuration's

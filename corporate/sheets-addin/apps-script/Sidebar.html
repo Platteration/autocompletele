@@ -44,6 +44,10 @@
         },
         loadConfig: function () { return call("loadConfig"); },
         saveConfig: function (text) { return call("saveConfig", text); },
+        // The counts go to the person's user properties, which follow their Google account, not this browser.
+        loadUsage: function () { return call("loadUsage"); },
+        saveUsage: function (text) { return call("saveUsage", text); },
+        usageWhere: "with your Google account, in this script's user properties",
         onSelectionChanged: function (handler) {
           // One request in flight at a time: a tick that fires while the last answer is still on its way is skipped.
           var busy = false;

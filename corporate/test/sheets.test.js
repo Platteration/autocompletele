@@ -297,10 +297,15 @@ test("parseConfig reads an exported section, a whole policy, or their JSON text;
   assert.equal("warnings" in lossy.config, false);
 });
 
-test("organizationItems names the block and formula triggers for usage reports", () => {
-  assert.deepEqual(sheets.organizationItems(config), [{ trigger: "/exp", kind: "block" }, { trigger: "/vat", kind: "block" }]);
+test("organizationItems names the vocabularies and the block and formula triggers under kind sheets, the kind of an imported extle use, leaving out names the add-in never keeps", () => {
+  assert.deepEqual(sheets.organizationItems(config), [{ trigger: "customers", kind: "sheets" }, { trigger: "costCentres", kind: "sheets" }, { trigger: "/exp", kind: "sheets" }, { trigger: "/vat", kind: "sheets" }]);
   assert.deepEqual(sheets.organizationItems(undefined), []);
   assert.deepEqual(sheets.organizationItems({}), []);
+  const long = sheets.normalizeSheets({ vocabularies: { ["v".repeat(41)]: ["a"], ["v".repeat(40)]: ["a"] }, blocks: [{ trigger: "/" + "t".repeat(40), formula: "=1" }, { trigger: "/t", formula: "=1" }] });
+  assert.deepEqual(sheets.organizationItems(long), [{ trigger: "v".repeat(40), kind: "sheets" }, { trigger: "/t", kind: "sheets" }], "a name over 40 characters is never named by a count, so a report would always call it unused");
+  const report = require("../core/report.js");
+  const orgPolicy = require("../core/org-policy.js");
+  assert.deepEqual(report.organizationShortcuts(orgPolicy.parse({ sheets: SHEETS })).filter((item) => item.kind === "sheets").map((item) => item.trigger), ["customers", "costCentres", "/exp", "/vat"], "report.js picks them up from a parsed policy");
 });
 
 test("formulaLike also stops the full-width ＝ ＋ － ＠ at the start, with no number exception, and allows them inside a value", () => {

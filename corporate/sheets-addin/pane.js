@@ -14,6 +14,13 @@
 // spelling and turns the host's list validation on or off; each write waits
 // for a confirmation.
 //
+// Each completion and block written into a cell is counted (core usage, per
+// day, counts only) and kept through the bridge's loadUsage/saveUsage where
+// the host has them, else in this browser. A save adds the uses counted since
+// the last one to what is stored, so panes open in other documents keep
+// theirs. "Copy for the desk" hands the counts over as text: the add-in makes
+// no network request.
+//
 // bridge: { readContext() -> Promise<{sheet, address, text, header, values, rows, clipped}|null>,
 //           writeValue(target, text), writeRows(target, rows), writeFormula(target, formula),
 //           replaceValues({sheet, column}, [{row, from, to}]) -> Promise<{written: [row], skipped: [{row, text}], computed: [row], failed?: {row, message}}>,
@@ -21,11 +28,13 @@
 //           listValidation: null | { refusal?(values) -> reason|null, apply({sheet, column}, values, message) -> Promise<{range}>,
 //                                    remove({sheet, column}) -> Promise<{range}> },
 //           listValidationMissing: why there is no listValidation (shown as a hint),
-//           loadConfig() -> Promise<string>, saveConfig(text), onSelectionChanged(handler) }
+//           loadConfig() -> Promise<string>, saveConfig(text), onSelectionChanged(handler),
+//           loadUsage() -> Promise<string>, saveUsage(text), usageWhere: where saveUsage keeps them (optional, both or neither) }
 (function (root) {
   "use strict";
 
   const STORAGE_KEY = "actleSheetsConfig";
+  const USAGE_KEY = "actleSheetsUsage"; // the counts, in this browser, when the bridge does not keep them
   const PREVIEW_ROWS = 5;    // rows of a block listed under its Insert button; the rest are counted
   const PREVIEW_CHARS = 200; // characters of one listed row
   const NAME_CHARS = 40;     // characters of a vocabulary name or trigger quoted in the offer
@@ -161,6 +170,10 @@
     return String((error && error.message) || error || "unknown error");
   }
 
+  const uses = (n) => (n === 1 ? "1 use" : n + " uses");
+  const saved = (n) => (n === 1 ? "1 keystroke saved" : n + " keystrokes saved");
+  const DESK = "paste it into the extle tab of the actle desktop app, under Usage from the add-in, and choose Import.";
+
   function summarize(parsed) {
     const config = parsed.config;
     const names = Object.keys(config.vocabularies);
@@ -177,6 +190,9 @@
     const bridge = settings.bridge;
     const core = settings.core;
     const storage = settings.storage || null;
+    // Injected by tests; otherwise the browser's clock and clipboard (which a host's frame may refuse).
+    const now = typeof settings.now === "function" ? settings.now : () => new Date();
+    const clipboard = Object.prototype.hasOwnProperty.call(settings, "clipboard") ? settings.clipboard : root.navigator && root.navigator.clipboard ? root.navigator.clipboard : null;
     const make = (tag, attrs, children) => el(document, tag, attrs, children);
     // organization: the parsed browser copy (or what was saved this session); documentText: what the document carries;
     // fromDocument: the document's configuration is in use; offer: the document's, not yet used; pending: a block from it awaiting confirmation.
@@ -186,6 +202,10 @@
     // The block buttons now shown, so focus can follow a button that a re-render (a selection event or the sidebar's poll) replaces.
     // strict: the strict column's buttons by name ("check", "replace", "validate", "unvalidate", "confirm", "cancel").
     const live = { insert: null, confirm: null, strict: new Map() };
+    // state: the counts (null until loaded, or with a core that cannot count); delta: the uses counted since the last save;
+    // store: "bridge", "browser" or null (this session only); note: where they are kept or why not; failure: the last save's error;
+    // dirty/busy: a save is wanted / on its way.
+    const usage = { state: null, delta: null, store: null, note: "", failure: "", dirty: false, busy: null };
     const ui = {
       context: make("p", { class: "context", text: "Select a cell." }),
       refresh: make("button", { class: "plain", type: "button", text: "Refresh" }),
@@ -198,6 +218,11 @@
       configText: make("textarea", { class: "config", placeholder: "Paste the exported configuration (JSON) here", "aria-label": "Configuration" }),
       save: make("button", { class: "primary", type: "button", text: "Save configuration" }),
       summary: make("p", { class: "summary" }),
+      usageTotals: make("p", { class: "usage-totals" }),
+      usageNote: make("p", { class: "hint usage-note" }),
+      copyUsage: make("button", { class: "plain", type: "button", text: "Copy for the desk" }),
+      usageText: make("textarea", { class: "usage-text", readonly: "", "aria-label": "Usage text for the desk", placeholder: "Copy for the desk puts the counts here." }),
+      usageStatus: make("p", { class: "usage-status", role: "status" }),
     };
     settings.root.append(
       make("div", { class: "toolbar" }, [ui.context, ui.refresh]),
@@ -213,6 +238,15 @@
         ui.configText,
         make("div", { class: "actions" }, [ui.save]),
         ui.summary,
+      ]),
+      make("details", { class: "usage" }, [
+        make("summary", { text: "Usage" }),
+        make("p", { class: "hint", text: "extle counts the completions and blocks it writes into cells: per day, how many and the keystrokes they saved, with the name of the organisation's vocabulary or trigger. Never cell text, sheet or file names. Copy them for the desk to add them to your statistics there." }),
+        ui.usageTotals,
+        ui.usageNote,
+        make("div", { class: "actions" }, [ui.copyUsage]),
+        ui.usageText,
+        ui.usageStatus,
       ]),
     );
 
@@ -301,7 +335,7 @@
       ui.context.textContent = c.address + " on " + c.sheet + (c.header ? ", column " + JSON.stringify(c.header) : ", no header in row 1") + ": " + rule + (c.clipped ? " (first rows only)" : "");
       for (const completion of suggestion.completions) {
         const button = make("button", { type: "button", class: "completion", text: completion.value });
-        button.addEventListener("click", () => choose(completion));
+        button.addEventListener("click", () => choose(completion, suggestion.column, suggestion.profile.kind));
         const from = (completion.alias ? "alias " + completion.alias + ", " : "") + (completion.source === "vocabulary" ? "vocabulary" : "seen " + completion.count + "x");
         ui.completions.append(make("li", {}, [button, make("span", { class: "source", text: from })]));
       }
@@ -322,6 +356,7 @@
         }
       }
       renderStrict(strictColumn(suggestion), strictFocus);
+      renderUsage();
       return suggestion;
     }
 
@@ -628,9 +663,10 @@
      * of a notes cell can be (= + - @); whether the text format stops a host
      * from evaluating it is unconfirmed, so such a cell is left alone.
      */
-    async function choose(completion) {
+    async function choose(completion, column, profileKind) {
       const where = target();
       if (!where) return;
+      const typed = state.text;
       const value = state.text.slice(0, completion.start) + completion.value;
       if (core.formulaLike(value)) {
         say("Not written to " + where.address + ": starting with " + JSON.stringify(value[0]) + ", the cell could read it as a formula. Change the first character, then choose again.");
@@ -646,6 +682,10 @@
       ui.input.value = value;
       state.lastKey = keyOf(state.context, value);
       say("Wrote " + JSON.stringify(value) + " to " + where.address + ".");
+      // A vocabulary completion is counted with the vocabulary's name; the column's own values and sentences without one.
+      const kind = (column && column.kind) || profileKind;
+      const source = completion.source === "vocabulary" ? "vocabulary" : kind === "notes" ? "notes" : "column";
+      countUse({ kind: "completion", source, name: source === "vocabulary" && column ? column.vocabulary : "", inserted: value, typed });
       render();
     }
 
@@ -677,6 +717,7 @@
 
     async function writeBlock(block, where) {
       state.pending = null;
+      const typed = state.text;
       try {
         if (block.formula) await bridge.writeFormula(where, block.formula);
         else await bridge.writeRows(where, block.rows);
@@ -688,7 +729,145 @@
       state.text = "";
       ui.input.value = "";
       say("Inserted " + block.label + " at " + where.address + ".");
+      // Rows count a keystroke for each move to the next cell (a tab or a new line), as typing them would.
+      const inserted = block.formula ? block.formula : block.rows.map((row) => row.map((cell) => String(cell == null ? "" : cell)).join("\t")).join("\n");
+      countUse({ kind: "block", source: block.formula ? "formula" : "rows", name: block.trigger, inserted, typed });
       render();
+    }
+
+    /** The counts' line and note in the Usage section: today, the last 7 days, and where they are kept or why not. */
+    function renderUsage() {
+      ui.usageNote.textContent = usage.failure || usage.note;
+      if (!usage.state) {
+        ui.usageTotals.textContent = "";
+        return;
+      }
+      const today = core.usage.totals(usage.state, now(), 1);
+      const week = core.usage.totals(usage.state, now(), 7);
+      ui.usageTotals.textContent = "Today: " + uses(today.uses) + ", " + saved(today.keystrokes) + ". Last 7 days: " + uses(week.uses) + ", " + saved(week.keystrokes) + ".";
+    }
+
+    /**
+     * Read the stored counts. A store that cannot be read is not written
+     * either, so counts kept there are never replaced unseen: the pane then
+     * counts for this session only and says so. Stored text that is not a
+     * usage text is replaced, and the pane says so.
+     */
+    async function loadUsage() {
+      if (!core.usage) {
+        usage.note = "This copy of the add-in cannot count use: its sheets-core bundle is older than pane.js. Rebuild it with build.js.";
+        ui.copyUsage.setAttribute("disabled", "");
+        renderUsage();
+        return;
+      }
+      let text = "";
+      let problem = "";
+      if (typeof bridge.loadUsage === "function" && typeof bridge.saveUsage === "function") {
+        try {
+          text = String((await bridge.loadUsage()) || "");
+          usage.store = "bridge";
+        } catch (error) {
+          problem = "the stored counts could not be read (" + reason(error) + ")";
+        }
+      } else if (storage) {
+        try {
+          text = storage.getItem(USAGE_KEY) || "";
+          usage.store = "browser";
+        } catch (error) {
+          problem = "this browser refused to read them (" + reason(error) + ")";
+        }
+      } else problem = "this browser cannot keep them";
+      const parsed = text ? core.usage.parseUsage(text) : null;
+      usage.state = parsed && parsed.ok ? parsed.usage : core.usage.createUsage();
+      usage.delta = { instance: usage.state.instance, days: {} };
+      const restarted = parsed && !parsed.ok ? "The stored counts could not be read (" + parsed.error + "), so counting started again. " : "";
+      if (!usage.store) usage.note = "Counts are kept for this session only: " + problem + ".";
+      else usage.note = restarted + "Counts are kept " + (usage.store === "bridge" ? String(bridge.usageWhere || "by the spreadsheet's side of the add-in") : "in this browser") + ".";
+      renderUsage();
+    }
+
+    /** Count a write that succeeded, then keep the counts; while the document's configuration is in use, without a name. */
+    function countUse(event) {
+      if (!usage.state) return;
+      const given = Object.assign({ document: state.fromDocument }, event);
+      if (!core.usage.record(usage.state, given, now())) return;
+      core.usage.record(usage.delta, given, now());
+      renderUsage();
+      persistUsage();
+    }
+
+    /** One save at a time; counts made while one is on its way go with the next, so an older save never lands last. */
+    function persistUsage() {
+      if (!usage.store) return Promise.resolve();
+      usage.dirty = true;
+      if (!usage.busy) usage.busy = drainUsage();
+      return usage.busy;
+    }
+
+    /**
+     * What is stored now (another pane in this browser, or another sidebar of
+     * the same person, may have saved since), with the uses counted here since
+     * the last save added; written back only when there is anything to add.
+     * Where nothing readable is stored, the counts this pane holds are written.
+     */
+    async function saveUsage(delta) {
+      const adding = Object.keys(delta.days).length > 0;
+      const merge = (text) => {
+        const parsed = text ? core.usage.parseUsage(text) : null;
+        return parsed && parsed.ok ? core.usage.mergeUsage(parsed.usage, delta) : usage.state;
+      };
+      if (usage.store === "bridge") {
+        const next = merge(String((await bridge.loadUsage()) || ""));
+        if (adding) await bridge.saveUsage(core.usage.serializeUsage(next));
+        return next;
+      }
+      // getItem and setItem with nothing in between, so another pane of this browser cannot save in the gap.
+      const next = merge(storage.getItem(USAGE_KEY) || "");
+      if (adding) storage.setItem(USAGE_KEY, core.usage.serializeUsage(next));
+      return next;
+    }
+
+    async function drainUsage() {
+      await null; // usage.busy is set before the first save starts
+      while (usage.dirty) {
+        usage.dirty = false;
+        const delta = usage.delta;
+        usage.delta = { instance: usage.state.instance, days: {} };
+        try {
+          usage.state = await saveUsage(delta);
+          usage.failure = "";
+        } catch (error) {
+          // The uses go with the next save.
+          core.usage.mergeUsage(usage.delta, delta);
+          usage.failure = "The latest counts could not be kept (" + reason(error) + "); they stay for this session, and the next use tries again.";
+        }
+      }
+      usage.busy = null;
+      renderUsage();
+    }
+
+    /**
+     * The usage text, in the read-only box and selected; the clipboard is
+     * tried as well, and the box is there when it refuses. The stored counts
+     * are read first, so what other panes saved is in the text too.
+     */
+    async function copyUsage() {
+      if (!usage.state) return;
+      await persistUsage();
+      const text = core.usage.serializeUsage(usage.state);
+      ui.usageText.value = text;
+      focus(ui.usageText);
+      if (typeof ui.usageText.select === "function") ui.usageText.select();
+      let copied = false;
+      if (clipboard && typeof clipboard.writeText === "function") {
+        try {
+          await clipboard.writeText(text);
+          copied = true;
+        } catch (error) {
+          copied = false;
+        }
+      }
+      ui.usageStatus.textContent = copied ? "Copied. Now " + DESK : "The text is selected in the box: copy it (Ctrl+C, or Cmd+C on a Mac), then " + DESK;
     }
 
     function show(parsed, fromDocument) {
@@ -802,6 +981,8 @@
       state.organizationText = text;
       state.organization = applyConfig(text);
       offerDocument();
+      await loadUsage();
+      ui.copyUsage.addEventListener("click", () => copyUsage());
       ui.input.addEventListener("input", () => {
         state.text = ui.input.value;
         render();
@@ -812,8 +993,8 @@
       await refresh();
     }
 
-    return { state, ui, start, refresh, render, choose, insertBlock, applyConfig, saveConfig };
+    return { state, ui, usage, start, refresh, render, choose, insertBlock, applyConfig, saveConfig, copyUsage, saving: () => usage.busy || Promise.resolve() };
   }
 
-  root.ActleSheetsPane = { createPane, summarize, describeBlock, previewRows, changes, rangeFrom, STORAGE_KEY };
+  root.ActleSheetsPane = { createPane, summarize, describeBlock, previewRows, changes, rangeFrom, STORAGE_KEY, USAGE_KEY };
 })(typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : this);

@@ -599,3 +599,88 @@ test("each bridge adds to the replacement's question what its host's side cannot
   await panel.button("Replace 2 cells with the list's spelling").click();
   assert.equal(panel.find((n) => n.className === "confirm").textContent, 'Write the list\'s spelling into 2 cells of column C on "Budget", as listed above? Each cell is read again first; one that changed since the check, or that holds a formula, is left as it is. A cell filled by an array formula in another cell (ARRAYFORMULA, FILTER, QUERY, SORT, UNIQUE, SPLIT, IMPORTRANGE and others) holds no formula of its own, so it is not recognised and would be overwritten.');
 });
+
+// Usage counts through each host: Code.gs's user properties, the sidebar's calls, the task pane's localStorage.
+function longestUsage() {
+  // The largest text the pane can write (test/sheets-usage.test.js): 120 days, each at every cap.
+  const state = sheets.usage.createUsage({ random: () => new Uint8Array(16).fill(9) });
+  const day = new Date(2026, 9, 23);
+  const L = sheets.usage.LIMITS;
+  for (let d = 0; d < L.days; d++, day.setDate(day.getDate() - 1)) {
+    const list = [];
+    for (let i = 0; i < L.namesPerDay; i++) list.push(["completion", "vocabulary", String(i).padStart(2, "0") + "€".repeat(L.nameLength - 2), L.count, L.keystrokes]);
+    for (const [kind, source] of [["completion", "vocabulary"], ["completion", "column"], ["completion", "notes"], ["completion", "document"], ["block", "formula"], ["block", "rows"], ["block", "document"]]) list.push([kind, source, "", L.count, L.keystrokes]);
+    state.days[sheets.usage.dayOf(new Date(day))] = list;
+  }
+  return sheets.usage.serializeUsage(state);
+}
+
+test("Code.gs keeps the usage text in the person's user properties, in pieces, apart from the document's configuration; the longest text fits one store", () => {
+  const { fake, gs } = appsScript({ sheets: {}, active: {} });
+  assert.equal(gs.loadUsage(), "");
+  gs.saveConfig(CONFIG);
+  fake.calls.length = 0;
+  const longest = longestUsage();
+  gs.saveUsage(longest);
+  assert.equal(gs.loadUsage(), longest);
+  const pieces = [...fake.userProps.keys()].filter((key) => /^actleSheetsUsage\.\d+$/.test(key));
+  assert.equal(fake.userProps.get("actleSheetsUsage.count"), String(pieces.length));
+  assert.equal(pieces.length, 34, "273,931 bytes in pieces of at most 8,192; a piece ends early rather than split a character");
+  for (const key of pieces) assert.ok(Buffer.byteLength(fake.userProps.get(key)) <= gs.CHUNK_BYTES, key);
+  assert.ok(fake.calls.every(([what]) => what.startsWith("user.")), "only the user store was written");
+  assert.deepEqual(fake.calls[0], ["user.setProperty", "actleSheetsUsage.count", 1], "the count is reset first");
+  assert.equal(gs.loadConfig(), CONFIG, "the document's configuration is untouched");
+  assert.deepEqual([...fake.props.keys()].sort(), ["actleSheetsConfig.0", "actleSheetsConfig.count"]);
+  gs.saveUsage('{"format":"extle-usage"}');
+  assert.deepEqual([...fake.userProps.keys()].sort(), ["actleSheetsUsage.0", "actleSheetsUsage.count"], "a shorter text deletes the pieces it no longer needs");
+  const halfway = appsScript({ sheets: {}, active: {}, userProperties: { "actleSheetsUsage.count": "1", "actleSheetsUsage.0": "old" }, userFailAt: 3 });
+  assert.throws(() => halfway.gs.saveUsage(longest), /property write failed/);
+  assert.equal(halfway.gs.loadUsage(), "", "a save that failed halfway leaves nothing, never a mix of pieces");
+});
+
+test("the sidebar reads the counts from Code.gs before the selection, saves them there after a write, and says where they are kept", async () => {
+  const { fake, gs } = appsScript({ sheets: { "Orders 2026": ORDERS }, active: { sheet: "Orders 2026", row: 4, col: 2 } });
+  const functions = { getActiveCellContext: gs.getActiveCellContext, writeValue: gs.writeValue, loadConfig: gs.loadConfig, saveConfig: gs.saveConfig, loadUsage: gs.loadUsage, saveUsage: gs.saveUsage };
+  const server = fakeGoogleRun(functions, { deferred: true });
+  const root = new Node("div");
+  const localStorage = storageOf({ actleSheetsConfig: CONFIG });
+  const sandbox = sandboxed(path.join(ADDIN, "pane.js"), { google: { script: { run: server.run } }, document: fakeDocument({ pane: root }), localStorage, ActleSheets: sheets, setInterval: () => {} });
+  const html = fs.readFileSync(path.join(ADDIN, "apps-script", "Sidebar.html"), "utf8");
+  vm.runInContext(/<script>([\s\S]*?)<\/script>/.exec(html)[1], sandbox, { filename: "Sidebar.html" });
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const step = async () => { await settle(); const calls = server.calls.splice(0); server.flush(); await settle(); return calls; };
+  assert.deepEqual(await step(), [["loadConfig"]]);
+  assert.deepEqual(await step(), [["loadUsage"]], "the counts are read before the selection");
+  assert.deepEqual(await step(), [["getActiveCellContext", 5000]]);
+  assert.equal(root.find((n) => n.className === "hint usage-note").textContent, "Counts are kept with your Google account, in this script's user properties.");
+  const clicked = root.all((n) => n.className === "completion")[0].click();
+  assert.deepEqual(await step(), [["writeValue", { sheet: "Orders 2026", address: "B4" }, "Acme Logistics GmbH"]]);
+  await clicked;
+  assert.deepEqual(await step(), [["loadUsage"]], "a save reads what is stored first, so another sidebar's uses are kept");
+  assert.deepEqual((await step()).map(([name]) => name), ["saveUsage"]);
+  const kept = sheets.usage.parseUsage(gs.loadUsage());
+  assert.equal(kept.ok, true);
+  assert.deepEqual(plain(Object.values(kept.usage.days)), [[["completion", "vocabulary", "customers", 1, 16]]]);
+  assert.equal(localStorage.getItem("actleSheetsUsage"), null, "not in the sidebar's browser storage");
+  assert.equal([...fake.props.keys()].some((key) => key.startsWith("actleSheetsUsage")), false, "nor with the spreadsheet");
+  // The next sidebar, in another browser of the same person, goes on with the same counts.
+  const again = fakeGoogleRun(functions);
+  const other = new Node("div");
+  const next = sandboxed(path.join(ADDIN, "pane.js"), { google: { script: { run: again.run } }, document: fakeDocument({ pane: other }), localStorage: storageOf({ actleSheetsConfig: CONFIG }), ActleSheets: sheets, setInterval: () => {} });
+  vm.runInContext(/<script>([\s\S]*?)<\/script>/.exec(html)[1], next, { filename: "Sidebar.html" });
+  await settle();
+  assert.match(other.find((n) => n.className === "usage-totals").textContent, /^Today: 1 use, 16 keystrokes saved\./);
+});
+
+test("the Excel task pane keeps the counts in this browser's localStorage, the one per-person store a task pane has", async () => {
+  const { host, root, bridge, sandbox } = excelPane({ sheets: { "Orders 2026": ORDERS }, active: { sheet: "Orders 2026", address: "B4" } });
+  sandbox.localStorage.setItem("actleSheetsConfig", CONFIG);
+  const pane = bridge.start({ host: host.Office.HostType.Excel });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(root.find((n) => n.className === "hint usage-note").textContent, "Counts are kept in this browser.");
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click();
+  await pane.saving();
+  const kept = sheets.usage.parseUsage(sandbox.localStorage.getItem("actleSheetsUsage"));
+  assert.deepEqual(plain(Object.values(kept.usage.days)), [[["completion", "vocabulary", "customers", 1, 16]]]);
+  assert.equal(host.settings.has("actleSheetsUsage"), false, "never in the workbook's settings");
+});

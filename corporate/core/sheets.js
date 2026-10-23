@@ -5,11 +5,13 @@
 // other columns complete from their own values, notes columns from recurring
 // sentences; a `/` trigger inserts an approved formula or block of rows. Pure:
 // reading cells and writing them back is the Excel / Google Sheets add-in's job.
+// `usage` (core/sheets-usage.js) counts what the add-in writes, for the desk.
 "use strict";
 
 const { expander } = require("./personal.js");
 const { normalize, splitSentences } = require("./phrase-miner.js");
 const policyPattern = require("./policy-pattern.js");
+const usage = require("./sheets-usage.js");
 // Column rules see a header or sheet name, never more than this.
 const NAME_MAX = 200;
 
@@ -495,9 +497,17 @@ function parseConfig(input) {
   return { config, warnings };
 }
 
-/** Organisation items a usage report may name: the block and formula triggers. */
+/**
+ * Organisation items a usage report may name, under the metric kind the
+ * desk gives extle's imported uses ("sheets"): the vocabularies by name, then
+ * the block and formula triggers. A name the add-in does not keep with its
+ * counts (usage.keepsName: longer than 40 characters, or with a control
+ * character) is left out, since no use could ever name it.
+ */
 function organizationItems(section) {
-  return (section && Array.isArray(section.blocks) ? section.blocks : []).map((block) => ({ trigger: block.trigger, kind: "block" }));
+  const names = section && isObject(section.vocabularies) ? Object.keys(section.vocabularies) : [];
+  const triggers = (section && Array.isArray(section.blocks) ? section.blocks : []).map((block) => block.trigger);
+  return names.concat(triggers).filter(usage.keepsName).map((trigger) => ({ trigger, kind: "sheets" }));
 }
 
-module.exports = { KINDS, DEFAULTS, normalizeSheets, columnFor, createColumnProfile, complete, blockFor, importCsv, formulaLike, suggest, checkColumn, exportConfig, parseConfig, organizationItems };
+module.exports = { KINDS, DEFAULTS, normalizeSheets, columnFor, createColumnProfile, complete, blockFor, importCsv, formulaLike, suggest, checkColumn, exportConfig, parseConfig, organizationItems, usage };

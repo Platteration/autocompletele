@@ -1,14 +1,16 @@
 // extle for Google Sheets: the server side of the sidebar. Reads the
 // active cell's displayed text, its column's header from row 1 and the
 // column's displayed values; writes completions as text so a date or a code
-// is not reinterpreted. The configuration lives in the document's properties.
+// is not reinterpreted. The configuration lives in the document's properties,
+// the person's usage counts in their own user properties for this script.
 // In a strict column it replaces aliases cell by cell and turns the
 // spreadsheet's own list validation on or off.
 // Driven with fake services in corporate/sheets-addin/test/hosts.test.js;
 // not run against Google here (no account in the build environment), see README.md.
 
 var CONFIG_KEY = "actleSheetsConfig";
-var CHUNK_BYTES = 8192;   // a document property holds at most 9 KB, measured in bytes, so chunks are cut by UTF-8 size
+var USAGE_KEY = "actleSheetsUsage";
+var CHUNK_BYTES = 8192;   // a property value holds at most 9 KB, measured in bytes, so chunks are cut by UTF-8 size
 var MAX_ROWS_CAP = 20000; // the sidebar asks for 5000; an odd client cannot ask for the whole sheet
 
 function onOpen() {
@@ -181,13 +183,12 @@ function chunkByBytes(text, limit) {
   return chunks;
 }
 
-/** The saved configuration, or "" when there is none or a chunk is missing (the sidebar then uses the browser's copy). */
-function loadConfig() {
-  var properties = PropertiesService.getDocumentProperties();
-  var count = Number(properties.getProperty(CONFIG_KEY + ".count")) || 0;
+/** The text kept under `key` in pieces, or "" when there is none or a piece is missing. */
+function loadChunks(properties, key) {
+  var count = Number(properties.getProperty(key + ".count")) || 0;
   var parts = [];
   for (var i = 0; i < count; i++) {
-    var part = properties.getProperty(CONFIG_KEY + "." + i);
+    var part = properties.getProperty(key + "." + i);
     if (part === null || part === undefined) return "";
     parts.push(part);
   }
@@ -195,17 +196,41 @@ function loadConfig() {
 }
 
 /**
- * Keep the configuration in the document's properties. The count is set to 0
- * first and to the real number last, so a write that fails halfway leaves no
- * configuration rather than a mix of old and new chunks.
+ * Keep text under `key` in pieces of at most CHUNK_BYTES. The count is set
+ * to 0 first and to the real number last, so a write that fails halfway
+ * leaves nothing rather than a mix of old and new pieces.
  */
-function saveConfig(text) {
-  var properties = PropertiesService.getDocumentProperties();
+function saveChunks(properties, key, text) {
   var value = String(text || "");
-  var previous = Number(properties.getProperty(CONFIG_KEY + ".count")) || 0;
+  var previous = Number(properties.getProperty(key + ".count")) || 0;
   var chunks = value ? chunkByBytes(value, CHUNK_BYTES) : [];
-  properties.setProperty(CONFIG_KEY + ".count", "0");
-  for (var i = 0; i < chunks.length; i++) properties.setProperty(CONFIG_KEY + "." + i, chunks[i]);
-  for (var j = chunks.length; j < previous; j++) properties.deleteProperty(CONFIG_KEY + "." + j);
-  properties.setProperty(CONFIG_KEY + ".count", String(chunks.length));
+  properties.setProperty(key + ".count", "0");
+  for (var i = 0; i < chunks.length; i++) properties.setProperty(key + "." + i, chunks[i]);
+  for (var j = chunks.length; j < previous; j++) properties.deleteProperty(key + "." + j);
+  properties.setProperty(key + ".count", String(chunks.length));
+}
+
+/** The saved configuration, or "" when there is none or a chunk is missing (the sidebar then uses the browser's copy). */
+function loadConfig() {
+  return loadChunks(PropertiesService.getDocumentProperties(), CONFIG_KEY);
+}
+
+/** Keep the configuration in the document's properties (see saveChunks). */
+function saveConfig(text) {
+  saveChunks(PropertiesService.getDocumentProperties(), CONFIG_KEY, text);
+}
+
+/**
+ * The usage counts the sidebar keeps for this person: their user properties,
+ * which only they can read, and only through this script. "" when there are
+ * none, after a save that failed halfway, or when a piece is missing (the
+ * sidebar then starts counting again).
+ */
+function loadUsage() {
+  return loadChunks(PropertiesService.getUserProperties(), USAGE_KEY);
+}
+
+/** Keep the usage text in the person's user properties, in pieces like the configuration. */
+function saveUsage(text) {
+  saveChunks(PropertiesService.getUserProperties(), USAGE_KEY, text);
 }

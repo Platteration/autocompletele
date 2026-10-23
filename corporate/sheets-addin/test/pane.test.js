@@ -1013,3 +1013,268 @@ test("the replacement's question ends with what the bridge says its host cannot 
   await pane.ui.strict.button("Replace 2 cells with the list's spelling").click();
   assert.equal(pane.ui.strict.find((n) => n.className === "confirm").textContent, 'Write the list\'s spelling into 2 cells of column C on "Budget", as listed above? Each cell is read again first; one that changed since the check, or that holds a formula, is left as it is. A cell filled by an array formula in another cell is not recognised.');
 });
+
+// Usage counts: what the pane counts, where it keeps them, and the hand-over text.
+const USAGE = "actleSheetsUsage";
+const TODAY = () => new Date(2026, 9, 23, 10);
+const counters = (pane) => plain(pane.usage.state.days["2026-10-23"] || []);
+const stored = (storage) => JSON.parse(storage.getItem(USAGE));
+// Type into the pane's box, then choose the first completion: a written cell is not offered its own value again.
+async function completeWith(pane, text) {
+  pane.ui.input.value = text;
+  await pane.ui.input.fire("input");
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click();
+}
+
+test("the pane counts each completion and block it writes, with the vocabulary's name or the trigger, and nothing for a write that was refused, failed or only proposed", async () => {
+  const storage = storageOf({ [KEY]: ORGANIZATION });
+  const host = strictHost(plain(CUSTOMER_CELL), { column: columnOf(Object.assign(plain(CUSTOMER_CELL), { rows: [2, 3, 5] })) });
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage, now: TODAY });
+  await pane.start();
+  assert.equal(pane.ui.usageNote.textContent, "Counts are kept in this browser.");
+  assert.equal(pane.ui.usageTotals.textContent, "Today: 0 uses, 0 keystrokes saved. Last 7 days: 0 uses, 0 keystrokes saved.");
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click(); // "acm" -> "Acme Logistics GmbH"
+  assert.deepEqual(counters(pane), [["completion", "vocabulary", "customers", 1, 16]], "19 graphemes written, 3 typed");
+  await pane.saving();
+  assert.deepEqual(stored(storage).days, { "2026-10-23": [["completion", "vocabulary", "customers", 1, 16]] }, "kept in this browser after each use");
+  await host.select({ sheet: "Orders 2026", address: "D4", text: "Driver was late. Prom", header: "Delivery notes", values: NOTES, clipped: false });
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click();
+  await host.select({ sheet: "Orders 2026", address: "E4", text: "jo", header: "Driver", values: ["Jonas Berg", "Jonas Berg", "Mia Lund"], clipped: false });
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click();
+  await host.select({ sheet: "Budget", address: "A10", text: "/exp", header: "Amount", values: [], clipped: false });
+  await pane.ui.block.button("Insert Expense rows (2 rows x 3 columns)").click();
+  pane.ui.input.value = "/vat";
+  await pane.ui.input.fire("input");
+  await pane.ui.block.button("Insert VAT at 19% (formula =ROUND(B2*0.19, 2))").click();
+  await host.select({ sheet: "Budget", address: "C4", text: "cc-2", header: "Cost centre", values: COST_CELL.values, rows: COST_CELL.rows, clipped: false });
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click(); // a strict column's completion is a vocabulary's
+  assert.deepEqual(counters(pane), [
+    ["completion", "vocabulary", "customers", 1, 16],
+    ["completion", "notes", "", 1, 17],
+    ["completion", "column", "", 1, 8],
+    ["block", "rows", "/exp", 1, 23],
+    ["block", "formula", "/vat", 1, 14],
+    ["completion", "vocabulary", "costCentres", 1, 8],
+  ], "the notes sentence and the column's own value carry no name; rows count a tab or new line per cell move");
+  const before = JSON.stringify(counters(pane));
+  // Nothing is counted for: the strict column's check, replacement and list validation,
+  await pane.ui.strict.button("Check this column").click();
+  await pane.ui.strict.button("Replace 2 cells with the list's spelling").click();
+  await pane.ui.strict.button("Replace 2 cells").click();
+  await pane.ui.strict.button("Turn on list validation for this column").click();
+  await pane.ui.strict.button("Turn it on").click();
+  assert.ok(host.calls.some(([what]) => what === "replace") && host.calls.some(([what]) => what === "validate"));
+  // a completion the pane refuses to write, a write the host refuses, and a block that fails,
+  await host.select({ sheet: "Orders 2026", address: "D5", text: "+49 reached. Prom", header: "Delivery notes", values: NOTES, clipped: false });
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click();
+  assert.match(pane.ui.message.textContent, /^Not written to D5/);
+  host.bridge.writeValue = async () => { throw new Error("read only"); };
+  await host.select(plain(CUSTOMER_CELL));
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click();
+  assert.equal(pane.ui.message.textContent, "Could not write to B4: read only");
+  host.bridge.writeFormula = async () => { throw new Error("protected"); };
+  await host.select({ sheet: "Budget", address: "A11", text: "/vat", header: "Amount", values: [], clipped: false });
+  await pane.ui.block.button("Insert VAT at 19% (formula =ROUND(B2*0.19, 2))").click();
+  assert.match(pane.ui.message.textContent, /^Could not insert VAT at 19% at A11: protected/);
+  assert.equal(JSON.stringify(counters(pane)), before, "nothing more was counted");
+  await pane.saving();
+  assert.equal(JSON.stringify(stored(storage).days["2026-10-23"]), before);
+  assert.equal(pane.ui.usageTotals.textContent, "Today: 6 uses, 86 keystrokes saved. Last 7 days: 6 uses, 86 keystrokes saved.");
+});
+
+test("while the document's configuration is in use a use is counted without a name, and only once it is written", async () => {
+  const carried = JSON.stringify({ vocabularies: { "Client list from Q3 deal": ["Acme Logistics GmbH"] }, columns: [{ match: { header: "^customer" }, vocabulary: "Client list from Q3 deal" }], blocks: [{ trigger: "/total", formula: "=SUM(A1:A9)" }] });
+  const host = fakeHost(plain(CUSTOMER_CELL));
+  host.config(carried);
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }), now: TODAY });
+  await pane.start();
+  await pane.ui.origin.button("Use the document's configuration").click();
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click();
+  await host.select({ sheet: "Orders 2026", address: "A3", text: "/total", header: "Order", values: [], clipped: false });
+  await pane.ui.block.button("Insert /total (formula =SUM(A1:A9))").click();
+  await pane.ui.block.button("Cancel").click();
+  await pane.ui.block.button("Insert /total (formula =SUM(A1:A9))").click();
+  assert.deepEqual(counters(pane), [["completion", "document", "", 1, 16]], "Insert and Cancel count nothing");
+  await pane.ui.block.button("Write the formula").click();
+  assert.deepEqual(counters(pane), [["completion", "document", "", 1, 16], ["block", "document", "", 1, 5]]);
+  assert.equal(JSON.stringify(pane.usage.state).includes("Q3"), false, "the document's vocabulary name is kept nowhere");
+  assert.equal(JSON.stringify(pane.usage.state).includes("/total"), false);
+  await pane.ui.origin.button("Stop using it").click();
+  await host.select(plain(CUSTOMER_CELL));
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click();
+  assert.deepEqual(counters(pane)[2], ["completion", "vocabulary", "customers", 1, 16], "the organisation's again, with its name");
+});
+
+test("counts continue from a stored text; a browser that cannot keep them, refuses to read them or fails a save is said, and counting goes on for the session", async () => {
+  const earlier = sheets.usage.createUsage({ random: () => new Uint8Array(16).fill(0x11) });
+  sheets.usage.record(earlier, { kind: "block", source: "formula", name: "/vat", inserted: "=1+1", typed: "/vat" }, "2026-10-20");
+  const storage = storageOf({ [KEY]: ORGANIZATION, [USAGE]: sheets.usage.serializeUsage(earlier) });
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: fakeHost(plain(CUSTOMER_CELL)).bridge, core: sheets, storage, now: TODAY });
+  await pane.start();
+  assert.equal(pane.usage.state.instance, "11".repeat(16), "the same instance goes on counting");
+  assert.equal(pane.ui.usageTotals.textContent, "Today: 0 uses, 0 keystrokes saved. Last 7 days: 1 use, 0 keystrokes saved.");
+  storage.setItem = () => { throw new Error("QuotaExceededError"); };
+  await completeWith(pane, "acm");
+  await pane.saving();
+  assert.equal(pane.ui.usageNote.textContent, "The latest counts could not be kept (QuotaExceededError); they stay for this session, and the next use tries again.");
+  assert.equal(pane.ui.usageTotals.textContent, "Today: 1 use, 16 keystrokes saved. Last 7 days: 2 uses, 16 keystrokes saved.", "still counted");
+  storage.setItem = (key, value) => storage.map.set(key, String(value));
+  await completeWith(pane, "acm");
+  await pane.saving();
+  assert.equal(pane.ui.usageNote.textContent, "Counts are kept in this browser.", "the next save that works clears the note");
+  assert.deepEqual(stored(storage).days["2026-10-23"], [["completion", "vocabulary", "customers", 2, 32]], "with everything counted since");
+  // No storage at all.
+  const none = Pane().createPane({ document, root: new Node("div"), bridge: fakeHost(plain(CUSTOMER_CELL)).bridge, core: sheets, storage: null, now: TODAY });
+  await none.start();
+  assert.equal(none.ui.usageNote.textContent, "Counts are kept for this session only: this browser cannot keep them.");
+  await none.ui.completions.all((n) => n.className === "completion")[0].click();
+  assert.equal(none.ui.usageTotals.textContent, "Today: 1 use, 1 keystroke saved. Last 7 days: 1 use, 1 keystroke saved.", "the column's ACME after acm");
+  // A sandbox that refuses to read: nothing is written over what it may hold.
+  const writes = [];
+  const refusing = { getItem: (key) => { if (key === USAGE) throw new Error("SecurityError"); return null; }, setItem: (key, value) => writes.push([key, value]) };
+  const blind = Pane().createPane({ document, root: new Node("div"), bridge: fakeHost(plain(CUSTOMER_CELL)).bridge, core: sheets, storage: refusing, now: TODAY });
+  await blind.start();
+  assert.equal(blind.ui.usageNote.textContent, "Counts are kept for this session only: this browser refused to read them (SecurityError).");
+  await blind.ui.completions.all((n) => n.className === "completion")[0].click();
+  await blind.saving();
+  assert.deepEqual(writes, [], "never written");
+  assert.match(blind.ui.usageTotals.textContent, /^Today: 1 use,/);
+  // A stored text that is not a usage text is replaced, and the pane says so.
+  const broken = storageOf({ [USAGE]: "{\"format\":\"something else\"}" });
+  const fresh = Pane().createPane({ document, root: new Node("div"), bridge: fakeHost(plain(CUSTOMER_CELL)).bridge, core: sheets, storage: broken, now: TODAY });
+  await fresh.start();
+  assert.equal(fresh.ui.usageNote.textContent, "The stored counts could not be read (it is not a usage text from the extle add-in (format extle-usage)), so counting started again. Counts are kept in this browser.");
+  await fresh.ui.completions.all((n) => n.className === "completion")[0].click();
+  await fresh.saving();
+  assert.equal(stored(broken).format, "extle-usage");
+  // An older sheets-core bundle without the usage model: the pane still completes and says why it does not count.
+  const old = Object.assign({}, sheets, { usage: undefined });
+  const older = Pane().createPane({ document, root: new Node("div"), bridge: fakeHost(plain(CUSTOMER_CELL)).bridge, core: old, storage: storageOf(), now: TODAY });
+  await older.start();
+  assert.equal(older.ui.usageNote.textContent, "This copy of the add-in cannot count use: its sheets-core bundle is older than pane.js. Rebuild it with build.js.");
+  assert.equal(older.ui.copyUsage.attrs.disabled, "");
+  await older.ui.completions.all((n) => n.className === "completion")[0].click();
+  assert.equal(older.ui.message.textContent, 'Wrote "ACME" to B4.');
+  await older.copyUsage();
+  assert.equal(older.ui.usageText.value, "");
+});
+
+test("a bridge that keeps the counts gets them instead of the browser, one save at a time, and a bridge that cannot read them is never written", async () => {
+  const saves = [];
+  const host = fakeHost(plain(CUSTOMER_CELL));
+  let kept = "";
+  host.bridge.loadUsage = async () => kept;
+  host.bridge.saveUsage = (text) => new Promise((resolve) => saves.push(() => { kept = text; resolve(); }));
+  host.bridge.usageWhere = "with your Google account, in this script's user properties";
+  const storage = storageOf({ [KEY]: ORGANIZATION });
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage, now: TODAY });
+  await pane.start();
+  assert.equal(pane.ui.usageNote.textContent, "Counts are kept with your Google account, in this script's user properties.");
+  const click = () => completeWith(pane, "acm");
+  await click();
+  await settle();
+  assert.equal(saves.length, 1, "the first save is on its way");
+  await click();
+  await click();
+  await settle();
+  assert.equal(saves.length, 1, "no second save while the first is on its way");
+  saves.shift()();
+  await settle();
+  assert.equal(saves.length, 1, "then one save with both later uses");
+  saves.shift()();
+  await pane.saving();
+  assert.deepEqual(JSON.parse(kept).days["2026-10-23"], [["completion", "vocabulary", "customers", 3, 48]], "the last save holds every use");
+  assert.equal(storage.getItem(USAGE), null, "not in this browser");
+  host.bridge.saveUsage = async () => { throw new Error("Limit exceeded: Properties read/write"); };
+  await click();
+  await pane.saving();
+  assert.equal(pane.ui.usageNote.textContent, "The latest counts could not be kept (Limit exceeded: Properties read/write); they stay for this session, and the next use tries again.");
+  // A bridge whose read fails is not written, so counts it holds are not replaced.
+  const unreadable = fakeHost(plain(CUSTOMER_CELL));
+  const written = [];
+  unreadable.bridge.loadUsage = async () => { throw new Error("Exceeded maximum execution time"); };
+  unreadable.bridge.saveUsage = async (text) => written.push(text);
+  const second = Pane().createPane({ document, root: new Node("div"), bridge: unreadable.bridge, core: sheets, storage: storageOf(), now: TODAY });
+  await second.start();
+  assert.equal(second.ui.usageNote.textContent, "Counts are kept for this session only: the stored counts could not be read (Exceeded maximum execution time).");
+  await second.ui.completions.all((n) => n.className === "completion")[0].click();
+  await second.saving();
+  assert.deepEqual(written, []);
+});
+
+test("Copy for the desk puts the usage text, counts only, into a read-only box, selects it and tries the clipboard; the box is the fallback", async () => {
+  const copied = [];
+  const host = fakeHost(plain(CUSTOMER_CELL));
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }), now: TODAY, clipboard: { writeText: async (text) => copied.push(text) } });
+  await pane.start();
+  await pane.ui.completions.all((n) => n.className === "completion")[0].click();
+  assert.equal(pane.ui.usageText.attrs.readonly, "");
+  await pane.ui.copyUsage.click();
+  const text = pane.ui.usageText.value;
+  assert.deepEqual(copied, [text]);
+  assert.equal(pane.ui.usageText.selected, true);
+  assert.equal(document.activeElement, pane.ui.usageText);
+  assert.equal(pane.ui.usageStatus.textContent, "Copied. Now paste it into the extle tab of the actle desktop app, under Usage from the add-in, and choose Import.");
+  assert.equal(pane.ui.usageStatus.attrs.role, "status");
+  const parsed = sheets.usage.parseUsage(text);
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(plain(parsed.usage.days), { "2026-10-23": [["completion", "vocabulary", "customers", 1, 16]] });
+  for (const secret of ["Acme", "acm", "Orders", "B4", "Customer"]) assert.equal(text.includes(secret), false, secret + " is not in the text");
+  for (const clipboard of [{ writeText: async () => { throw new Error("NotAllowedError: Write permission denied."); } }, null, {}]) {
+    const other = Pane().createPane({ document, root: new Node("div"), bridge: fakeHost(plain(CUSTOMER_CELL)).bridge, core: sheets, storage: storageOf(), now: TODAY, clipboard });
+    await other.start();
+    await other.ui.copyUsage.click();
+    assert.equal(other.ui.usageStatus.textContent, "The text is selected in the box: copy it (Ctrl+C, or Cmd+C on a Mac), then paste it into the extle tab of the actle desktop app, under Usage from the add-in, and choose Import.");
+    assert.equal(other.ui.usageText.selected, true);
+    assert.equal(sheets.usage.parseUsage(other.ui.usageText.value).ok, true, "an empty usage text is still one the desk reads");
+  }
+});
+
+test("two panes that share the stored counts (two workbooks in one browser, two sidebars of one person) each add their own uses, and Copy includes what the other saved", async () => {
+  const storage = storageOf({ [KEY]: ORGANIZATION });
+  const open = () => Pane().createPane({ document, root: new Node("div"), bridge: fakeHost(plain(CUSTOMER_CELL)).bridge, core: sheets, storage, now: TODAY });
+  const a = open();
+  const b = open();
+  await a.start();
+  await b.start(); // both read the same, empty, counts
+  await completeWith(a, "acm");
+  await a.saving();
+  await completeWith(b, "acm");
+  await b.saving();
+  await completeWith(a, "acm");
+  await a.saving();
+  assert.deepEqual(stored(storage).days["2026-10-23"], [["completion", "vocabulary", "customers", 3, 48]], "no pane's use is written over");
+  assert.equal(a.ui.usageTotals.textContent, "Today: 3 uses, 48 keystrokes saved. Last 7 days: 3 uses, 48 keystrokes saved.", "the pane shows what the others saved too");
+  await completeWith(b, "acm"); // b's last save is older than a's
+  await b.saving();
+  const writes = [];
+  const setItem = storage.setItem;
+  storage.setItem = (key, value) => { writes.push(key); setItem(key, value); };
+  await a.copyUsage();
+  assert.deepEqual(sheets.usage.parseUsage(a.ui.usageText.value).usage.days["2026-10-23"], [["completion", "vocabulary", "customers", 4, 64]], "Copy reads what is stored first");
+  assert.deepEqual(writes, [], "and writes nothing when this pane has nothing new");
+  // The same through a bridge whose store answers late; a read that fails keeps the uses for the next save.
+  let kept = "";
+  const bridged = () => {
+    const host = fakeHost(plain(CUSTOMER_CELL));
+    host.bridge.loadUsage = async () => { await settle(); if (host.unreadable) throw new Error(host.unreadable); return kept; };
+    host.bridge.saveUsage = async (text) => { await settle(); kept = text; };
+    return { host, pane: Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }), now: TODAY }) };
+  };
+  const one = bridged();
+  const two = bridged();
+  await one.pane.start();
+  await two.pane.start();
+  await completeWith(one.pane, "acm");
+  await one.pane.saving();
+  two.host.unreadable = "Exceeded maximum execution time";
+  await completeWith(two.pane, "acm");
+  await two.pane.saving();
+  assert.equal(two.pane.ui.usageNote.textContent, "The latest counts could not be kept (Exceeded maximum execution time); they stay for this session, and the next use tries again.");
+  assert.deepEqual(JSON.parse(kept).days["2026-10-23"], [["completion", "vocabulary", "customers", 1, 16]], "nothing written when the read failed");
+  two.host.unreadable = "";
+  await completeWith(two.pane, "acm");
+  await two.pane.saving();
+  assert.deepEqual(JSON.parse(kept).days["2026-10-23"], [["completion", "vocabulary", "customers", 3, 48]], "the next save brings the uses that waited, and keeps the other sidebar's");
+  assert.equal(two.pane.ui.usageNote.textContent, "Counts are kept by the spreadsheet's side of the add-in.", "a bridge that does not say where says so");
+});

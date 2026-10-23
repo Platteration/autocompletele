@@ -85,7 +85,8 @@ one policy file and one desk: each reads its own section of the policy
 (invalid parts are warnings, never a refusal; layers merge lists by id),
 registers its tab, popovers, tray and palette entries through
 `desktop/apps/`, and counts what it inserts in the same statistics and usage
-reports (metric kinds `reply`, `form`, `guard`, `notes`). A typed trigger is
+reports (metric kinds `reply`, `form`, `guard`, `notes`, and `sheets` for the uses
+the extle add-in hands back). A typed trigger is
 one namespace across the library, document sets, forms records and notes
 documents; a shared trigger is a warning and only the first owner (in that
 order) can be typed.
@@ -170,8 +171,25 @@ browser or erased by saving an empty Settings box. A formula or rows from it are
 written only after a confirmation that shows the formula, or the rows and the range
 they replace. Never stored or sent: cell
 contents, what is typed in the pane or in "Try it". No data leaves the spreadsheet
-(the Excel pane loads Office.js from Microsoft's CDN; nothing else is fetched). No
-metrics are recorded for extle, because the desk never inserts text for it.
+(the Excel pane loads Office.js from Microsoft's CDN; nothing else is fetched).
+
+Usage: the pane counts each completion and block it writes into a cell (nothing for
+a write that was refused, failed or only proposed, nor for a column check, a
+replacement or list validation), per day: how many and the keystrokes saved, with
+the vocabulary's name or the trigger when it comes from the organisation's copy in
+the browser; while a document's own configuration is in use, without a name. It
+keeps 120 days, 12 names a day and names of up to 40 characters (a longer one, or one
+with a control character or an emoji or another character outside the Basic
+Multilingual Plane, is counted without it). The counts are kept
+in the browser (Excel) or in the person's own Apps Script user properties (Google),
+never with the document. The add-in cannot reach the desk, so its Usage section
+gives a text the person copies and pastes into the desk's extle tab; each use not
+imported before becomes a metrics entry of kind `sheets` (application `extle`) at
+noon of its day. The entry is named, as an organisation item, only when this policy's
+`sheets` section defines the vocabulary or trigger; otherwise it counts in the
+person's own total. Days after today, days older than `retention.metricsDays` and
+uses past 20,000 in one import are not imported. The audit gets
+`sheets-usage-imported` with counts only.
 
 ## cactle: CRM and ticket forms
 
@@ -283,8 +301,8 @@ given, and `keygen` refuses to overwrite an existing key.
 A person exports a report from the dashboard (Overview, **Usage report…**),
 after a preview of everything in it, and hands it to the administrator. A
 report holds totals per period, the use of shortcuts, keyword rules and
-document sets the organisation defined, and one total for the person's own
-shortcuts. It never contains typed or inserted text, the names of a person's
+document sets the organisation defined (extle's vocabularies and triggers
+included), and one total for the person's own shortcuts. It never contains typed or inserted text, the names of a person's
 own shortcuts, or individual timestamps. A random desk id lets the roll-up
 count a desk once.
 
@@ -293,7 +311,10 @@ node admin/actle-admin.js report reports/*.json --policy org.json --rate 38 --cu
 ```
 
 prints desks, hours saved, estimated value, totals per team, organisation
-shortcuts by use and the ones nobody used, and writes the same as CSV to a
+shortcuts by use and the ones nobody used (an extle vocabulary or trigger as
+`sheets <name>`; a vocabulary and a trigger with the same name share one line;
+a name the add-in does not keep, longer than 40 characters or with a control
+character or an emoji, is never listed, since no use can carry it), and writes the same as CSV to a
 new file (`--csv` never replaces an existing file: name a new one, or delete
 the old one first). An unreadable report is skipped with a warning.
 

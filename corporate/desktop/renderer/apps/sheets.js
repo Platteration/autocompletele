@@ -1,12 +1,15 @@
 // extle: dashboard tab. Shows the policy's vocabularies, column rules
 // and blocks, tries completions against pasted column values through the
-// sheets:complete channel, and exports the section for the add-in. Rebuilt on
-// every change; what was typed into "Try it" is kept across rebuilds.
+// sheets:complete channel, exports the section for the add-in, and imports
+// the usage text the add-in hands over (sheets:importUsage). Rebuilt on every
+// change; what was typed into "Try it", the pasted usage text and the last
+// import's result line are kept across rebuilds.
 "use strict";
 
 (function () {
   window.actleApps = window.actleApps || {};
   const tryState = { header: "", sheet: "", text: "", values: "", result: null };
+  const importState = { text: "", line: "" };
 
   function table(el, headers, rows, empty) {
     const body = el("tbody", {}, rows);
@@ -99,6 +102,45 @@
     section.append(toolbar);
   }
 
+  const count = (n, one, many) => n + " " + (n === 1 ? one : many);
+
+  /** One line for an import's result: what was added, what was there already, and what was refused. */
+  function describeImport(result) {
+    if (!result || !result.ok) return (result && result.error) || "Import failed.";
+    const before = result.alreadyImported ? " " + count(result.alreadyImported, "use was", "uses were") + " imported before." : "";
+    const head = result.added
+      ? "Added " + count(result.added, "use", "uses") + " on " + count(result.days, "day", "days") + " to the statistics." + before
+      : "Nothing new to add." + before;
+    return [head].concat(result.refused || [], result.note ? [result.note] : []).join(" ");
+  }
+
+  function renderUsage(section, helpers, info) {
+    const { api, el } = helpers;
+    section.append(el("h2", { class: "mt", text: "Usage from the add-in" }));
+    section.append(el("p", { class: "hint", text: "The add-in counts the completions and blocks it writes, per day, with the name of the vocabulary or trigger it used. In its Usage section, Copy for the desk gives a text; paste it here and choose Import to add those uses to the statistics and usage reports. Counts only: the text holds no cell text, sheet or file names. Importing the same text again adds nothing; a later text adds what is new." }));
+    const box = el("textarea", { placeholder: "Paste the usage text from the add-in", "aria-label": "Usage text from the add-in" });
+    box.value = importState.text;
+    const run = el("button", { class: "primary", text: "Import" });
+    const line = el("p", { class: "hint", role: "status", text: importState.line });
+    run.addEventListener("click", async () => {
+      importState.text = box.value;
+      let result;
+      try {
+        result = await api.invoke("sheets:importUsage", { text: box.value });
+      } catch (error) {
+        result = { ok: false, error: "Import failed: " + failure(error) };
+      }
+      importState.line = describeImport(result);
+      // An imported text is done with; one that was refused stays to be corrected.
+      if (result && result.ok) importState.text = box.value = "";
+      line.textContent = importState.line;
+    });
+    const last = info.lastImport;
+    section.append(box, el("div", { class: "toolbar" }, [run, el("span", { class: "hint", text: last
+      ? "Last import " + new Date(last.at).toLocaleString() + ": " + count(last.added, "use", "uses") + " added, " + last.alreadyImported + " imported before" + (last.refused ? ", " + last.refused + " not imported" : "") + "."
+      : "Nothing imported yet." })]), line);
+  }
+
   window.actleApps.sheets = {
     async render(section, helpers) {
       const { api, el } = helpers;
@@ -128,6 +170,7 @@
       }
       renderTryIt(section, helpers);
       renderAddin(section, helpers, info);
+      renderUsage(section, helpers, info);
     },
   };
 })();
