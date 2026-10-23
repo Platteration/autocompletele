@@ -35,7 +35,7 @@
         writeRows: function (target, rows) { return call("writeRows", target, rows); },
         writeFormula: function (target, formula) { return call("writeFormula", target, formula); },
         replaceValues: function (target, changes) { return call("replaceValues", target, changes); },
-        // Google documents no limit on the number of values in a list rule, so nothing is refused here; a rule the spreadsheet refuses comes back as an error.
+        // No limit on the number of values in a list rule was found in Google's documentation, so nothing is refused here; a rule the spreadsheet refuses comes back as an error.
         listValidation: {
           apply: function (target, values) { return call("setListValidation", target, values); },
           remove: function (target) { return call("clearListValidation", target); },

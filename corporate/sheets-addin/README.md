@@ -154,7 +154,9 @@ cell text ("Only values from the "costCentres" list.") and:
   cells are skipped. A check writes nothing. Its result stays while the
   selection is in the same column of the same sheet; another column or
   another configuration drops it.
-- **Replace N aliases with the list's spelling** writes the list's value into
+- **Replace N aliases with the list's spelling** (or **Replace N cells with
+  the list's spelling** when some of the cells hold a list value in other
+  capitals or spacing, which is not an alias) writes the list's value into
   exactly the listed cells, and only after a confirmation that names how many
   cells change: the status line says nothing was written yet, the focus moves
   to **Cancel**, and a button left from a dropped question writes nothing.
@@ -164,26 +166,58 @@ cell text ("Only values from the "costCentres" list.") and:
   between that read and the write is not caught. Values not in the list are
   never changed. The cells get the text format (`@`) before the value, like a
   completion.
+- A cell whose value comes from a formula is never replaced, even when the
+  check lists it: the result says "Left 1 cell whose value comes from a
+  formula: C3". Excel: the cell's `formulas` starts with `=` (Office.js gives a
+  cell's value when it has no formula,
+  [Range.formulas](https://learn.microsoft.com/en-us/javascript/api/excel/excel.range#excel-excel-range-formulas-member),
+  so text that starts with `=` is left too), or, where Excel has ExcelApi
+  1.12, `getSpillParentOrNullObject()` finds a dynamic array spilling into
+  it. Google: `getFormulas()` is not
+  empty. A cell filled by an `ARRAYFORMULA` in another cell has no formula of
+  its own, so Google's side cannot tell it from a typed value, and neither can
+  Excel's side tell a spilled cell where ExcelApi 1.12 is missing; writing
+  into such a cell makes the array formula show an error until the value is
+  removed.
+- When a write fails partway, the result says how far it got: "Wrote the
+  list's spelling into 2 cells of column C, then stopped at C7 (...); nothing
+  after it was written." Excel runs the writes as one batch with a trace
+  message after each cell; a failed batch does not run the commands after the
+  failing one, and the error's trace messages name the cells written before
+  it ([OfficeExtension.Error.traceMessages](https://learn.microsoft.com/en-us/javascript/api/office/officeextension.error#office-officeextension-error-tracemessages-member),
+  [trace](https://learn.microsoft.com/en-us/javascript/api/office/officeextension.clientrequestcontext#office-officeextension-clientrequestcontext-trace-member(1))).
+  Google's side writes cell by cell and stops at the first write that
+  throws. The check is then dropped and the column read again. When a
+  bridge throws instead (the sheet is gone, an Excel error without trace
+  messages, a script Google stopped), the pane shows the error and says that
+  cells written before it, if any, keep the list's spelling; it keeps the
+  check and reads the column again, and a retry skips the cells that changed.
 - **Turn on list validation for this column** writes the spreadsheet's own
   list rule on the column from row 2 down, after a confirmation that says
-  any data validation those cells have now is replaced. The spreadsheet then
-  refuses any other value, also when the pane is closed. The rule holds the
-  list's values only, not its aliases.
+  any data validation those cells have now is replaced. A value typed into
+  those cells that is not in the list is then refused, also when the pane is
+  closed. The rule does not change or check the values already in the
+  column (**Check this column** lists them), and in Excel a plain paste is
+  not checked either: Microsoft says validation is triggered only when a
+  value is entered directly or pasted with the Values option
+  ([data validation in Excel add-ins](https://learn.microsoft.com/en-us/office/dev/add-ins/excel/excel-add-ins-data-validation)).
+  The rule holds the list's values only, not its aliases.
   - Excel: `range.dataValidation.clear()`, then a `list` rule with
     `inCellDropDown: true` and the values joined by commas as `source`, and an
     `errorAlert` with `showAlert: true` and `style: "Stop"` (titled extle,
     "Only values from the "costCentres" list."), on rows 2 to 1,048,576.
   - Google: `SpreadsheetApp.newDataValidation().requireValueInList(values,
     true).setAllowInvalid(false)` set with `setDataValidation` on rows 2 to the
-    sheet's last row (`getMaxRows()`); rows added later are not covered. A
-    sheet with no row below the header is refused.
+    sheet's last row as it is when the rule is set (`getMaxRows()`). A sheet
+    with no row below the header is refused.
 - **Remove list validation** clears every data validation rule on the same
   range, not only one set here, after a confirmation that says so.
 - When the configuration in use is the document's own, the questions for a
   replacement and for list validation start with "This list comes from this
-  document's configuration, not your organisation's." Nothing from a strict
-  column is ever written without its confirmation, whichever configuration
-  is in use.
+  document's configuration, not your organisation's." Nothing the strict
+  column's tools write (the replacement, list validation and its removal) is
+  written without its confirmation, whichever configuration is in use. A
+  completion is written when it is clicked, as in any other column.
 
 Limits, and where they come from:
 
@@ -193,26 +227,34 @@ Limits, and where they come from:
   `Office.context.requirements.isSetSupported("ExcelApi", "1.8")`
   ([runtime checks](https://learn.microsoft.com/en-us/office/dev/add-ins/develop/specify-api-requirements-runtime))
   and, where it is missing, offers no list validation and says why. The
-  check and the replacement need ExcelApi 1.1 only.
+  check and the replacement need nothing beyond the manifest's ExcelApi 1.7;
+  the replacement's spill check
+  ([getSpillParentOrNullObject](https://learn.microsoft.com/en-us/javascript/api/excel/excel.range#excel-excel-range-getspillparentornullobject-member(1)))
+  needs ExcelApi 1.12 and is left out where Excel lacks it.
 - An Excel list written into the rule is "a string that contains a
   comma-separated number, Boolean, or date"
   ([ListDataValidation](https://learn.microsoft.com/en-us/javascript/api/excel/excel.listdatavalidation)),
   so a value with a comma in it cannot be in it: the pane says so and offers
   no list validation for that list. The Office.js reference gives no length
-  limit. Excel's own Source box takes 255 characters, and an over-long list
-  is reported to be removed when the workbook is reopened (reports on
-  Microsoft Q&A and the limit enforced by .xlsx libraries such as EPPlus and
-  DevExpress, not a Microsoft reference); the task pane refuses a list longer
-  than 255 characters with its commas, with the length in the message.
+  limit. Microsoft's VBA reference for the same list rule says its
+  `Formula1`, a comma-delimited list of values, "must not exceed 255
+  characters"
+  ([Validation.Add](https://learn.microsoft.com/en-us/office/vba/api/excel.validation.add));
+  that is VBA, not Office.js. An over-long list is also reported to be
+  removed when the workbook is reopened (Microsoft Q&A, and .xlsx libraries
+  such as EPPlus and DevExpress enforce 255). The task pane refuses a list
+  longer than 255 characters with its commas, with the length in the
+  message.
 - `dataValidation.clear()` also clears validation a person added by hand
   ([data validation in Excel add-ins](https://learn.microsoft.com/en-us/office/dev/add-ins/excel/excel-add-ins-data-validation)),
   and only the `stop` alert style prevents an invalid entry (same page).
 - A worksheet has 1,048,576 rows
   ([Excel specifications and limits](https://support.microsoft.com/en-us/office/excel-specifications-and-limits-1672b34d-7043-467e-8e27-269d656771c3)).
-- Google documents no limit on the number of values in a list rule: the
-  Sheets API says a `ONE_OF_LIST` condition "supports an arbitrary number of
-  values" ([BooleanCondition](https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/other#BooleanCondition)).
-  The sidebar refuses nothing for size; a rule the spreadsheet refuses comes
+- No limit on the number of values in a list rule was found in Google's
+  documentation; the Sheets API says a `ONE_OF_LIST` condition "supports an
+  arbitrary number of values" ([BooleanCondition](https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/other#BooleanCondition)),
+  and the Apps Script `requireValueInList` page was not read here (see "Not
+  verified here"). The sidebar refuses nothing for size; a rule the spreadsheet refuses comes
   back as "Could not turn on list validation for column C: ..." with
   Google's message. Builder and range calls:
   [DataValidationBuilder](https://developers.google.com/apps-script/reference/spreadsheet/data-validation-builder),
@@ -252,9 +294,12 @@ loads Office.js from Microsoft's CDN; nothing else is fetched.
   configuration wait for the confirmation described above; the
   organisation's are written on **Insert**.
 - In a strict column, the list's spelling replaces an alias as text (`@`),
-  cell by cell, only in the cells the confirmed check listed and only where
-  the text is still what the check read; list validation is a rule on the
-  column's cells, not a value. Both wait for a confirmation.
+  cell by cell, only in the cells the confirmed check listed, only where the
+  text is still what the check read, and never in a cell whose value comes
+  from a formula (an `ARRAYFORMULA`'s result in Google, and a spilled result
+  in an Excel without ExcelApi 1.12, are not recognised, see above); list
+  validation is a rule on the column's cells, not a value. Both wait for a
+  confirmation.
 
 ## Excel: sideload and deploy
 
@@ -322,10 +367,15 @@ and aliases ignored), used only on request, its formulas and rows confirmed
 (including a trigger the organisation also defines, the range rows replace,
 the status line and the focus), never copied into the browser, never erased
 by an empty Save; a strict column (completions from the list only, the
-check's lists, the replacement with its confirmation, focus, a stale button
-and a cell that changed, list validation on and off, a list the host cannot
-take, a host without the API, a host error, a document's strict rule) and the
-full-width formula guard.
+check's lists and their cap, the header cell, "first rows only", the
+replacement with its confirmation, focus, stale buttons from another column
+or a dropped question, a cell that changed, cells a formula fills, a write
+that stopped, the re-read after it, the label for aliases or other
+spellings, list validation on and off, a list the host cannot take, a host
+without the API, a host error, a document's strict rule, and a question or
+check from the document's configuration after Stop using it or Save while
+the organisation's makes the same column strict) and the full-width formula
+guard.
 `hosts.test.js` evaluates `taskpane.js` against a fake Excel workbook behind
 the Office.js objects it touches (used range at row 1 and lower, header-only
 and empty sheets, the 5,000-row clip, the order of number format and value,
@@ -336,7 +386,9 @@ missing piece) and the inline script of
 `Sidebar.html` against a deferred `google.script.run` (the spreadsheet's
 configuration reaching the pane as an offer, the poll guard, a failure
 handler becoming an error), and both bridges' replacement (a cell that
-changed is skipped), list rule, clearing, the Excel limits (255 characters,
+changed is skipped, a formula cell is left, in Excel a spilled cell is left
+where ExcelApi 1.12 is there, a protected cell stops the writes with the
+cells written before it), list rule, clearing, the Excel limits (255 characters,
 a comma in a value), the missing ExcelApi 1.8, and a Google sheet with no row
 below the header. `corporate/test/sheets-app.test.js`
 covers the build, the bundle in a sandbox with and without `Object.hasOwn`,
@@ -367,11 +419,22 @@ Google account or a browser:
   whether a locale whose list separator is `;` reads the comma-separated
   `source` the same way, that `isSetSupported("ExcelApi", "1.8")` answers
   as documented on each platform; in Google, that `requireValueInList` with
-  `setAllowInvalid(false)` refuses other values, how large a list Google
-  accepts, and that `clearDataValidations` leaves the cells' values. The
-  fakes' Apps Script `DataValidation` getters follow the reference's names;
-  what `getCriteriaValues()` returns for a list was not read from Google's
-  page.
+  `setAllowInvalid(false)` refuses other values, what it does with a pasted
+  value or a value written by a script, how large a list Google accepts,
+  whether rows inserted or appended later take the rule, and that
+  `clearDataValidations` leaves the cells' values. The fakes' Apps Script
+  `DataValidation` getters follow the reference's names; what
+  `getCriteriaValues()` returns for a list was not read from Google's page.
+- The replacement's formula and failure handling ran against the fakes only.
+  Not checked in a real host: that Excel's `formulas` starts with `=` for
+  every formula cell and `getSpillParentOrNullObject()` finds a spilled cell
+  on each platform; that a failed Excel batch carries `traceMessages` as the
+  `OfficeExtension.Error` reference describes (without them the pane reports
+  only the error, and cells before the failing one may have been written);
+  that Apps Script's `getFormulas()` gives an empty string for a cell
+  without a formula (the reference page could not be opened here; a search
+  summary of `getFormula()` says so); and whether a protected cell makes
+  `setValue` throw at that cell or later in the script run.
 - Whether Excel or Google Sheets evaluates a value that starts with a
   full-width `＝`, `＋`, `－` or `＠`, or with a space before `=`, was not
   checked; the first four are refused anyway, the space is not.

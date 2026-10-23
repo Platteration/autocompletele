@@ -112,7 +112,11 @@ function usedBox(grid) {
 /**
  * An Excel workbook behind the Office.js objects taskpane.js touches.
  * spec: { sheets: { name: [[display text]] }, active: { sheet, address }, settings: {}, failSave: "reason",
- *         apiSets: { ExcelApi: "1.17" } (what isSetSupported answers; ExcelApi 1.17 when not given) }
+ *         apiSets: { ExcelApi: "1.17" } (what isSetSupported answers; ExcelApi 1.17 when not given),
+ *         formulas: { name: { A1: "=..." } } (Range.formulas of those cells; any other cell gives its value, as documented),
+ *         spills: { name: { A1: anchor A1 } } (cells a dynamic array spills into, for getSpillParentOrNullObject),
+ *         protect: { name: [A1] } (a write to one of these cells stops the batch: the commands after it are not run
+ *         and context.sync() rejects with the trace messages run before it, as OfficeExtension.Error documents) }
  * validations: address -> { rule, errorAlert } as Range.dataValidation was last set; clear() deletes the address.
  */
 function fakeExcel(spec) {
@@ -122,23 +126,49 @@ function fakeExcel(spec) {
   for (const [name, rows] of Object.entries(spec.sheets)) grids[name] = rows.map((row) => row.slice());
   let active = Object.assign({}, spec.active);
   const handlers = [];
-  const state = { syncs: 0, loads: [] };
+  const state = { syncs: 0, loads: [], spillLookups: [] };
   const validations = {};
   const apiSets = spec.apiSets || { ExcelApi: "1.17" };
+  // Formulas by sheet, keyed "row,col" (0-based); a cell without one reads as its value.
+  const formulas = {};
+  for (const [name, cells] of Object.entries(spec.formulas || {})) {
+    formulas[name] = new Map(Object.entries(cells).map(([a1, formula]) => { const at = parseA1(a1); return [at.row + "," + at.col, formula]; }));
+  }
+  // The batch since the last sync: once a command fails, the ones after it are not run.
+  const batch = { failed: null, traces: [] };
 
   function range(sheet, grid, r, c, rows, cols) {
     const quoted = /\s/.test(sheet.name) ? "'" + sheet.name + "'" : sheet.name;
     const address = quoted + "!" + colName(c) + (r + 1) + (rows > 1 || cols > 1 ? ":" + colName(c + cols - 1) + (r + rows) : "");
+    const own = formulas[sheet.name] = formulas[sheet.name] || new Map();
     const obj = {
       worksheet: sheet, rowIndex: r, columnIndex: c, rowCount: rows, columnCount: cols, isNullObject: false, address,
       get text() { return Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => cellText(grid, r + i, c + j))); },
       load: (props) => state.loads.push([address, props]),
+      // Range.getSpillParentOrNullObject (ExcelApi 1.12): the anchor of a single cell a dynamic array spills into.
+      getSpillParentOrNullObject: () => {
+        const anchor = rows === 1 && cols === 1 && spec.spills && spec.spills[sheet.name] ? Object.entries(spec.spills[sheet.name]).find(([a1]) => { const at = parseA1(a1); return at.row === r && at.col === c; }) : null;
+        state.spillLookups.push(address);
+        return anchor ? { isNullObject: false, address: anchor[1], load: () => {} } : { isNullObject: true, load: () => {} };
+      },
     };
+    const protectedCell = () => Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => [r + i, c + j])).flat().some(([pr, pc]) => (spec.protect && spec.protect[sheet.name] || []).some((a1) => { const at = parseA1(a1); return at.row === pr && at.col === pc; }));
     for (const prop of ["numberFormat", "values", "formulas"]) {
-      Object.defineProperty(obj, prop, { set(value) {
-        calls.push([prop, address, plain(value)]);
-        if (prop !== "numberFormat") value.forEach((row, i) => row.forEach((cell, j) => { (grid[r + i] = grid[r + i] || [])[c + j] = cell; }));
-      } });
+      Object.defineProperty(obj, prop, {
+        // Only formulas is read back: a cell's formula, or its value when it has none.
+        get: prop !== "formulas" ? undefined : () => Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => (own.has((r + i) + "," + (c + j)) ? own.get((r + i) + "," + (c + j)) : cellText(grid, r + i, c + j)))),
+        set(value) {
+          if (batch.failed) return; // not run: an earlier command of this batch failed
+          if (protectedCell()) { batch.failed = new Error("the cell " + address + " is protected"); return; }
+          calls.push([prop, address, plain(value)]);
+          if (prop === "numberFormat") return;
+          value.forEach((row, i) => row.forEach((cell, j) => {
+            (grid[r + i] = grid[r + i] || [])[c + j] = cell;
+            if (prop === "formulas") own.set((r + i) + "," + (c + j), cell);
+            else own.delete((r + i) + "," + (c + j));
+          }));
+        },
+      });
     }
     // Range.dataValidation (ExcelApi 1.8): clear(), and the rule and errorAlert set as plain objects.
     const validation = { clear: () => { calls.push(["dataValidation.clear", address]); delete validations[address]; } };
@@ -170,7 +200,15 @@ function fakeExcel(spec) {
       getActiveCell: () => { const at = parseA1(active.address); return range(worksheet(active.sheet), grids[active.sheet], at.row, at.col, 1, 1); },
       worksheets: { getItem: worksheet },
     },
-    sync: async () => { state.syncs++; },
+    // OfficeExtension.ClientRequestContext.trace: a message run in order with the batch's commands.
+    trace: (message) => { if (!batch.failed) batch.traces.push(String(message)); },
+    sync: async () => {
+      state.syncs++;
+      const failed = batch.failed;
+      const traces = batch.traces.splice(0);
+      batch.failed = null;
+      if (failed) throw Object.assign(failed, { traceMessages: traces });
+    },
   };
   const Excel = { run: (fn) => Promise.resolve().then(() => fn(context)) };
   const Office = {
@@ -188,13 +226,15 @@ function fakeExcel(spec) {
       addHandlerAsync: (type, handler) => { handlers.push([type, handler]); },
     } },
   };
-  return { Excel, Office, calls, settings, state, grids, handlers, validations, select: (sheet, address) => { active = { sheet, address }; return Promise.all(handlers.map(([, h]) => h())); } };
+  return { Excel, Office, calls, settings, state, grids, handlers, validations, formulas, select: (sheet, address) => { active = { sheet, address }; return Promise.all(handlers.map(([, h]) => h())); } };
 }
 
 /**
  * A Google spreadsheet behind the Apps Script services Code.gs touches.
  * spec: { sheets: { name: [[display text]] }, active: { sheet, row, col } (1-based), properties: {}, limit: bytes per property, failAt: nth setProperty throws,
- *         maxRows: { name: rows } (Sheet.getMaxRows; 1000 or the grid's length when not given), refuseRule: "message" (setDataValidation throws) }
+ *         maxRows: { name: rows } (Sheet.getMaxRows; 1000 or the grid's length when not given), refuseRule: "message" (setDataValidation throws),
+ *         formulas: { name: { A1: "=..." } } (Range.getFormulas of those cells; "" for any other cell),
+ *         protect: { name: [A1] } (setNumberFormat and setValue on one of these cells throw) }
  * validations: name -> { A1: DataValidation } as Range.setDataValidation left them; clearDataValidations() deletes the A1 key.
  */
 function fakeAppsScript(spec) {
@@ -207,21 +247,31 @@ function fakeAppsScript(spec) {
   const ui = { menus: [], sidebars: [] };
   const validations = {};
   let sets = 0;
+  // Formulas by sheet, keyed by single-cell A1.
+  const formulas = {};
+  for (const [name, cells] of Object.entries(spec.formulas || {})) formulas[name] = new Map(Object.entries(cells));
 
   function rangeOf(name, row, col, rows, cols) {
     const grid = grids[name];
     const a1 = colName(col - 1) + row + (rows > 1 || cols > 1 ? ":" + colName(col + cols - 2) + (row + rows - 1) : "");
     const text = (r, c) => cellText(grid, r - 1, c - 1);
-    const write = (values) => values.forEach((line, i) => line.forEach((cell, j) => { (grid[row - 1 + i] = grid[row - 1 + i] || [])[col - 1 + j] = cell; }));
+    const own = formulas[name] = formulas[name] || new Map();
+    const at = (r, c) => colName(c - 1) + r;
+    const write = (values) => values.forEach((line, i) => line.forEach((cell, j) => { (grid[row - 1 + i] = grid[row - 1 + i] || [])[col - 1 + j] = cell; own.delete(at(row + i, col + j)); }));
+    const guard = () => {
+      const locked = (spec.protect && spec.protect[name]) || [];
+      for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) if (locked.includes(at(row + i, col + j))) throw new Error(at(row + i, col + j) + " is protected");
+    };
     const self = {
       getRow: () => row, getColumn: () => col, getSheet: () => sheetOf(name), getA1Notation: () => a1,
       getDisplayValue: () => text(row, col),
       getDisplayValues: () => Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => text(row + i, col + j))),
-      setNumberFormat: (format) => { calls.push(["setNumberFormat", a1, format]); return self; },
+      getFormulas: () => Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => own.get(at(row + i, col + j)) || "")),
+      setNumberFormat: (format) => { guard(); calls.push(["setNumberFormat", a1, format]); return self; },
       setNumberFormats: (formats) => { calls.push(["setNumberFormats", a1, plain(formats)]); return self; },
-      setValue: (value) => { calls.push(["setValue", a1, value]); write([[value]]); return self; },
+      setValue: (value) => { guard(); calls.push(["setValue", a1, value]); write([[value]]); return self; },
       setValues: (values) => { calls.push(["setValues", a1, plain(values)]); write(values); return self; },
-      setFormula: (formula) => { calls.push(["setFormula", a1, formula]); return self; },
+      setFormula: (formula) => { calls.push(["setFormula", a1, formula]); own.set(a1, String(formula)); return self; },
       setDataValidation: (rule) => {
         if (spec.refuseRule) throw new Error(spec.refuseRule);
         calls.push(["setDataValidation", a1, rule.describe()]);
@@ -289,7 +339,7 @@ function fakeAppsScript(spec) {
     deleteProperty: (key) => { props.delete(key); calls.push(["deleteProperty", key]); },
   };
   const PropertiesService = { getDocumentProperties: () => properties };
-  return { globals: { SpreadsheetApp, HtmlService, PropertiesService }, calls, props, ui, grids, validations, select: (sheet, row, col) => { active = { sheet, row, col }; } };
+  return { globals: { SpreadsheetApp, HtmlService, PropertiesService }, calls, props, ui, grids, validations, formulas, select: (sheet, row, col) => { active = { sheet, row, col }; } };
 }
 
 /**

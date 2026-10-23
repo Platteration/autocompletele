@@ -16,7 +16,7 @@
 //
 // bridge: { readContext() -> Promise<{sheet, address, text, header, values, rows, clipped}|null>,
 //           writeValue(target, text), writeRows(target, rows), writeFormula(target, formula),
-//           replaceValues({sheet, column}, [{row, from, to}]) -> Promise<{written: [row], skipped: [{row, text}]}>,
+//           replaceValues({sheet, column}, [{row, from, to}]) -> Promise<{written: [row], skipped: [{row, text}], computed: [row], failed?: {row, message}}>,
 //           listValidation: null | { refusal?(values) -> reason|null, apply({sheet, column}, values, message) -> Promise<{range}>,
 //                                    remove({sheet, column}) -> Promise<{range}> },
 //           listValidationMissing: why there is no listValidation (shown as a hint),
@@ -384,8 +384,7 @@
             make("ul", { class: "preview", "aria-label": "Cells not in the list" }, capped(result.unknown.map((cell) => check.letters + cell.row + ": " + quoted(cell.text)), CHECK_ITEMS).map((line) => make("li", { text: line }))),
           );
         }
-        const n = result.fixes.length;
-        if (n && !pending) ui.strict.append(make("div", { class: "actions" }, [button("replace", "primary", "Replace " + n + (n === 1 ? " alias" : " aliases") + " with the list's spelling", () => askReplace(check))]));
+        if (result.fixes.length && !pending) ui.strict.append(make("div", { class: "actions" }, [button("replace", "primary", replaceLabel(result.fixes), () => askReplace(check))]));
       }
       if (pending) {
         const described = { type: "button", "aria-describedby": "actle-strict-question" + (pending.kind === "replace" ? " actle-strict-fixes" : "") };
@@ -407,6 +406,13 @@
         ui.strict.append(make("p", { class: "hint", text: String(bridge.listValidationMissing) }));
       }
       if (refocus && live.strict.has(refocus)) focus(live.strict.get(refocus));
+    }
+
+    /** "Replace 2 aliases with the list's spelling" when every fix is an alias; a value in other capitals or spacing is no alias, so then "Replace 2 cells ...". */
+    function replaceLabel(fixes) {
+      const n = fixes.length;
+      const what = fixes.every((fix) => fix.alias) ? (n === 1 ? "1 alias" : n + " aliases") : cells(n);
+      return "Replace " + what + " with the list's spelling";
     }
 
     function checkSummary(check) {
@@ -453,7 +459,7 @@
       ask({
         kind: "replace", key: check.key, from: "replace", sheet: check.sheet, letters: check.letters, fixes: check.result.fixes,
         notice: "Nothing written yet: confirm the list's spelling for " + cells(n) + " in column " + check.letters + ", or cancel.",
-        question: listOrigin() + "Write the list's spelling into " + cells(n) + " of column " + check.letters + " on " + quoted(check.sheet) + ", as listed above? Each cell is read again first; one that changed since the check is skipped.",
+        question: listOrigin() + "Write the list's spelling into " + cells(n) + " of column " + check.letters + " on " + quoted(check.sheet) + ", as listed above? Each cell is read again first; one that changed since the check, or whose value comes from a formula, is left as it is.",
         confirmText: "Replace " + cells(n),
       });
     }
@@ -465,7 +471,7 @@
       ask({
         kind: "validate", key, from: "validate", sheet: strict.sheet, letters: strict.at.letters, name: strict.name, values,
         notice: "Nothing written yet: confirm list validation for column " + strict.at.letters + ", or cancel.",
-        question: listOrigin() + "Turn on list validation for column " + strict.at.letters + " on " + quoted(strict.sheet) + ", from row 2 down? The spreadsheet will then refuse any value that is not one of the " + values.length + " values of the " + quoted(strict.name) + " list, and data validation those cells have now is replaced.",
+        question: listOrigin() + "Turn on list validation for column " + strict.at.letters + " on " + quoted(strict.sheet) + ", from row 2 down? A value typed into those cells that is not one of the " + values.length + " values of the " + quoted(strict.name) + " list is then refused. Values already in the column stay as they are, and a pasted value may not be checked. Data validation those cells have now is replaced.",
         confirmText: "Turn it on",
       });
     }
@@ -489,10 +495,16 @@
       focus(live.strict.get(pending.from));
     }
 
+    /** What a replacement did: the cells written, where a write stopped, the cells left because a formula gives their value, and those that changed since the check. */
     function replaced(pending, result) {
+      const at = (row) => pending.letters + row;
       const skipped = result.skipped || [];
-      let text = "Wrote the list's spelling into " + cells(result.written.length) + " of column " + pending.letters + ".";
-      if (skipped.length) text += " Skipped " + cells(skipped.length) + " that changed since the check: " + capped(skipped.map((cell) => pending.letters + cell.row + " (now " + quoted(cell.text) + ")"), CHECK_ITEMS).join(", ") + ".";
+      const computed = result.computed || [];
+      const failed = result.failed || null;
+      let text = "Wrote the list's spelling into " + cells(result.written.length) + " of column " + pending.letters;
+      text += failed ? ", then stopped" + (failed.row == null ? "" : " at " + at(failed.row)) + " (" + String(failed.message) + "); nothing after it was written." : ".";
+      if (computed.length) text += " Left " + cells(computed.length) + " whose value comes from a formula: " + capped(computed.map(at), CHECK_ITEMS).join(", ") + ".";
+      if (skipped.length) text += " Skipped " + cells(skipped.length) + " that changed since the check: " + capped(skipped.map((cell) => at(cell.row) + " (now " + quoted(cell.text) + ")"), CHECK_ITEMS).join(", ") + ".";
       return text;
     }
 
@@ -508,14 +520,15 @@
           say(replaced(pending, result));
         } else if (pending.kind === "validate") {
           const result = await bridge.listValidation.apply(target, pending.values, "Only values from the " + quoted(pending.name) + " list.");
-          say("List validation is on for " + result.range + " on " + quoted(pending.sheet) + ": the spreadsheet now refuses values that are not in the " + quoted(pending.name) + " list.");
+          say("List validation is on for " + result.range + " on " + quoted(pending.sheet) + ": a value typed there that is not in the " + quoted(pending.name) + " list is refused. Values already there are not checked; Check this column lists them.");
         } else {
           const result = await bridge.listValidation.remove(target);
           say("Removed the data validation from " + result.range + " on " + quoted(pending.sheet) + ".");
         }
       } catch (error) {
         const what = pending.kind === "replace" ? "write the list's spelling into" : pending.kind === "validate" ? "turn on list validation for" : "remove the data validation from";
-        say("Could not " + what + " column " + pending.letters + ": " + reason(error));
+        // A bridge that throws cannot say how far it got (an Excel error without trace messages, a script stopped by Google).
+        say("Could not " + what + " column " + pending.letters + ": " + reason(error) + (pending.kind === "replace" ? ". Cells written before the error, if any, keep the list's spelling." : ""));
       }
       // The cells changed under the pane: read the selection again so the column's values are current.
       if (pending.kind === "replace") await refresh();

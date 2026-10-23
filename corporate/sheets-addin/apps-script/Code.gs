@@ -87,8 +87,13 @@ function writeFormula(target, formula) {
 
 /**
  * Write the list's spelling into cells of one column, as text. Each cell is
- * read again first; one whose displayed text is no longer what the check read
- * is skipped and returned with its text now. changes: [{ row, from, to }].
+ * read again first. One whose displayed text is no longer what the check read
+ * is skipped and returned with its text now; one that holds a formula is left
+ * as it is and returned in `computed`. A cell whose value comes from an
+ * ARRAYFORMULA in another cell has no formula of its own and is not told
+ * apart (see README.md). A write that throws stops the replacement there: the
+ * cells written before it are returned with `failed`.
+ * changes: [{ row, from, to }].
  */
 function replaceValues(target, changes) {
   var sheet = sheetFor(target);
@@ -96,9 +101,12 @@ function replaceValues(target, changes) {
   var rows = changes.map(function (change) { return Number(change.row); });
   var top = Math.min.apply(null, rows);
   var bottom = Math.max.apply(null, rows);
-  var now = sheet.getRange(column + top + ":" + column + bottom).getDisplayValues();
+  var span = sheet.getRange(column + top + ":" + column + bottom);
+  var now = span.getDisplayValues();
+  var formulas = span.getFormulas();
   var written = [];
   var skipped = [];
+  var computed = [];
   for (var i = 0; i < changes.length; i++) {
     var change = changes[i];
     var text = now[change.row - top][0];
@@ -106,15 +114,23 @@ function replaceValues(target, changes) {
       skipped.push({ row: change.row, text: text });
       continue;
     }
-    var cell = sheet.getRange(column + change.row);
-    cell.setNumberFormat("@");
-    cell.setValue(String(change.to));
+    if (formulas[change.row - top][0] !== "") {
+      computed.push(change.row);
+      continue;
+    }
+    try {
+      var cell = sheet.getRange(column + change.row);
+      cell.setNumberFormat("@");
+      cell.setValue(String(change.to));
+    } catch (error) {
+      return { written: written, skipped: skipped, computed: computed, failed: { row: change.row, message: String((error && error.message) || error) } };
+    }
     written.push(change.row);
   }
-  return { written: written, skipped: skipped };
+  return { written: written, skipped: skipped, computed: computed };
 }
 
-/** The column from row 2 to the sheet's last row, as A1 notation; rows added later are not included. */
+/** The column from row 2 to the sheet's last row as it is now (getMaxRows), as A1 notation. */
 function belowHeader(sheet, column) {
   var last = sheet.getMaxRows();
   if (last < 2) throw new Error("the sheet has no rows below the header");

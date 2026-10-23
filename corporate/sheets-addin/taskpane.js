@@ -14,10 +14,12 @@
   const MAX_ROWS = 5000; // rows of one column read per selection change; more would make every click slow
   const SETTING = "actleSheetsConfig";
   const SHEET_ROWS = 1048576; // rows of a worksheet (Excel's specifications and limits); list validation covers row 2 to here
-  // The longest list written into a validation rule, commas included. Not in the Office.js reference; Excel's
-  // Source box and the libraries that write .xlsx files take 255, and a longer list is reported lost on reopening.
+  // The longest list written into a validation rule, commas included. Not in the Office.js reference; Microsoft's
+  // VBA reference (Validation.Add) limits the same comma-delimited list to 255 characters, the libraries that write
+  // .xlsx files take 255, and a longer list is reported lost on reopening.
   const LIST_SOURCE_MAX = 255;
   const VALIDATION_SET = ["ExcelApi", "1.8"]; // Range.dataValidation
+  const SPILL_SET = ["ExcelApi", "1.12"]; // Range.getSpillParentOrNullObject, for the replacement only
 
   function readContext() {
     return Excel.run(async (context) => {
@@ -91,8 +93,16 @@
 
   /**
    * Write the list's spelling into cells of one column, as text. Each cell is
-   * read again first; one whose text is no longer what the check read is
-   * skipped and returned with its text now. changes: [{ row, from, to }].
+   * read again first. One whose text is no longer what the check read is
+   * skipped and returned with its text now. One whose value comes from a
+   * formula is left as it is and returned in `computed`: its own formula
+   * (Range.formulas gives a cell's value when it has none, so text that
+   * starts with "=" is left too), or, where Excel has ExcelApi 1.12, a
+   * dynamic array spilling into it. The writes go in one batch with a trace
+   * message after each cell; when Excel stops the batch at a cell, the
+   * commands after it are not run and the error's trace messages name the
+   * cells written before it, which are returned with `failed`.
+   * changes: [{ row, from, to }].
    */
   function replaceValues(target, changes) {
     return Excel.run(async (context) => {
@@ -100,23 +110,39 @@
       const top = Math.min(...changes.map((change) => change.row));
       const bottom = Math.max(...changes.map((change) => change.row));
       const now = sheet.getRange(target.column + top + ":" + target.column + bottom);
-      now.load("text");
+      now.load("text, formulas");
+      const spills = Office.context.requirements.isSetSupported(SPILL_SET[0], SPILL_SET[1])
+        ? changes.map((change) => {
+          const parent = sheet.getRange(target.column + change.row).getSpillParentOrNullObject();
+          parent.load("address");
+          return parent;
+        })
+        : null;
       await context.sync();
-      const written = [];
+      const queued = [];
       const skipped = [];
-      for (const change of changes) {
+      const computed = [];
+      changes.forEach((change, i) => {
         const text = now.text[change.row - top][0];
-        if (text !== change.from) {
-          skipped.push({ row: change.row, text });
-          continue;
-        }
+        const formula = now.formulas[change.row - top][0];
+        if (text !== change.from) return skipped.push({ row: change.row, text });
+        if ((typeof formula === "string" && formula.charAt(0) === "=") || (spills && !spills[i].isNullObject)) return computed.push(change.row);
         const cell = sheet.getRange(target.column + change.row);
         cell.numberFormat = [["@"]];
         cell.values = [[String(change.to)]];
-        written.push(change.row);
+        context.trace(String(change.row));
+        queued.push(change.row);
+      });
+      try {
+        await context.sync();
+      } catch (error) {
+        // Without trace messages nothing says how far the batch got; the pane then reports the error as it is.
+        if (!error || !Array.isArray(error.traceMessages)) throw error;
+        const written = queued.filter((row) => error.traceMessages.includes(String(row)));
+        const stopped = queued.find((row) => !written.includes(row));
+        return { written, skipped, computed, failed: { row: stopped == null ? null : stopped, message: String(error.message || error) } };
       }
-      await context.sync();
-      return { written, skipped };
+      return { written: queued, skipped, computed };
     });
   }
 
