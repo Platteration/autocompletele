@@ -320,8 +320,8 @@ function fakeElectron(dataDir) {
   record.app = app;
   record.start = ready;
   class WebContents extends EventEmitter {
-    constructor() { super(); this.sent = []; }
-    send(channel) { this.sent.push(channel); }
+    constructor() { super(); this.sent = []; this.messages = []; }
+    send(channel, payload) { this.sent.push(channel); this.messages.push([channel, payload]); }
     setWindowOpenHandler(fn) { this.openHandler = fn; }
   }
   class BrowserWindow extends EventEmitter {
@@ -547,6 +547,27 @@ test("filing:reveal shows a filed document by its index id and the Sheets export
   assert.deepEqual(await shell.invoke("filing:reveal", sheets.lastExport.path), { ok: true });
   assert.deepEqual(shell.record.revealed, [entry.path, sheets.lastExport.path]);
   assert.deepEqual(await shell.invoke("filing:reveal", path.join(path.dirname(sheets.lastExport.path), "reply.json")), refusal, "another file next to it is not the export");
+});
+
+test("an extle usage import of many uses reaches the dashboard as one metrics change, not one per use, and a later import sends its own", async (t) => {
+  const dataDir = temp("actle-shell-data-");
+  fs.writeFileSync(path.join(dataDir, "policy.json"), "{}");
+  const shell = await shellDesk(dataDir);
+  t.after(shell.quit);
+  const [dashboard] = shell.popovers("index.html");
+  const changes = () => dashboard.webContents.messages.filter(([channel]) => channel === "app:changed").map(([, payload]) => payload);
+  const day = require("../core/metrics.js").dayKey(new Date());
+  const text = (count) => JSON.stringify({ format: "extle-usage", version: 1, instance: "ab".repeat(16), days: { [day]: [["completion", "column", "", count, count * 2]] } });
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+  await tick();
+  const before = changes().length;
+  // Each ledger entry used to send its own { metrics: true }, and each made the dashboard query the whole ledger again.
+  assert.equal((await shell.invoke("app:invoke", { channel: "sheets:importUsage", payload: { text: text(2000) } })).added, 2000);
+  await tick();
+  assert.deepEqual(changes().slice(before), [{ metrics: true, apps: true }, { metrics: true }], "the import's own change, then one for its 2000 ledger entries");
+  assert.equal((await shell.invoke("app:invoke", { channel: "sheets:importUsage", payload: { text: text(2001) } })).added, 1);
+  await tick();
+  assert.deepEqual(changes().slice(before + 2), [{ metrics: true, apps: true }, { metrics: true }], "a later entry is sent again");
 });
 
 test("every window main.js opens keeps its page: navigation is cancelled and window.open denied", async (t) => {

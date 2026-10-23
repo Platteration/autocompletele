@@ -170,8 +170,10 @@ only when the person chooses it, for that session, and is never copied into the
 browser or erased by saving an empty Settings box. A formula or rows from it are
 written only after a confirmation that shows the formula, or the rows and the range
 they replace. Never stored or sent: cell
-contents, what is typed in the pane or in "Try it". No data leaves the spreadsheet
-(the Excel pane loads Office.js from Microsoft's CDN; nothing else is fetched).
+contents, what is typed in the pane or in "Try it". Nothing read from cells or typed
+in the pane is sent anywhere (the Excel pane loads Office.js from Microsoft's CDN;
+nothing else is fetched; the Google sidebar calls only its own script). The usage
+counts below are kept outside the spreadsheet, in the host's own store.
 
 Usage: the pane counts each completion and block it writes into a cell (nothing for
 a write that was refused, failed or only proposed, nor for a column check, a

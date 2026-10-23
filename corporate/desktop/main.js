@@ -652,8 +652,19 @@ function start() {
   openDashboard();
 }
 
+// One { metrics: true } for all the entries recorded in one turn of the event
+// loop: an extle usage import records up to 20,000 at once, and each change
+// makes the dashboard query the whole ledger again.
 function ledgerBroadcast() {
-  assistant.ledger.onRecord(() => broadcast({ metrics: true }));
+  let queued = false;
+  assistant.ledger.onRecord(() => {
+    if (queued) return;
+    queued = true;
+    setImmediate(() => {
+      queued = false;
+      broadcast({ metrics: true });
+    });
+  });
 }
 
 app.on("window-all-closed", () => {

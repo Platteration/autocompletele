@@ -21,6 +21,9 @@ const CONFIG_DATA_ID = "sheets-config"; // only letters and a dash, so the store
 const ADDIN_FOLDER = path.resolve(__dirname, "..", "..", "..", "sheets-addin");
 const IMPORT_MAX = 20000; // uses one import adds; the rest wait for the same text pasted again
 const DAY_MS = 86400000;
+// The add-in keeps 120 days of counts, back from its latest use; a day more covers a clock that differs.
+// What was imported for a day is remembered at least this long, even when the statistics keep fewer days.
+const REMEMBER_DAYS = sheets.usage.LIMITS.days + 1;
 
 /** The parsed section, or an empty one when the host has no policy yet. */
 function sectionOf(policy) {
@@ -54,16 +57,20 @@ const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
 
 /**
  * The counts imported before, per instance, day and counter, as [uses,
- * keystrokes]; days before `cutoff` are dropped, since a text can no longer
- * bring them. Unreadable parts of the file are dropped too.
+ * keystrokes]. A day before `cutoff` is dropped unless `held` (the day keys
+ * the statistics still hold an extle use of) has it: forgotten while its
+ * entries are there, a raised retention would let the same text add them
+ * again. Parts of the file this app would not have written (an instance id
+ * that is not 32 hexadecimal characters, a counter that is not a pair, a
+ * count of 0) are dropped too: hygiene for a file edited by hand.
  */
-function importedSince(raw, cutoff) {
+function importedSince(raw, cutoff, held) {
   const out = {};
   if (!raw || typeof raw !== "object") return out;
   for (const [instance, days] of Object.entries(raw)) {
     if (!/^[0-9a-f]{32}$/.test(instance) || !days || typeof days !== "object") continue;
     for (const [day, list] of Object.entries(days)) {
-      if (!sheets.usage.dateOf(day) || noonOf(day) < cutoff || !list || typeof list !== "object") continue;
+      if (!sheets.usage.dateOf(day) || (noonOf(day) < cutoff && !held.has(day)) || !list || typeof list !== "object") continue;
       for (const [key, pair] of Object.entries(list)) {
         if (!Array.isArray(pair)) continue;
         const uses = Math.max(0, Math.floor(Number(pair[0]) || 0));
@@ -150,7 +157,9 @@ function createApp(host) {
    * day, named with the vocabulary or trigger only when the current policy's
    * sheets section defines it (source organization), else with no name; the
    * counter's keystrokes are spread over its entries. The same text twice
-   * adds nothing, a later text adds the difference, a lower count nothing.
+   * adds nothing, a later text adds the difference, a lower count nothing,
+   * for as long as what was imported for a day is remembered: at least
+   * while the statistics hold an extle use of that day (see forget below).
    * Days after today, days before the history the statistics keep, and uses
    * past IMPORT_MAX are refused, each with a reason. Never throws.
    */
@@ -163,12 +172,17 @@ function createApp(host) {
     const now = host.now();
     const today = metrics.dayKey(new Date(now));
     const cutoff = now - keepDays * DAY_MS;
+    // What was imported for a day is forgotten only once the day is past both the history the statistics keep
+    // and REMEMBER_DAYS, and the statistics hold no extle use of it. Forgotten sooner, the same text could add
+    // the day again after the retention is raised, while its entries are still in the statistics.
+    const forget = now - Math.max(keepDays, REMEMBER_DAYS) * DAY_MS;
     const data = host.appData("sheets");
     let saved;
     let imported;
     try {
       saved = data.load({});
-      imported = importedSince(saved && saved.imported, cutoff);
+      const held = new Set(host.ledger.entries().filter((entry) => entry.kind === "sheets").map((entry) => metrics.dayKey(new Date(entry.at))));
+      imported = importedSince(saved && saved.imported, forget, held);
     } catch (error) {
       return { ok: false, error: "Not imported: could not read what was imported before: " + error.message };
     }

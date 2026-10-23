@@ -524,23 +524,91 @@ test("an import the desk cannot record adds nothing; a ledger that stops partway
   assert.deepEqual([noted.ok, noted.added, noted.note], [true, 1, "The audit line could not be written: audit.jsonl is read-only"]);
 });
 
-test("sheets:importUsage forgets what it imported for days the statistics no longer keep", () => {
-  const dataDir = temp();
-  fs.writeFileSync(path.join(dataDir, "policy.json"), JSON.stringify({ organization: "Org", sheets: SAMPLE_SECTION, retention: { metricsDays: 30 } }));
-  let now = new Date(2026, 9, 21, 12).getTime();
-  const assistant = createAssistant({ dataDir, now: () => now });
-  const record = () => JSON.parse(fs.readFileSync(path.join(dataDir, "apps", "sheets.json"), "utf8")).imported;
-  const text = usageText({ "2026-10-01": [["completion", "column", "", 1, 2]], "2026-10-20": [["completion", "column", "", 1, 2]] });
-  assert.equal(assistant.invoke("sheets:importUsage", { text }).added, 2);
-  assert.deepEqual(Object.keys(record()[INSTANCE]), ["2026-10-01", "2026-10-20"]);
-  now = new Date(2026, 10, 10, 12).getTime(); // 2026-10-01 is now more than 30 days back, 2026-10-20 is not
-  assert.equal(assistant.invoke("sheets:importUsage", { text: usageText({ "2026-11-10": [["completion", "column", "", 1, 2]] }, "cd".repeat(16)) }).added, 1);
-  assert.deepEqual(Object.keys(record()[INSTANCE]), ["2026-10-20"], "the older day is dropped at the next import");
-  now = new Date(2026, 11, 31, 12).getTime(); // every day of the first text is past
-  assistant.invoke("sheets:importUsage", { text: usageText({ "2026-12-31": [["completion", "column", "", 1, 2]] }, "cd".repeat(16)) });
-  assert.deepEqual(Object.keys(record()), ["cd".repeat(16)], "an add-in with no day left is dropped");
-  assert.deepEqual(Object.keys(record()["cd".repeat(16)]), ["2026-12-31"]);
-  fs.rmSync(dataDir, { recursive: true, force: true });
+/**
+ * The extle app on a host with the desk's real ledger, an in-memory apps folder, and a clock and a
+ * retention the test moves. store.pruneMetrics counts days from the real clock, so the statistics
+ * dropping a day at a start is ledger.prune here, on the test's clock.
+ */
+function importDesk(start, metricsDays) {
+  const home = { now: start, metricsDays, files: {} };
+  home.ledger = metrics.createLedger({ now: () => home.now });
+  const [app] = loadApps({
+    policy: () => orgPolicy.parse({ sheets: SAMPLE_SECTION, retention: { metricsDays: home.metricsDays } }),
+    now: () => home.now,
+    audit: () => {},
+    appData: (id) => ({ load: (fallback) => (home.files[id] ? JSON.parse(home.files[id]) : fallback), save: (value) => { home.files[id] = JSON.stringify(value); } }),
+    ledger: home.ledger,
+  }, { ids: ["sheets"] });
+  home.importUsage = (text) => app.ipc["sheets:importUsage"]({ text });
+  home.record = () => JSON.parse(home.files.sheets).imported;
+  home.onDay = (day) => home.ledger.entries().filter((e) => e.kind === "sheets" && e.at === NOON(day)).length;
+  return home;
+}
+
+test("sheets:importUsage remembers a day it imported while a text could bring it again, so a retention raised later never adds it twice, and forgets it after", () => {
+  const home = importDesk(new Date(2026, 9, 21, 12).getTime(), 30);
+  const other = (day) => usageText({ [day]: [["completion", "column", "", 1, 2]] }, "cd".repeat(16));
+  const text = usageText({ "2026-10-01": [["completion", "column", "", 2, 4]], "2026-10-20": [["completion", "column", "", 3, 6]] });
+  assert.equal(home.importUsage(text).added, 5);
+  // 40 days on, with the desk still running: 2026-10-01 is past the 30 days the statistics keep, and is still remembered.
+  home.now = new Date(2026, 10, 10, 12).getTime();
+  assert.equal(home.importUsage(other("2026-11-10")).added, 1);
+  assert.deepEqual(Object.keys(home.record()[INSTANCE]), ["2026-10-01", "2026-10-20"]);
+  // The organisation raises the retention to 90 days: the same text adds nothing.
+  home.metricsDays = 90;
+  assert.deepEqual(home.importUsage(text), { ok: true, added: 0, alreadyImported: 5, days: 0, refused: [], broadcast: { metrics: true, apps: true } });
+  assert.deepEqual([home.onDay("2026-10-01"), home.onDay("2026-10-20")], [2, 3], "not 4 and 6");
+  // Back to 30 days, 111 days on: the statistics drop every day before 2027-01-30.
+  home.metricsDays = 30;
+  home.now = new Date(2027, 2, 1, 12).getTime();
+  home.ledger.prune(30);
+  assert.equal(home.ledger.entries().filter((e) => e.at < NOON("2027-01-30")).length, 0);
+  home.importUsage(other("2027-03-01"));
+  assert.deepEqual(Object.keys(home.record()), ["cd".repeat(16)], "2026-10-01 and 2026-10-20, 151 and 132 days back, are past the 121 days: that add-in has no day left");
+  assert.deepEqual(Object.keys(home.record()["cd".repeat(16)]), ["2026-11-10", "2027-03-01"], "2026-11-10, 111 days back, is kept although the statistics no longer hold it");
+});
+
+test("sheets:importUsage remembers a day while the statistics hold an extle use of it, past every window, and never counts a use twice", () => {
+  const home = importDesk(new Date(2026, 0, 10, 12).getTime(), 200);
+  const text = usageText({ "2026-01-05": [["completion", "column", "", 4, 8]] });
+  const other = (day) => usageText({ [day]: [["completion", "column", "", 1, 2]] }, "cd".repeat(16));
+  assert.equal(home.importUsage(text).added, 4);
+  // 210 days on, with the desk running all that time: the day is past the 200 days and the 121, but its entries are still in the statistics.
+  home.now = new Date(2026, 7, 3, 12).getTime();
+  assert.equal(home.importUsage(other("2026-08-03")).added, 1);
+  assert.deepEqual(Object.keys(home.record()[INSTANCE]), ["2026-01-05"], "kept: the statistics still hold it");
+  // The retention is raised to 400 days: the same text adds nothing.
+  home.metricsDays = 400;
+  assert.deepEqual([home.importUsage(text).added, home.onDay("2026-01-05")], [0, 4]);
+  // Back to 200 days: once the statistics have dropped the day, it is forgotten.
+  home.metricsDays = 200;
+  home.ledger.prune(200);
+  assert.equal(home.onDay("2026-01-05"), 0);
+  home.importUsage(other("2026-08-03"));
+  assert.equal(home.record()[INSTANCE], undefined);
+  // Raised to 400 again, a text that still holds the day adds its uses once more: the statistics hold them once, not twice.
+  home.metricsDays = 400;
+  assert.deepEqual([home.importUsage(text).added, home.onDay("2026-01-05")], [4, 4]);
+});
+
+test("hygiene: parts of apps/sheets.json the app would not have written are dropped at the next import, and the rest still counts", () => {
+  const home = importDesk(new Date(2026, 9, 21, 12).getTime(), 365);
+  const customers = '["completion","vocabulary","customers"]';
+  home.files.sheets = JSON.stringify({
+    lastExport: { at: 1, vocabularies: 2, columns: 3, blocks: 3 },
+    imported: {
+      "NOT-AN-ID": { "2026-10-20": { [customers]: [1, 16] } },
+      [INSTANCE]: {
+        "2026-10-20": { [customers]: [2, 32], '["completion","column",""]': { 0: 3, 1: 6 }, '["block","formula","/vat"]': [0, 5] },
+        "2026-02-30": { [customers]: [1, 16] },
+        "2026-10-19": "not counters",
+      },
+    },
+  });
+  const result = home.importUsage(usageText({ "2026-10-20": [["completion", "vocabulary", "customers", 3, 48], ["completion", "column", "", 3, 6]] }));
+  assert.deepEqual([result.added, result.alreadyImported], [4, 2], "the customers pair still counts; the column's object is not a pair, so its 3 uses are new");
+  assert.deepEqual(home.record(), { [INSTANCE]: { "2026-10-20": { [customers]: [3, 48], '["completion","column",""]': [3, 6] } } });
+  assert.deepEqual(JSON.parse(home.files.sheets).lastExport, { at: 1, vocabularies: 2, columns: 3, blocks: 3 }, "the rest of the file is kept");
 });
 
 test("an imported extle use is an organisation item in the usage report and in actle-admin report when the policy names it, and part of the personal total otherwise", () => {
@@ -632,6 +700,7 @@ test("the dashboard tab imports a pasted usage text, shows the result and the la
   await tab.render(section, helpers, {});
   assert.ok(section.find((n) => n.tagName === "h2" && n.textContent === "Usage from the add-in"));
   assert.match(section.textContent, /per day, with the name of the organisation's vocabulary or trigger, when it has one\./, "a column's own values, a notes sentence and the document's configuration give no name");
+  assert.match(section.textContent, /Importing the same text again adds nothing the statistics already hold; a later text adds what is new\./, "a day the desk has forgotten, and the statistics no longer hold, can be added again");
   assert.match(section.textContent, /Nothing imported yet\./);
   const box = () => section.find((n) => n.tagName === "textarea" && n.attrs["aria-label"] === "Usage text from the add-in");
   const line = () => section.all((n) => n.attrs.role === "status").pop();

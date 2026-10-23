@@ -18,8 +18,9 @@
 // day, counts only) and kept through the bridge's loadUsage/saveUsage where
 // the host has them, else in this browser. A save adds the uses counted since
 // the last one to what is stored, so panes open in other documents keep
-// theirs. "Copy for the desk" hands the counts over as text: the add-in makes
-// no network request.
+// theirs. The add-in contacts no server other than its host's own (in Google
+// Sheets, the script's functions through google.script.run) and cannot reach
+// the desk, so "Copy for the desk" hands the counts over as text.
 //
 // bridge: { readContext() -> Promise<{sheet, address, text, header, values, rows, clipped}|null>,
 //           writeValue(target, text), writeRows(target, rows), writeFormula(target, formula),

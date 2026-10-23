@@ -283,10 +283,14 @@ Limits, and where they come from:
   [Range](https://developers.google.com/apps-script/reference/spreadsheet/range),
   [Sheet.getMaxRows](https://developers.google.com/apps-script/reference/spreadsheet/sheet#getMaxRows()).
 
-No data leaves the spreadsheet: the bundle makes no network request, and
-nothing typed in the pane or read from cells is sent anywhere. The Excel page
-loads Office.js from Microsoft's CDN; nothing else is fetched. The usage counts
-leave only when the person copies them (below), and hold no cell text.
+Nothing typed in the pane or read from cells is sent anywhere, and the
+bundle makes no network request. The Excel page loads Office.js from
+Microsoft's CDN; nothing else is fetched. In Google Sheets the sidebar calls
+the script's own functions in `Code.gs` (`google.script.run`), which run on
+Google's servers; the add-in contacts no other server. The usage counts, which
+hold no cell text, are kept in the host's own store (this browser in Excel,
+the person's user properties for the script in Google Sheets, below), never
+in the spreadsheet, and reach the desk only when the person copies them.
 
 ## What is written
 
@@ -327,11 +331,12 @@ leave only when the person copies them (below), and hold no cell text.
 ## Usage counts for the desk
 
 The pane counts what it writes, so the desk's statistics and the
-organisation's usage reports include spreadsheet work. The add-in makes no
-network request, and an Office page (HTTPS) or Apps Script (Google's servers)
-cannot be assumed to reach the desk, so the counts travel the way the
-configuration does, the other way round: as a text the person copies from the
-pane and pastes into the desk's extle tab. The model is `core/sheets-usage.js`.
+organisation's usage reports include spreadsheet work. The add-in contacts no
+server other than its host's own, and an Office page (HTTPS) or Apps Script
+(Google's servers) cannot be assumed to reach the desk, so the counts travel
+the way the configuration does, the other way round: as a text the person
+copies from the pane and pastes into the desk's extle tab. The model is
+`core/sheets-usage.js`.
 
 What is counted:
 
@@ -384,18 +389,24 @@ names, cell addresses or times of day.
 
 Where the counts are kept:
 
-- Excel: the task pane's `localStorage`, key `actleSheetsUsage`. For state
-  that follows a person from one document to the next, Microsoft's page on
-  persisting add-in state names browser storage, or the add-in's own online
-  service keyed by the signed-in user, which this add-in does not have; the
-  document settings travel with the file, and `OfficeRuntime.storage` belongs
+- Excel: the task pane's `localStorage`, key `actleSheetsUsage`. Microsoft's
+  page on persisting add-in state lists browser storage for data kept across
+  add-in instances. For state kept across documents it recommends another
+  approach, such as single sign-on and the add-in's own online database,
+  which this add-in does not have. The same page says browser storage is
+  partitioned: Chromium-based browsers from version 115 keep it per origin
+  and top-level site, and `Office.context.partitionKey`, where it is defined,
+  is a hash of the top-level window's domain and the add-in's. The page
+  suggests prefixing `localStorage` keys with that key; the pane does not,
+  for the configuration or the counts. The document settings travel with
+  the file, and `OfficeRuntime.storage` belongs
   to the SharedRuntime 1.1 requirement set (custom functions and the shared
   runtime), which this manifest does not declare
   ([persisting add-in state](https://learn.microsoft.com/en-us/office/dev/add-ins/develop/persisting-add-in-state-and-settings),
   [OfficeRuntime.Storage](https://learn.microsoft.com/en-us/javascript/api/office-runtime/officeruntime.storage)).
-  The same page suggests prefixing `localStorage` keys with
-  `Office.context.partitionKey` where it is defined; the pane does not, for
-  the configuration or the counts.
+  Whether task panes in two workbooks share the counts was not checked.
+  Where they do not, each store makes its own instance id, and the desk adds
+  each one's uses on their own.
 - Google Sheets: the person's user properties for this script
   (`PropertiesService.getUserProperties()`), not the sidebar's
   `localStorage`, which may not persist. Only that person can read them, and
@@ -406,12 +417,23 @@ Where the counts are kept:
   are cut into pieces of at most 8,192 UTF-8 bytes with the count written
   last, like the configuration; one value holds 9 KB and one store 500 KB
   ([quotas](https://developers.google.com/apps-script/guides/services/quotas)).
-  A save that fails halfway leaves no counts stored until the pane's next
-  save, which writes them all again; a sidebar opened in between starts
-  with none. No scope was added to `appsscript.json`: whether the Properties
-  service needs one of its own could not be confirmed, since Google's pages
-  could not be opened here. The document properties use the same service
-  under the same manifest; neither has been run against Google.
+  A save that fails halfway leaves no counts stored. If nothing else saves
+  before this pane's next save, that save writes all the pane's counts
+  again. A sidebar opened in between starts with none, and if it saves
+  first, this pane's next save adds only the uses it counted since its last
+  save that worked: the uses stored before the failure are lost from the
+  store, and the desk never gets those it had not imported yet. They are
+  lost, never counted twice. No scope was added to `appsscript.json`:
+  whether the Properties service needs one of its own could not be
+  confirmed, since Google's pages could not be opened here. The document
+  properties use the same service under the same manifest; neither has been
+  run against Google.
+- In Google, a save whose reply is lost after `Code.gs` stored the text
+  (the sidebar is told the call failed although it worked) is tried again
+  with the same uses, so they are stored twice and the desk counts them
+  twice. Whether `google.script.run` can report a failure after the
+  server function finished was not confirmed. `localStorage` is not
+  affected: `setItem` throws only when it did not write.
 - The **Usage** section says where the counts are kept, or that they are
   kept for this session only and why: the browser cannot keep them, or the
   stored counts could not be read, and then nothing is written over them. A
@@ -420,9 +442,10 @@ Where the counts are kept:
   usage text is replaced, and the pane says so. One save runs at a time; uses
   counted while it is on its way go with the next, and the totals shown
   include them meanwhile.
-- Several panes share one store: task panes in two workbooks of one browser,
-  or a person's sidebars in two spreadsheets of the published add-on. A save
-  therefore reads what is stored first and adds only the uses this pane
+- Several panes can share one store: a person's sidebars in two
+  spreadsheets of the published add-on, and task panes in two workbooks
+  when the browser gives them the same storage (not checked, see above). A
+  save therefore reads what is stored first and adds only the uses this pane
   counted since its own last save, and **Copy for the desk** reads the store
   before it writes the text, so it holds what the other panes saved. Where
   nothing readable is stored (a person's first save, or after a save that
@@ -444,15 +467,25 @@ Where the counts are kept:
 Handing them over: **Usage** in the pane shows today's and the last 7 days'
 uses and keystrokes saved. **Copy for the desk** puts the text into the
 read-only box below it, selects it and tries `navigator.clipboard.writeText`.
-An Office or Apps Script frame may refuse that: the clipboard needs the
-frame's `clipboard-write` permission, which Office add-in frames have been
-reported to lack
+An Office or Apps Script frame may refuse that. In Chromium-based browsers
+the write needs the `clipboard-write` permission or a recent click (transient
+user activation), and a frame needs `clipboard-write` allowed by the page
+around it; Firefox and Safari need the recent click and do not support the
+permission
+([MDN: Clipboard API, security considerations](https://developer.mozilla.org/en-US/docs/Web/API/Clipboard_API#security_considerations)).
+**Copy for the desk** saves the counts before it writes, which in Google
+Sheets is a call to the script, so the click may no longer count by then.
+A clipboard write from an Outlook on the web task pane has been reported
+blocked by the frame's permissions policy
 ([office-js issue 1991](https://github.com/OfficeDev/office-js/issues/1991));
-the status line then says to copy the selected text by hand. On the desk,
+nothing was found for Excel or for Apps Script sidebars. The status line then
+says to copy the selected text by hand. On the desk,
 paste it into **Usage from the add-in** on the extle tab and choose
 **Import** (`corporate/desktop/README.md`). Importing the same text again adds
 nothing and a later text adds only what is new, so the pane never needs to be
-reset.
+reset. The desk remembers what it imported for a day until the day is older
+than both its statistics' history and 121 days, and longer while its
+statistics still hold an extle use of that day.
 
 ## Excel: sideload and deploy
 
@@ -633,7 +666,10 @@ Google account or a browser:
   page give as 50,000 for a consumer account and 500,000 for Google
   Workspace (the page itself could not be opened here, and one third-party
   page gives 50,000 for both); how long a `google.script.run` save takes;
-  and whether either frame lets `navigator.clipboard.writeText` through. The
+  whether task panes in two Excel workbooks share one `localStorage`;
+  whether `google.script.run` can report a failure for a save that was
+  stored; and whether either frame lets `navigator.clipboard.writeText`
+  through, before or after the save **Copy for the desk** waits for. The
   pane saves after each counted use (uses counted while a save is on its way
   share the next one), and a save spends 2 + n property reads and 2 + n
   writes, n being the pieces the text takes, plus a delete for each piece a
@@ -643,8 +679,10 @@ Google account or a browser:
 - `manifest.xml` has not been validated by Office or sideloaded; the icons it
   references are not shipped.
 - The pane's layout (`pane.css`), including the document configuration's
-  offer, the formula and rows confirmation, the rows list and the strict
-  column's panel, was not seen
+  offer, the formula and rows confirmation, the rows list, the strict
+  column's panel and the **Usage** section (the totals line, the note,
+  **Copy for the desk** enabled and disabled, the read-only text box filled
+  and selected, and the status line), was not seen
   in any browser, theme or webview; which Office hosts still lack
   `Object.hasOwn` was not checked.
 - The confirmation's focus and announcements were checked against a fake

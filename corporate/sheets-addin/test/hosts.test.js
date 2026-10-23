@@ -688,7 +688,7 @@ test("the sidebar reads the counts from Code.gs before the selection, saves them
   assert.match(other.find((n) => n.className === "usage-totals").textContent, /^Today: 1 use, 16 keystrokes saved\./);
 });
 
-test("the Excel task pane keeps the counts in this browser's localStorage, the one per-person store a task pane has", async () => {
+test("the Excel task pane keeps the counts in this browser's localStorage, never in the workbook's settings", async () => {
   const { host, root, bridge, sandbox } = excelPane({ sheets: { "Orders 2026": ORDERS }, active: { sheet: "Orders 2026", address: "B4" } });
   sandbox.localStorage.setItem("actleSheetsConfig", CONFIG);
   const pane = bridge.start({ host: host.Office.HostType.Excel });

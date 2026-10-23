@@ -1,7 +1,8 @@
 // extle usage counts. The add-in counts each completion and block it writes,
 // per day, and hands the counts to the desk as a text the person copies from
-// the pane and pastes into the desk's extle tab: the add-in makes no network
-// request, so this text is the only way back. Pure and bundled with
+// the pane and pastes into the desk's extle tab: the add-in contacts no server
+// other than its host's own and cannot reach the desk, so this text is the
+// only way back. Pure and bundled with
 // core/sheets.js (this module and what it requires use no Node builtin): the
 // pane records and serializes, the desk parses.
 //

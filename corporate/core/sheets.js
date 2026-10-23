@@ -502,7 +502,8 @@ function parseConfig(input) {
  * desk gives extle's imported uses ("sheets"): the vocabularies by name, then
  * the block and formula triggers. A name the add-in does not keep with its
  * counts (usage.keepsName: longer than 40 characters, or with a control
- * character) is left out, since no use could ever name it.
+ * character or a character outside the Basic Multilingual Plane) is left
+ * out, since no use could ever name it.
  */
 function organizationItems(section) {
   const names = section && isObject(section.vocabularies) ? Object.keys(section.vocabularies) : [];
