@@ -248,7 +248,7 @@ test("Code.gs adds the menu, opens the sidebar and serves the includes", () => {
   assert.equal(gs.include("sheets-core"), "<!-- include sheets-core -->");
 });
 
-test("Code.gs adds the same menu when the add-on is installed into an open spreadsheet, in any authorization mode", () => {
+test("Code.gs adds the same menu from onInstall as from onOpen, whatever event it is given", () => {
   const { fake, gs } = appsScript({ sheets: {}, active: {} });
   // Google runs onInstall(e) instead of onOpen(e) when the add-on is installed from inside Sheets.
   gs.onInstall({ authMode: "NONE" });

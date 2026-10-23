@@ -308,7 +308,8 @@ Limits, and where they come from:
 
 Nothing typed in the pane or read from cells is sent anywhere, and the
 bundle makes no network request. The Excel page loads Office.js from
-Microsoft's CDN; nothing else is fetched. In Google Sheets the sidebar calls
+Microsoft's CDN, and Office.js loads further files of its own from there; the
+pane's scripts fetch nothing else. In Google Sheets the sidebar calls
 the script's own functions in `Code.gs` (`google.script.run`), which run on
 Google's servers; the add-in contacts no other server. The usage counts, which
 hold no cell text, are kept in the host's own store (this browser in Excel,
@@ -604,9 +605,13 @@ sizes they are declared as, every PNG's signature, IHDR, CRC-32 (computed by
 the test) and pixels, the same bytes from the same configuration twice,
 `taskpane.html`'s scripts and styles and `Sidebar.html`'s includes present,
 text such as `Birch & Co <"Ltd">` escaped and read back, each refusal (GUID,
-placeholder, `http`, `localhost`, version, lengths, control characters,
-unknown and missing keys) with nothing written, a rebuild that keeps and lists
-files it did not write, and the command line.
+placeholder, `http`, `localhost` and the other addresses of this computer,
+version and its leading zeros, lengths, control characters, U+FFFE and U+FFFF,
+unknown and missing keys) with nothing written, the longest values allowed
+still within every length the manifest has, a rebuild that keeps and lists
+files it did not write, and the command line (a configuration file with a
+byte-order mark included). Its temporary folders are removed when a test
+ends, passed or failed.
 `corporate/test/sheets-usage.test.js` covers the
 usage model (names, caps, days, the merge, the longest text, the parser's refusals), and
 `corporate/test/sheets-app.test.js` the build, the bundle in a sandbox with
@@ -698,7 +703,10 @@ Google account or a browser:
 - The package was built and read here, never installed. The generated
   manifest has not been checked with Microsoft's validator (it sends the
   manifest to a Microsoft service this environment cannot reach) or against
-  Microsoft's XML schema, and no Office host has loaded it. The icons were not
+  Microsoft's XML schema, and no Office host has loaded it. Two limits the
+  build holds to without the schema: no leading zeros in `version`, and 2048
+  characters for `supportUrl` (the limit Microsoft gives for the manifest's
+  URLs; its SupportUrl page gives none). The icons were not
   seen in Excel's ribbon or add-in lists, in any Office theme. No package was
   uploaded to the Microsoft 365 admin center, pushed with clasp, tested as an
   editor add-on or published to Google Workspace Marketplace; whether

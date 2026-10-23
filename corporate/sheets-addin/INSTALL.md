@@ -15,8 +15,10 @@ What was checked here, and what was not:
   manifest validator was not run (it sends the manifest to a Microsoft service
   this build environment cannot reach). Every step that depends on a host is
   marked **Not verified here**. The steps follow Microsoft's and Google's
-  documentation, linked at each step. Microsoft's pages were read from their
-  published sources. Google's pages could not be opened here; the Google steps come from search
+  documentation, linked where a step depends on it. Two parts have no source
+  page: the content types and the `curl` check in section 2, which are general
+  web practice, and the pasting steps in section 6. Microsoft's pages were read
+  from their published sources. Google's pages could not be opened here; the Google steps come from search
   summaries of the pages linked, and from the clasp README.
 
 ## 1. Build the package
@@ -47,16 +49,18 @@ for). The build installs nothing and uses no network.
    | Key | What it is | Rules the build enforces |
    | --- | --- | --- |
    | `id` | The add-in's identity in Office. Make it once and keep it for every later version. | A GUID, hyphenated, no braces ([Id](https://learn.microsoft.com/en-us/javascript/api/manifest/id)). Not the example's GUID and not the all-zero one, except with `--dev`. Make one with `node -e "console.log(crypto.randomUUID())"`. |
-   | `baseUrl` | The address the `excel` folder is served at, folder and all. | `https://`. A trailing `/` is added when missing. No `?`, `#`, user name or password. Not `localhost`, `127.x.x.x`, `[::1]` or a `.localhost` name, except with `--dev`. `baseUrl` plus `taskpane.html` at most 2018 characters ([SourceLocation](https://learn.microsoft.com/en-us/javascript/api/manifest/sourcelocation)). |
+   | `baseUrl` | The address the `excel` folder is served at, folder and all. | `https://`. A trailing `/` is added when missing. No `?`, `#`, user name or password. Not an address of this computer, except with `--dev`: `localhost` or a `.localhost` name (also with a final dot, `localhost.`), `127.x.x.x`, `0.0.0.0`, `[::1]`, `[::]`, or `127.x.x.x` or `0.0.0.0` written as IPv6 (`[::ffff:127.0.0.1]`). `baseUrl` plus `taskpane.html` at most 2018 characters ([SourceLocation](https://learn.microsoft.com/en-us/javascript/api/manifest/sourcelocation)). |
    | `providerName` | Your organisation's name, as the add-in's provider. | At most 125 characters ([ProviderName](https://learn.microsoft.com/en-us/javascript/api/manifest/providername)). |
-   | `version` | The manifest's version. | 1 to 4 numbers of at most 5 digits, separated by dots, such as `1.0.0.0` ([Version](https://learn.microsoft.com/en-us/javascript/api/manifest/version)). |
-   | `supportUrl` | A page where people get help with extle. | `https://`, the same rules as `baseUrl` for `localhost`. A query string is allowed. |
-   | `displayName` | Optional. The add-in's name, and the label of its ribbon group and button. Default `extle`. | At most 120 characters: the ribbon button reads "Open " and the name, and holds 125 ([Resources](https://learn.microsoft.com/en-us/javascript/api/manifest/resources), [DisplayName](https://learn.microsoft.com/en-us/javascript/api/manifest/displayname)). |
+   | `version` | The manifest's version. | 1 to 4 numbers of at most 5 digits, separated by dots, such as `1.0.0.0` ([Version](https://learn.microsoft.com/en-us/javascript/api/manifest/version)). No leading zeros (`01`, `1.00`): Microsoft's page does not say whether the manifest's schema takes them, so the build keeps to plain numbers. |
+   | `supportUrl` | A page where people get help with extle. | `https://`, the same rules as `baseUrl` for `localhost`. A query string is allowed. At most 2048 characters as the manifest holds it (a space counts as the three characters of `%20`): Microsoft gives that limit for the manifest's URLs ([Resources](https://learn.microsoft.com/en-us/javascript/api/manifest/resources)); the [SupportUrl](https://learn.microsoft.com/en-us/javascript/api/manifest/supporturl) page gives none of its own. |
+   | `displayName` | Optional. The add-in's name in Excel's list of add-ins, and the label of its ribbon group and button. The pane itself, its messages and Google Sheets keep the name extle. Default `extle`. | At most 120 characters: the ribbon button reads "Open " and the name, and holds 125 ([Resources](https://learn.microsoft.com/en-us/javascript/api/manifest/resources), [DisplayName](https://learn.microsoft.com/en-us/javascript/api/manifest/displayname)). |
    | `description` | Optional. Default "extle: column-aware completion in Excel from your organisation's vocabularies, and blocks and formulas by trigger." | At most 250 characters ([Description](https://learn.microsoft.com/en-us/javascript/api/manifest/description)). |
 
    The three texts must not be empty or hold a control character (a tab or a
-   line break, say). Any other key is refused, so a misspelt key (`baseURL`)
-   does not pass unnoticed. Every value is XML-escaped in the manifest.
+   line break, say), U+FFFE or U+FFFF. Any other key is refused, so a misspelt
+   key (`baseURL`) does not pass unnoticed. Every value is XML-escaped in the
+   manifest. A file saved with a UTF-8 byte-order mark, as some Windows editors
+   save it, is read as if the mark were not there.
 
 3. Build:
 
@@ -93,8 +97,10 @@ accent colour (`#2457c5`, 6.5:1 against white). Microsoft asks for a 32 by 32
 Office themes.
 
 The manifest asks for ExcelApi 1.7, which the pane needs to load. List
-validation (ExcelApi 1.8) and the spill check (ExcelApi 1.12) are checked when
-they are used (README.md, "A strict column"). It lists no `AppDomains`:
+validation (ExcelApi 1.8) and the spill check (ExcelApi 1.12) are checked at
+run time: the pane checks both when it starts and leaves list validation out
+where Excel lacks 1.8, and checks 1.12 again before each replacement
+(README.md, "A strict column"). It lists no `AppDomains`:
 everything is served from the `baseUrl` host, and Microsoft says listing the
 `SourceLocation` domain has no effect
 ([AppDomain](https://learn.microsoft.com/en-us/javascript/api/manifest/appdomain)).
@@ -129,9 +135,11 @@ location must be an HTTPS address, and Office on the web needs HTTPS, so an
 
 ## 2. Host the excel folder
 
-Any static HTTPS host works: your own web server or a static site service.
-Copy the whole `excel` folder so that `baseUrl` plus `taskpane.html` is the
-task pane page.
+Use an HTTPS host that serves static files and lets you meet every point
+below, your own web server or a static site service. A host that adds a
+`Cache-Control` header to every response, with no way to leave it off the
+icons, cannot serve them (see below). Copy the whole `excel` folder so that
+`baseUrl` plus `taskpane.html` is the task pane page.
 
 - The certificate must be trusted on every computer that runs extle.
 - Serve the files with these content types:
@@ -148,8 +156,12 @@ task pane page.
   makes Office show a default image instead, and that a changed icon needs a
   new URL ([Image](https://learn.microsoft.com/en-us/javascript/api/manifest/image)).
 - The task pane page loads Office.js from
-  `https://appsforoffice.microsoft.com/lib/1/hosted/office.js`, so computers
-  must reach that address too. Nothing else is fetched.
+  `https://appsforoffice.microsoft.com/lib/1/hosted/office.js`, and Office.js
+  loads further files of its own from there (its strings and a script for the
+  kind of Excel it runs in), so computers must reach
+  `https://appsforoffice.microsoft.com` too. The pane's own scripts fetch
+  nothing else. The further files were seen in the npm copy of Office.js
+  (`@microsoft/office-js` 1.1.110); the CDN itself could not be reached here.
 - Check that each file answers, for example
   `curl -I https://addins.example.org/extle/dist/sheets-core.js` should give
   status 200 and `text/javascript`.

@@ -13,8 +13,13 @@ const build = require("../build.js");
 
 const ADDIN = path.join(__dirname, "..");
 const EXAMPLE = path.join(ADDIN, "extle.config.example.json");
-const temp = () => fs.mkdtempSync(path.join(os.tmpdir(), "extle-package-"));
 const remove = (dir) => fs.rmSync(dir, { recursive: true, force: true });
+/** A new temporary folder, removed when the test ends, whether it passed or failed. */
+const temp = (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extle-package-"));
+  t.after(() => remove(dir));
+  return dir;
+};
 const CONFIG = Object.freeze({
   id: "3f2b8c1e-5d4a-4e7b-9c60-1a2b3c4d5e6f",
   baseUrl: "https://addins.example.org/extle/",
@@ -206,8 +211,8 @@ function filesUnder(folder, prefix = "") {
   return fs.readdirSync(folder, { withFileTypes: true }).flatMap((entry) => (entry.isDirectory() ? filesUnder(path.join(folder, entry.name), prefix + entry.name + "/") : [prefix + entry.name])).sort();
 }
 
-test("a package holds what Excel and Apps Script need, with the manifest made from the configuration", () => {
-  const out = temp();
+test("a package holds what Excel and Apps Script need, with the manifest made from the configuration", (t) => {
+  const out = temp(t);
   const result = build.buildPackage({ config: CONFIG, out });
   assert.equal(result.out, out);
   assert.equal(result.dev, false);
@@ -270,11 +275,10 @@ test("a package holds what Excel and Apps Script need, with the manifest made fr
   assert.deepEqual(strings("bt:ShortStrings"), [build.NAME, "Open " + build.NAME]);
   assert.deepEqual(strings("bt:LongStrings"), ["Open the " + build.NAME + " pane: complete cells from your organisation's vocabularies and insert blocks or formulas by trigger."]);
   for (const node of [root, ...descendants(root)]) if (node.attrs.id && node.name.startsWith("bt:")) assert.ok(node.attrs.id.length <= 32, node.attrs.id);
-  remove(out);
 });
 
-test("every icon is a PNG of its size with a valid IHDR, CRCs that check and the pixels build.js drew", () => {
-  const out = temp();
+test("every icon is a PNG of its size with a valid IHDR, CRCs that check and the pixels build.js drew", (t) => {
+  const out = temp(t);
   build.buildPackage({ config: CONFIG, out });
   const white = [255, 255, 255];
   for (const size of build.ICON_SIZES) {
@@ -304,24 +308,21 @@ test("every icon is a PNG of its size with a valid IHDR, CRCs that check and the
   const broken = Buffer.from(build.iconPng(16));
   broken[20] ^= 1;
   assert.throws(() => readPng(broken), /the CRC of IHDR/);
-  remove(out);
 });
 
-test("the same configuration gives the same bytes twice", () => {
-  const a = temp();
-  const b = temp();
+test("the same configuration gives the same bytes twice", (t) => {
+  const a = temp(t);
+  const b = temp(t);
   build.buildPackage({ config: CONFIG, out: a });
   build.buildPackage({ config: CONFIG, out: b });
   for (const folder of ["excel", "apps-script"]) {
     for (const file of filesUnder(path.join(a, folder))) assert.deepEqual(fs.readFileSync(path.join(b, folder, file)), fs.readFileSync(path.join(a, folder, file)), folder + "/" + file);
   }
   for (const file of filesUnder(a)) assert.equal(fs.readFileSync(path.join(a, file)).includes(build.ROOT), false, file + " holds no absolute path");
-  remove(a);
-  remove(b);
 });
 
-test("taskpane.html's scripts and styles, and Sidebar.html's includes, resolve inside the package", () => {
-  const out = temp();
+test("taskpane.html's scripts and styles, and Sidebar.html's includes, resolve inside the package", (t) => {
+  const out = temp(t);
   build.buildPackage({ config: CONFIG, out });
   const excel = path.join(out, "excel");
   const page = fs.readFileSync(path.join(excel, "taskpane.html"), "utf8");
@@ -329,7 +330,7 @@ test("taskpane.html's scripts and styles, and Sidebar.html's includes, resolve i
   assert.deepEqual(references, ["https://appsforoffice.microsoft.com/lib/1/hosted/office.js", "pane.css", "dist/sheets-core.js", "pane.js", "taskpane.js"]);
   for (const reference of references.filter((ref) => !/^https:/.test(ref))) assert.ok(fs.statSync(path.join(excel, reference)).isFile(), reference);
   // The pages and scripts are the sources, byte for byte; the bundle and the includes are what build() writes.
-  const plain = temp();
+  const plain = temp(t);
   build.build({ out: plain });
   for (const file of ["taskpane.html", "taskpane.js", "pane.js", "pane.css"]) assert.deepEqual(fs.readFileSync(path.join(excel, file)), fs.readFileSync(path.join(ADDIN, file)), file);
   assert.deepEqual(fs.readFileSync(path.join(excel, "dist", "sheets-core.js")), fs.readFileSync(path.join(plain, "dist", "sheets-core.js")));
@@ -347,12 +348,10 @@ test("taskpane.html's scripts and styles, and Sidebar.html's includes, resolve i
   const manifest = JSON.parse(fs.readFileSync(path.join(appsScript, "appsscript.json"), "utf8"));
   assert.equal(manifest.runtimeVersion, "V8");
   assert.deepEqual(manifest.oauthScopes, ["https://www.googleapis.com/auth/spreadsheets.currentonly", "https://www.googleapis.com/auth/script.container.ui"]);
-  remove(out);
-  remove(plain);
 });
 
-test("text from the configuration is escaped in the manifest and reads back exactly", () => {
-  const out = temp();
+test("text from the configuration is escaped in the manifest and reads back exactly", (t) => {
+  const out = temp(t);
   const config = { ...CONFIG, providerName: "Birch & Co <\"Ltd\"> 'North'", displayName: "R&D <extle>", description: "Fills <cells> & \"rows\"; it's {{ID}}." };
   build.buildPackage({ config, out });
   const manifest = fs.readFileSync(path.join(out, "excel", "manifest.xml"), "utf8");
@@ -375,7 +374,39 @@ test("text from the configuration is escaped in the manifest and reads back exac
   assert.throws(() => parseXml("<a/><b/>"), /content after the root element/);
   assert.throws(() => parseXml("<!-- build.js --package --><a/>"), /-- inside a comment/);
   assert.throws(() => parseXml("<a>\u0001</a>"), /a character XML 1.0 does not allow/);
-  remove(out);
+});
+
+test("the longest values the configuration allows still fit every limit of the generated manifest", (t) => {
+  const out = temp(t);
+  const config = {
+    ...CONFIG,
+    baseUrl: "https://addins.example.org/" + "a".repeat(build.LIMITS.sourceLocation - "https://addins.example.org/".length - "/taskpane.html".length) + "/",
+    supportUrl: "https://intranet.example.org/" + "s".repeat(build.LIMITS.url - "https://intranet.example.org/".length),
+    providerName: "p".repeat(build.LIMITS.providerName),
+    displayName: "x".repeat(build.LIMITS.displayName),
+    description: "y".repeat(build.LIMITS.description),
+  };
+  build.buildPackage({ config, out });
+  const root = parseXml(fs.readFileSync(path.join(out, "excel", "manifest.xml"), "utf8"));
+  // Microsoft's manifest reference: ProviderName and DisplayName 125 characters, Description 250,
+  // a ShortStrings entry 125, a LongStrings entry 250, SourceLocation 2018, a URL 2048.
+  assert.equal(one(root, "ProviderName").text.length, 125);
+  assert.equal(one(root, "DisplayName").attrs.DefaultValue, config.displayName);
+  assert.ok(one(root, "DisplayName").attrs.DefaultValue.length <= 125);
+  assert.equal(root.children.find((child) => child.name === "Description").attrs.DefaultValue.length, 250);
+  const strings = (block) => all(one(root, block), "bt:String").map((string) => string.attrs.DefaultValue);
+  const short = strings("bt:ShortStrings");
+  const long = strings("bt:LongStrings");
+  assert.equal(short.length, 2);
+  assert.equal(long.length, 1);
+  for (const string of short) assert.ok(string.length <= 125, "a ShortStrings entry of " + string.length + " characters");
+  for (const string of long) assert.ok(string.length <= 250, "a LongStrings entry of " + string.length + " characters");
+  assert.equal(Math.max(...short.map((string) => string.length)), 125, "the button label, \"Open \" and the name, is what holds the name to 120");
+  assert.equal(one(one(root, "DefaultSettings"), "SourceLocation").attrs.DefaultValue.length, 2018);
+  assert.equal(one(root, "SupportUrl").attrs.DefaultValue.length, 2048);
+  const found = urls(root);
+  assert.equal(found.length, 8);
+  for (const url of found) assert.ok(url.value.length <= 2048, url.element + " holds a URL of " + url.value.length + " characters");
 });
 
 test("the template: every placeholder is one build.js fills, a stray or unknown one stops the build", () => {
@@ -390,10 +421,10 @@ test("the template: every placeholder is one build.js fills, a stray or unknown 
   assert.equal(build.fillTemplate("<a>{{ID}}</a>", { ID: "x&y" }), "<a>x&amp;y</a>");
 });
 
-test("a configuration is refused with every problem named, and nothing is written", () => {
+test("a configuration is refused with every problem named, and nothing is written", (t) => {
   const refused = (change, pattern, options = {}) => {
     const config = typeof change === "function" ? change({ ...CONFIG }) : { ...CONFIG, ...change };
-    const out = path.join(temp(), "package");
+    const out = path.join(temp(t), "package");
     assert.throws(() => build.buildPackage({ config, out, dev: options.dev }), (error) => {
       assert.match(error.message, /^the configuration cannot be packaged:\n {2}- /);
       assert.ok(error.problems.some((problem) => pattern.test(problem)), JSON.stringify(error.problems) + " names " + pattern);
@@ -401,7 +432,6 @@ test("a configuration is refused with every problem named, and nothing is writte
       return true;
     });
     assert.equal(fs.existsSync(out), false, "nothing written for " + JSON.stringify(change));
-    remove(path.dirname(out));
   };
   const accepted = (change, options = {}) => build.validateConfig(typeof change === "function" ? change({ ...CONFIG }) : { ...CONFIG, ...change }, options);
 
@@ -421,6 +451,16 @@ test("a configuration is refused with every problem named, and nothing is writte
     refused({ baseUrl }, /^baseUrl points at .*, which Excel on other computers cannot reach; build with --dev/, { count: 1 });
     assert.equal(accepted({ baseUrl }, { dev: true }).baseUrl, baseUrl);
   }
+  // This computer written another way: a final dot, 0.0.0.0 and [::], 127.0.0.1 or 0.0.0.0 as IPv6.
+  for (const baseUrl of ["https://localhost./", "https://localhost.:3000/", "https://extle.localhost./", "https://0.0.0.0/", "https://[::]/", "https://[::ffff:127.0.0.1]/", "https://[::ffff:7f00:1]:3000/", "https://[::ffff:127.255.0.9]/", "https://[::ffff:0.0.0.0]/"]) {
+    refused({ baseUrl }, /^baseUrl points at .*, which Excel on other computers cannot reach; build with --dev/, { count: 1 });
+    assert.equal(accepted({ baseUrl }, { dev: true }).baseUrl, new URL(baseUrl).href);
+  }
+  refused({ supportUrl: "https://0.0.0.0/help" }, /^supportUrl points at 0\.0\.0\.0, /, { count: 1 });
+  refused({ supportUrl: "https://localhost./help" }, /^supportUrl points at localhost\., /, { count: 1 });
+  assert.equal(accepted({ baseUrl: "http://localhost.:3000/", supportUrl: "http://[::ffff:127.0.0.1]/help" }, { dev: true }).supportUrl, "http://[::ffff:7f00:1]/help", "http for these too, with --dev");
+  // Not this computer: a name that only starts with localhost, other addresses, other IPv6 addresses.
+  for (const baseUrl of ["https://localhost.example.org/", "https://126.0.0.1/", "https://[::ffff:10.0.0.1]/", "https://[2001:db8::1]/", "https://[::2]/"]) assert.equal(accepted({ baseUrl }).baseUrl, new URL(baseUrl).href, baseUrl);
   assert.equal(accepted({ baseUrl: "http://localhost:3000/", supportUrl: "http://localhost:3000/help" }, { dev: true }).baseUrl, "http://localhost:3000/");
   for (const baseUrl of ["ftp://addins.example.org/", "file:///C:/extle/"]) refused({ baseUrl }, /^baseUrl must start with https:\/\/$/);
   for (const baseUrl of ["", "addins.example.org/extle", "https://", 7]) refused({ baseUrl }, /^baseUrl (must be a URL|is not a URL)/);
@@ -433,14 +473,31 @@ test("a configuration is refused with every problem named, and nothing is writte
   const long = (length) => "https://addins.example.org/" + "a".repeat(length - "https://addins.example.org/".length - "/taskpane.html".length) + "/";
   assert.equal((accepted({ baseUrl: long(build.LIMITS.sourceLocation) }).baseUrl + "taskpane.html").length, build.LIMITS.sourceLocation);
   refused({ baseUrl: long(build.LIMITS.sourceLocation + 1) }, /^baseUrl is too long: .* is 2019 characters, and the manifest's SourceLocation allows 2018$/);
+  const longSupport = (length) => "https://intranet.example.org/" + "a".repeat(length - "https://intranet.example.org/".length);
+  assert.equal(accepted({ supportUrl: longSupport(build.LIMITS.url) }).supportUrl.length, 2048);
+  refused({ supportUrl: longSupport(build.LIMITS.url + 1) }, /^supportUrl is 2049 characters long; the manifest's URLs hold at most 2048$/, { count: 1 });
+  // Measured as the manifest holds it: 1,039 characters as typed, 2,049 once each space is written %20.
+  refused({ supportUrl: "https://intranet.example.org/" + " a".repeat(505) }, /^supportUrl is 2049 characters long; the manifest's URLs hold at most 2048$/, { count: 1 });
 
   // version
   for (const version of ["1.0.0.0.0", "1.0.0.123456", "v1", "1..0", "", "1.0 ", "1.0.0.0-beta", 1]) refused({ version }, /^version must be 1 to 4 numbers of at most 5 digits/, { count: 1 });
   for (const version of ["1", "1.2", "1.2.3", "1.2.3.4", "99999.0.0.99999"]) assert.equal(accepted({ version }).version, version);
+  for (const version of ["01.0", "00000.1", "1.00", "1.0.0.01", "00", "2026.01.05.1"]) refused({ version }, /^version must be 1 to 4 numbers of at most 5 digits, separated by dots and without leading zeros, such as 1\.0\.0\.0 \(got /, { count: 1 });
+  for (const version of ["0", "0.0.0.0", "0.1.0.0", "10.0.100.0", "2026.1.5.1"]) assert.equal(accepted({ version }).version, version, "a 0 part, or a 0 inside a number, is not a leading zero");
 
   // texts
   refused({ providerName: "   " }, /^providerName is empty/);
   refused({ providerName: "Birch\tCo" }, /^providerName holds a control character/);
+  // U+007F to U+009F (DEL and the C1 controls, such as U+0085, next line), and U+FFFE and U+FFFF.
+  for (const [key, value] of [["providerName", "Birch\u0085Co"], ["providerName", "Birch\u007fCo"], ["displayName", "R\u009fD"], ["providerName", "Birch\uffffCo"], ["description", "Fills\ufffecells"]]) {
+    refused({ [key]: value }, new RegExp("^" + key + " holds a control character"), { count: 1 });
+  }
+  assert.equal(accepted({ providerName: "Birch\u00a0Co \ufffd" }).providerName, "Birch\u00a0Co \ufffd", "the next characters up, a no-break space and U+FFFD, are not refused");
+  // Why U+FFFE and U+FFFF are refused: XML 1.0 cannot hold them, escaped or not, so a manifest
+  // carrying one is not well-formed.
+  for (const providerName of ["Birch\uffffCo", "Birch\ufffeCo"]) {
+    assert.throws(() => parseXml(build.manifestFor({ ...build.validateConfig(CONFIG), providerName })), /a character XML 1.0 does not allow/);
+  }
   refused({ providerName: "Birch \ud800 Co" }, /^providerName holds a broken character/);
   refused({ providerName: "x".repeat(126) }, /^providerName is 126 characters long; the manifest allows 125$/);
   assert.equal(accepted({ providerName: "x".repeat(125) }).providerName.length, 125);
@@ -471,8 +528,8 @@ test("the example configuration builds only as a development package; the real o
   assert.equal(ignored.includes("extle.config.example.json"), false);
 });
 
-test("a rebuild replaces its own files, keeps any other and lists it, and a development build says so", () => {
-  const out = temp();
+test("a rebuild replaces its own files, keeps any other and lists it, and a development build says so", (t) => {
+  const out = temp(t);
   build.buildPackage({ config: CONFIG, out });
   fs.writeFileSync(path.join(out, "excel", "pane.js"), "changed by hand");
   fs.writeFileSync(path.join(out, "excel", "old-pane.js"), "from an older version");
@@ -487,13 +544,12 @@ test("a rebuild replaces its own files, keeps any other and lists it, and a deve
   const manifest = fs.readFileSync(path.join(out, "excel", "manifest.xml"), "utf8");
   assert.equal(parseXml(manifest).children.find((child) => child.name === "Version").text, "1.2.0.1");
   assert.match(manifest, /A development package, for testing on this computer only\. -->/);
-  remove(out);
 });
 
-test("the command line: refusals exit 1 with the problems, --dev builds the example, arguments are checked", () => {
+test("the command line: refusals exit 1 with the problems, --dev builds the example, arguments are checked", (t) => {
   const script = path.join(ADDIN, "build.js");
   const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
-  const dir = temp();
+  const dir = temp(t);
   const out = path.join(dir, "package");
   const refused = run("--package", EXAMPLE, "--out", out);
   assert.equal(refused.status, 1);
@@ -510,6 +566,16 @@ test("the command line: refusals exit 1 with the problems, --dev builds the exam
   fs.writeFileSync(bad, "{ id: 1 }");
   assert.match(run("--package", bad, "--out", out).stderr, /^build\.js: .*bad\.json is not JSON: /);
   assert.match(run("--package", path.join(dir, "missing.json")).stderr, /^build\.js: cannot read the configuration .*missing\.json: /);
+  // A configuration saved with a UTF-8 byte-order mark (EF BB BF), as some Windows editors write it,
+  // is read as if the mark were not there; JSON.parse alone refuses it.
+  const marked = path.join(dir, "marked.json");
+  fs.writeFileSync(marked, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify(CONFIG, null, 2) + "\n")]));
+  assert.deepEqual(build.readConfig(marked), CONFIG);
+  const fromMarked = run("--package", marked, "--out", path.join(dir, "marked"));
+  assert.equal(fromMarked.status, 0, fromMarked.stderr);
+  assert.match(fromMarked.stdout, /^packaged extle 1\.2\.0\.0 in /);
+  fs.writeFileSync(marked, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify(CONFIG))]));
+  assert.throws(() => build.readConfig(marked), /marked\.json is not JSON: /, "one mark is skipped, not any number");
   assert.deepEqual(build.packageArguments(["--package", "a.json", "--out", "d", "--dev"]), { configFile: "a.json", out: "d", dev: true });
   assert.throws(() => build.packageArguments(["--dev"]), /^Error: --dev needs --package FILE$/);
   assert.throws(() => build.packageArguments(["--package"]), /^Error: --package needs a value$/);
@@ -518,5 +584,4 @@ test("the command line: refusals exit 1 with the problems, --dev builds the exam
   const plain = run("--out", path.join(dir, "plain"));
   assert.equal(plain.status, 0, "the plain build is unchanged");
   assert.match(plain.stdout, /^built dist\/sheets-core\.js, apps-script\/sheets-core\.html, apps-script\/pane\.html in /);
-  remove(dir);
 });

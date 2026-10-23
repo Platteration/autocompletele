@@ -146,11 +146,14 @@ const KEYS = ["id", "baseUrl", "providerName", "version", "supportUrl", "display
 const REQUIRED = ["id", "baseUrl", "providerName", "version", "supportUrl"];
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Microsoft's Version element: 1 to 4 parts (n, n.n, n.n.n or n.n.n.n), each at most 5 digits.
-const VERSION = /^\d{1,5}(\.\d{1,5}){0,3}$/;
+// A part with a leading zero (01) is refused as well: Microsoft's page does not say whether the
+// schema takes one, and without them each version has one spelling.
+const VERSION = /^(0|[1-9]\d{0,4})(\.(0|[1-9]\d{0,4})){0,3}$/;
 // Lengths from Microsoft's manifest reference. DisplayName and a ShortStrings entry hold 125
 // characters; the button label is "Open " and the name, so the name gets 120. ProviderName 125,
-// Description 250. SourceLocation is a URL of 1 to 2018 characters.
-const LIMITS = { displayName: 120, providerName: 125, description: 250, sourceLocation: 2018 };
+// Description 250. SourceLocation is a URL of 1 to 2018 characters. Resources gives 2048 for a
+// URL; the SupportUrl page gives no limit of its own, so supportUrl is held to that 2048.
+const LIMITS = { displayName: 120, providerName: 125, description: 250, sourceLocation: 2018, url: 2048 };
 const SOURCE_PAGE = "taskpane.html";
 const ICON_SIZES = [16, 32, 64, 80]; // IconUrl 32, HighResolutionIconUrl 64, ribbon 16, 32 and 80
 const ICON_COLOUR = [0x24, 0x57, 0xc5]; // pane.css --accent in the light theme; white on it is 6.5:1
@@ -165,16 +168,27 @@ const GLYPH = [
   "..#####.",
 ];
 
+/**
+ * Whether a URL's hostname means this computer. The URL parser already writes 127.1, 2130706433
+ * and [0:0:0:0:0:0:0:1] as 127.0.0.1 and [::1]. Here a final dot is dropped (localhost. is the
+ * same name as localhost), and an IPv4 address written as IPv6 ([::ffff:127.0.0.1], which the
+ * parser writes as [::ffff:7f00:1]) is read as the IPv4 address. 0.0.0.0 and [::] name no other
+ * computer either.
+ */
 function isLoopback(hostname) {
-  return hostname === "localhost" || hostname.endsWith(".localhost") || /^127\.\d+\.\d+\.\d+$/.test(hostname) || hostname === "[::1]";
+  const host = hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
+  const mapped = /^\[::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})\]$/.exec(host);
+  const ipv4 = mapped ? [mapped[1], mapped[2]].flatMap((group) => [parseInt(group, 16) >> 8, parseInt(group, 16) & 255]).join(".") : host;
+  return host === "localhost" || host.endsWith(".localhost") || /^127\.\d+\.\d+\.\d+$/.test(ipv4) || ipv4 === "0.0.0.0" || host === "[::1]" || host === "[::]";
 }
 
 /** What is wrong with one text the manifest shows; an empty list when nothing is. */
 function textProblems(key, value, max, why) {
   if (typeof value !== "string") return [key + " must be a text"];
   if (!/\S/.test(value)) return [key + " is empty"];
-  // XML 1.0 has no way to write most control characters, escaped or not; none belongs in a name.
-  if (/[\u0000-\u001f\u007f-\u009f￾￿]/.test(value)) return [key + " holds a control character (a tab, a line break or similar)"];
+  // XML 1.0 cannot hold U+0000 to U+001F other than tab and line breaks, nor U+FFFE or U+FFFF,
+  // escaped or not. It can hold U+007F to U+009F, but no control character belongs in a name.
+  if (/[\u0000-\u001f\u007f-\u009f\ufffe\uffff]/.test(value)) return [key + " holds a control character (a tab, a line break or similar)"];
   if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(value)) return [key + " holds a broken character (half of a surrogate pair)"];
   if (value.length > max) return [key + " is " + value.length + " characters long; " + why];
   return [];
@@ -222,7 +236,7 @@ function validateConfig(raw, options) {
     else if (PLACEHOLDER_IDS.includes(config.id.toLowerCase()) && !dev) problems.push("id " + config.id + " is a placeholder, not a GUID made for your organisation; generate one with: node -e \"console.log(crypto.randomUUID())\" (or build with --dev to test on this computer)");
   }
   if (has("version") && (typeof config.version !== "string" || !VERSION.test(config.version))) {
-    problems.push("version must be 1 to 4 numbers of at most 5 digits, separated by dots, such as 1.0.0.0 (got " + JSON.stringify(config.version) + ")");
+    problems.push("version must be 1 to 4 numbers of at most 5 digits, separated by dots and without leading zeros, such as 1.0.0.0 (got " + JSON.stringify(config.version) + ")");
   }
   if (has("providerName")) problems.push(...textProblems("providerName", config.providerName, LIMITS.providerName, "the manifest allows " + LIMITS.providerName));
   if (has("displayName")) problems.push(...textProblems("displayName", config.displayName, LIMITS.displayName, "the manifest allows " + LIMITS.displayName + " here, since the ribbon button's label, \"Open \" and the name, may hold 125"));
@@ -242,7 +256,10 @@ function validateConfig(raw, options) {
   if (has("supportUrl")) {
     const checked = urlProblems("supportUrl", config.supportUrl, dev, false);
     problems.push(...checked.problems);
-    if (checked.url && !checked.problems.length) supportUrl = checked.url.href;
+    if (checked.url && !checked.problems.length) {
+      supportUrl = checked.url.href;
+      if (supportUrl.length > LIMITS.url) problems.push("supportUrl is " + supportUrl.length + " characters long; the manifest's URLs hold at most " + LIMITS.url);
+    }
   }
 
   if (problems.length) {
@@ -262,7 +279,7 @@ function validateConfig(raw, options) {
   };
 }
 
-/** Read and parse a configuration file; validateConfig checks it. */
+/** Read and parse a configuration file; validateConfig checks it. A leading byte-order mark, which some editors write, is skipped. */
 function readConfig(file) {
   let text;
   try {
@@ -271,7 +288,7 @@ function readConfig(file) {
     throw new Error("cannot read the configuration " + file + ": " + error.message);
   }
   try {
-    return JSON.parse(text.replace(/^﻿/, ""));
+    return JSON.parse(text.replace(/^\ufeff/, ""));
   } catch (error) {
     throw new Error(file + " is not JSON: " + error.message);
   }
