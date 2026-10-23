@@ -150,8 +150,9 @@ list's value as text into each one that still holds what the check read, never i
 a cell that holds a formula, and reports the others and where a failed write stopped.
 "Turn on list validation for this column" writes the host's own list rule on the
 column from row 2 down, so a value typed into those cells that is not in the list is
-refused; values already in the column are not changed or checked, and in Excel a
-plain paste is not checked either (Excel with ExcelApi 1.8 and a list of at most 255
+refused (whether the host ignores capitals was not checked); values already in the
+column are not changed or checked, and in Excel a plain paste is not checked either
+(Excel with ExcelApi 1.8 and a list of at most 255
 characters with its commas and no comma inside a value; for Google no limit was found
 in its documentation). "Remove list validation" clears every rule on those cells. A
 list rule stays in the file like any other cell setting. On the desk, the

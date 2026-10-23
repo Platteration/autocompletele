@@ -1,9 +1,9 @@
 // Headless stand-ins for what the add-in runs against: a document whose
 // elements record what the pane builds, an Excel workbook behind Office.js,
 // a Google Sheets spreadsheet behind SpreadsheetApp and PropertiesService, and
-// google.script.run. Each records the calls made and keeps a grid of display
-// text, so the bridges can be driven without Excel, Office.js or a Google
-// account. Used by the tests here and by corporate/test/sheets-app.test.js.
+// google.script.run. Each records the calls made and keeps a grid of cell
+// values, read back as text, so the bridges can be driven without Excel,
+// Office.js or a Google account. Used by the tests here and by corporate/test/sheets-app.test.js.
 "use strict";
 
 const fs = require("node:fs");
@@ -111,12 +111,13 @@ function usedBox(grid) {
 
 /**
  * An Excel workbook behind the Office.js objects taskpane.js touches.
- * spec: { sheets: { name: [[display text]] }, active: { sheet, address }, settings: {}, failSave: "reason",
+ * spec: { sheets: { name: [[value]] } (a string, number or boolean; text gives it as a string), active: { sheet, address }, settings: {}, failSave: "reason",
  *         apiSets: { ExcelApi: "1.17" } (what isSetSupported answers; ExcelApi 1.17 when not given),
  *         formulas: { name: { A1: "=..." } } (Range.formulas of those cells; any other cell gives its value, as documented),
  *         spills: { name: { A1: anchor A1 } } (cells a dynamic array spills into, for getSpillParentOrNullObject),
  *         protect: { name: [A1] } (a write to one of these cells stops the batch: the commands after it are not run
- *         and context.sync() rejects with the trace messages run before it, as OfficeExtension.Error documents) }
+ *         and context.sync() rejects with the trace messages run before it, as OfficeExtension.Error documents),
+ *         refuseRule: "message" (setting dataValidation.rule stops the batch the same way; read when the rule is set) }
  * validations: address -> { rule, errorAlert } as Range.dataValidation was last set; clear() deletes the address.
  */
 function fakeExcel(spec) {
@@ -155,8 +156,13 @@ function fakeExcel(spec) {
     const protectedCell = () => Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => [r + i, c + j])).flat().some(([pr, pc]) => (spec.protect && spec.protect[sheet.name] || []).some((a1) => { const at = parseA1(a1); return at.row === pr && at.col === pc; }));
     for (const prop of ["numberFormat", "values", "formulas"]) {
       Object.defineProperty(obj, prop, {
-        // Only formulas is read back: a cell's formula, or its value when it has none.
-        get: prop !== "formulas" ? undefined : () => Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => (own.has((r + i) + "," + (c + j)) ? own.get((r + i) + "," + (c + j)) : cellText(grid, r + i, c + j)))),
+        // Only formulas is read back: a cell's formula, or its value when it has none ("If a cell has no formula, its value
+        // is returned instead"), so a number stays a number; an empty cell gives "".
+        get: prop !== "formulas" ? undefined : () => Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => {
+          if (own.has((r + i) + "," + (c + j))) return own.get((r + i) + "," + (c + j));
+          const value = grid[r + i] ? grid[r + i][c + j] : null;
+          return value == null ? "" : value;
+        })),
         set(value) {
           if (batch.failed) return; // not run: an earlier command of this batch failed
           if (protectedCell()) { batch.failed = new Error("the cell " + address + " is protected"); return; }
@@ -170,10 +176,16 @@ function fakeExcel(spec) {
         },
       });
     }
-    // Range.dataValidation (ExcelApi 1.8): clear(), and the rule and errorAlert set as plain objects.
-    const validation = { clear: () => { calls.push(["dataValidation.clear", address]); delete validations[address]; } };
+    // Range.dataValidation (ExcelApi 1.8): clear(), and the rule and errorAlert set as plain objects, run in batch order.
+    const validation = { clear: () => {
+      if (batch.failed) return;
+      calls.push(["dataValidation.clear", address]);
+      delete validations[address];
+    } };
     for (const prop of ["rule", "errorAlert"]) {
       Object.defineProperty(validation, prop, { set(value) {
+        if (batch.failed) return;
+        if (prop === "rule" && spec.refuseRule) { batch.failed = new Error(spec.refuseRule); return; }
         calls.push(["dataValidation." + prop, address, plain(value)]);
         validations[address] = Object.assign({}, validations[address], { [prop]: plain(value) });
       } });

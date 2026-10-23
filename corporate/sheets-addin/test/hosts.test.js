@@ -426,7 +426,7 @@ test("the Excel bridge sets Excel's list validation from row 2 down with a stop 
   assert.equal(bridge.LIST_SOURCE_MAX, 255);
   assert.equal(bridge.listRefusal(["Acme", "Birch & Co"]), null);
   assert.equal(bridge.listRefusal(["x".repeat(127), "y".repeat(127)]), null, "255 characters with the comma fit");
-  assert.equal(bridge.listRefusal(["x".repeat(128), "y".repeat(127)]), "it is 256 characters long with its commas, and Excel takes at most 255 in a validation rule");
+  assert.equal(bridge.listRefusal(["x".repeat(128), "y".repeat(127)]), "it is 256 characters long with its commas, over the 255 Microsoft documents for such a list (for VBA; the Office.js reference names no limit)");
   assert.equal(bridge.listRefusal(["Acme", "Birch, Co"]), "the value \"Birch, Co\" holds a comma, and Excel reads the list in a validation rule as values separated by commas");
 });
 
@@ -476,7 +476,7 @@ test("an Excel without ExcelApi 1.8 offers no list validation, and a list longer
   big.bridge.start({ host: big.host.Office.HostType.Excel });
   await new Promise((resolve) => setImmediate(resolve));
   const refused = strictPanel(big.root);
-  assert.equal(refused.find((n) => n.className === "hint").textContent, "List validation is not available for this list: it is 329 characters long with its commas, and Excel takes at most 255 in a validation rule.");
+  assert.equal(refused.find((n) => n.className === "hint").textContent, "List validation is not available for this list: it is 329 characters long with its commas, over the 255 Microsoft documents for such a list (for VBA; the Office.js reference names no limit).");
   assert.equal(refused.button("Turn on list validation for this column"), null);
   assert.ok(refused.button("Remove list validation"));
 });
@@ -539,6 +539,63 @@ test("the sidebar checks a strict column and replaces and validates through goog
   spec.refuseRule = "The data validation rule is not valid.";
   await panel.button("Turn on list validation for this column").click();
   await panel.button("Turn it on").click();
-  assert.equal(message(), "Could not turn on list validation for column C: The data validation rule is not valid.");
+  assert.equal(message(), "Could not turn on list validation for column C: The data validation rule is not valid. Data validation those cells had before may already be cleared.");
   assert.deepEqual(fake.validations.Budget, {});
+});
+
+test("the Excel bridge replaces a cell whose value is a number: Range.formulas gives the number itself, not text", async () => {
+  // C3 holds the number 100, shown as "100"; "100" is an alias of a cost centre in some list.
+  const grid = BUDGET.map((row) => row.slice());
+  grid[2][2] = 100;
+  const { host, bridge } = excelPane({ sheets: { Budget: grid }, active: { sheet: "Budget", address: "C4" } });
+  const now = host.Excel.run(async (context) => { const cell = context.workbook.worksheets.getItem("Budget").getRange("C3"); return [cell.text[0][0], cell.formulas[0][0]]; });
+  assert.deepEqual(await now, ["100", 100], "the fake gives the display text and the typed value, as Office.js documents");
+  assert.deepEqual(plain(await bridge.replaceValues({ sheet: "Budget", column: "C" }, [{ row: 3, from: "100", to: "CC-100 Logistics" }])), { written: [3], skipped: [], computed: [] });
+  assert.equal(host.grids.Budget[2][2], "CC-100 Logistics");
+});
+
+test("an Excel rule that is refused after the old one was cleared is reported with the note that the old one may be gone", async () => {
+  const spec = { sheets: { Budget: BUDGET }, active: { sheet: "Budget", address: "C4" } };
+  const { host, root, bridge, sandbox } = excelPane(spec);
+  sandbox.localStorage.setItem("actleSheetsConfig", CONFIG);
+  const pane = bridge.start({ host: host.Office.HostType.Excel });
+  await new Promise((resolve) => setImmediate(resolve));
+  const panel = strictPanel(root);
+  await panel.button("Turn on list validation for this column").click();
+  await panel.button("Turn it on").click();
+  assert.ok(host.validations["Budget!C2:C1048576"], "a rule is on");
+  host.calls.length = 0;
+  spec.refuseRule = "The argument is invalid or missing or has an incorrect format.";
+  await panel.button("Turn on list validation for this column").click();
+  await panel.button("Turn it on").click();
+  assert.deepEqual(host.calls, [["dataValidation.clear", "Budget!C2:C1048576"]], "the clear ran; the rule and the alert after it did not");
+  assert.deepEqual(host.validations, {}, "so the cells are left with no rule");
+  assert.equal(pane.ui.message.textContent, "Could not turn on list validation for column C: The argument is invalid or missing or has an incorrect format. Data validation those cells had before may already be cleared.");
+});
+
+test("each bridge adds to the replacement's question what its host's side cannot tell apart", async () => {
+  for (const [apiSets, note] of [
+    [undefined, "A cell a dynamic array formula in another cell spills into is left too."],
+    [{ ExcelApi: "1.11" }, "This Excel does not have ExcelApi 1.12, so a cell a dynamic array formula in another cell spills into is not recognised and would be overwritten."],
+  ]) {
+    const { host, root, bridge, sandbox } = excelPane({ sheets: { Budget: BUDGET }, active: { sheet: "Budget", address: "C4" }, apiSets });
+    sandbox.localStorage.setItem("actleSheetsConfig", CONFIG);
+    bridge.start({ host: host.Office.HostType.Excel });
+    await new Promise((resolve) => setImmediate(resolve));
+    const panel = strictPanel(root);
+    await panel.button("Check this column").click();
+    await panel.button("Replace 2 cells with the list's spelling").click();
+    assert.equal(panel.find((n) => n.className === "confirm").textContent, 'Write the list\'s spelling into 2 cells of column C on "Budget", as listed above? Each cell is read again first; one that changed since the check, or that holds a formula, is left as it is. ' + note);
+  }
+  const { gs } = appsScript({ sheets: { Budget: BUDGET }, active: { sheet: "Budget", row: 4, col: 3 } });
+  const server = fakeGoogleRun({ getActiveCellContext: gs.getActiveCellContext, replaceValues: gs.replaceValues, loadConfig: gs.loadConfig, saveConfig: gs.saveConfig });
+  const root = new Node("div");
+  const sandbox = sandboxed(path.join(ADDIN, "pane.js"), { google: { script: { run: server.run } }, document: fakeDocument({ pane: root }), localStorage: storageOf({ actleSheetsConfig: CONFIG }), ActleSheets: sheets, setInterval: () => {} });
+  const html = fs.readFileSync(path.join(ADDIN, "apps-script", "Sidebar.html"), "utf8");
+  vm.runInContext(/<script>([\s\S]*?)<\/script>/.exec(html)[1], sandbox, { filename: "Sidebar.html" });
+  await new Promise((resolve) => setImmediate(resolve));
+  const panel = strictPanel(root);
+  await panel.button("Check this column").click();
+  await panel.button("Replace 2 cells with the list's spelling").click();
+  assert.equal(panel.find((n) => n.className === "confirm").textContent, 'Write the list\'s spelling into 2 cells of column C on "Budget", as listed above? Each cell is read again first; one that changed since the check, or that holds a formula, is left as it is. A cell filled by an array formula in another cell (ARRAYFORMULA, FILTER, QUERY, SORT, UNIQUE, SPLIT, IMPORTRANGE and others) holds no formula of its own, so it is not recognised and would be overwritten.');
 });

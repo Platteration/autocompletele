@@ -573,11 +573,13 @@ test("Check this column lists aliases and unknown values with their rows; Replac
   const replace = pane.ui.strict.button("Replace 2 cells with the list's spelling");
   await replace.click();
   assert.deepEqual(host.calls, [], "the button alone writes nothing");
-  assert.equal(pane.ui.strict.find((n) => n.className === "confirm").textContent, 'Write the list\'s spelling into 2 cells of column C on "Budget", as listed above? Each cell is read again first; one that changed since the check, or whose value comes from a formula, is left as it is.');
+  assert.equal(pane.ui.strict.find((n) => n.className === "confirm").textContent, 'Write the list\'s spelling into 2 cells of column C on "Budget", as listed above? Each cell is read again first; one that changed since the check, or that holds a formula, is left as it is.', "only what every bridge does; this bridge adds no note");
   assert.equal(pane.ui.message.textContent, "Nothing written yet: confirm the list's spelling for 2 cells in column C, or cancel.");
   assert.equal(document.activeElement, pane.ui.strict.button("Cancel"), "Cancel has the focus, so a second Enter cannot confirm");
   assert.equal(pane.ui.strict.button("Replace 2 cells").attrs["aria-describedby"], "actle-strict-question actle-strict-fixes");
   assert.equal(pane.ui.strict.button("Check this column"), null, "no other column tool while the question is open");
+  assert.equal(pane.ui.strict.button("Replace 2 cells with the list's spelling"), null, "nor a second Replace that would open another question");
+  assert.equal(pane.ui.strict.button("Turn on list validation for this column"), null);
   await pane.refresh();
   assert.ok(pane.ui.strict.button("Replace 2 cells"), "a poll keeps the question");
   assert.equal(document.activeElement, pane.ui.strict.button("Cancel"), "and the focus follows the redrawn Cancel");
@@ -661,7 +663,15 @@ test("list validation is turned on and removed only after a confirmation; a list
   host.bridge.listValidation.apply = async () => { throw new Error("the sheet is protected"); };
   await pane.ui.strict.button("Turn on list validation for this column").click();
   await pane.ui.strict.button("Turn it on").click();
-  assert.equal(pane.ui.message.textContent, "Could not turn on list validation for column C: the sheet is protected");
+  assert.equal(pane.ui.message.textContent, "Could not turn on list validation for column C: the sheet is protected. Data validation those cells had before may already be cleared.", "Excel clears the old rule first in the same batch");
+  host.bridge.listValidation.apply = async () => { throw new Error("The rule is not valid."); };
+  await pane.ui.strict.button("Turn on list validation for this column").click();
+  await pane.ui.strict.button("Turn it on").click();
+  assert.equal(pane.ui.message.textContent, "Could not turn on list validation for column C: The rule is not valid. Data validation those cells had before may already be cleared.", "one full stop before the note");
+  host.bridge.listValidation.remove = async () => { throw new Error("The range is protected."); };
+  await pane.ui.strict.button("Remove list validation").click();
+  await pane.ui.strict.button("Remove it").click();
+  assert.equal(pane.ui.message.textContent, "Could not remove the data validation from column C: The range is protected.", "no note, so the host's message is kept as it is");
   const refusing = strictHost(plain(COST_CELL), { validation: { refusal: (values) => (values.length > 2 ? "it has more values than this test allows" : null) } });
   const refused = Pane().createPane({ document, root: new Node("div"), bridge: refusing.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }) });
   await refused.start();
@@ -690,7 +700,7 @@ test("a strict rule from a document's configuration does nothing before Use, and
   assert.equal(pane.ui.strict.children[0].textContent, 'Only values from the "customers" list.');
   await pane.ui.strict.button("Check this column").click();
   await pane.ui.strict.button("Replace 1 alias with the list's spelling").click();
-  assert.equal(pane.ui.strict.find((n) => n.className === "confirm").textContent, 'This list comes from this document\'s configuration, not your organisation\'s. Write the list\'s spelling into 1 cell of column B on "Orders 2026", as listed above? Each cell is read again first; one that changed since the check, or whose value comes from a formula, is left as it is.');
+  assert.equal(pane.ui.strict.find((n) => n.className === "confirm").textContent, 'This list comes from this document\'s configuration, not your organisation\'s. Write the list\'s spelling into 1 cell of column B on "Orders 2026", as listed above? Each cell is read again first; one that changed since the check, or that holds a formula, is left as it is.');
   const stale = pane.ui.strict.button("Replace 1 cell");
   await pane.ui.origin.button("Stop using it").click();
   assert.equal(pane.ui.strict.textContent, "", "back to the organisation's rules: no strict column, no question");
@@ -773,6 +783,7 @@ test("a column check lists ten cells under each heading and counts the rest, say
   assert.deepEqual(lists[1], Array.from({ length: 10 }, (_, i) => "C" + (i + 17) + ': "Old ' + i + '"').concat("… and 3 more"));
   host.bridge.replaceValues = async (target, list) => ({ written: [], skipped: [], computed: list.map((change) => change.row) });
   await pane.ui.strict.button("Replace 12 aliases with the list's spelling").click();
+  assert.equal(pane.ui.strict.find((n) => n.className === "confirm").textContent, 'Write the list\'s spelling into 12 cells of column C on "Budget", the 10 listed above and 2 more the check found? Each cell is read again first; one that changed since the check, or that holds a formula, is left as it is.', "the cells counted but not listed are written too, and the question says so");
   await pane.ui.strict.button("Replace 12 cells").click();
   assert.equal(pane.ui.message.textContent, "Wrote the list's spelling into 0 cells of column C. Left 12 cells whose value comes from a formula: C5, C6, C7, C8, C9, C10, C11, C12, C13, C14, … and 2 more.");
   await pane.ui.strict.button("Check this column").click();
@@ -866,4 +877,139 @@ test("a strict question or check made with the document's configuration ends wit
   assert.equal(next.ui.strict.find((n) => n.className === "confirm"), null, "no question from the document's check");
   assert.equal(next.ui.strict.button("Replace 1 cell"), null);
   assert.deepEqual(again.calls, []);
+});
+
+test("after a replacement, a read of the selection that fails adds to the report instead of replacing it, and the question and the old check leave the screen", async () => {
+  const unreadable = () => { throw new Error("Exceeded maximum execution time"); };
+  for (const [answer, report] of [
+    [{ written: [3, 5], skipped: [], computed: [] }, "Wrote the list's spelling into 2 cells of column C."],
+    [{ written: [3], skipped: [], computed: [], failed: { row: 5, message: "C5 is protected" } }, "Wrote the list's spelling into 1 cell of column C, then stopped at C5 (C5 is protected); nothing after it was written."],
+  ]) {
+    const host = strictHost(plain(COST_CELL));
+    const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }) });
+    await pane.start();
+    await pane.ui.strict.button("Check this column").click();
+    await pane.ui.strict.button("Replace 2 cells with the list's spelling").click();
+    // The write lands; the read after it fails (a sidebar call that timed out).
+    host.bridge.replaceValues = async () => { host.bridge.readContext = async () => unreadable(); return answer; };
+    await pane.ui.strict.button("Replace 2 cells").click();
+    assert.equal(pane.ui.message.textContent, report + " Could not read the column again: Exceeded maximum execution time");
+    assert.equal(pane.ui.strict.find((n) => n.className === "confirm"), null, "the question is gone");
+    assert.equal(pane.ui.strict.button("Replace 2 cells"), null, "and its buttons");
+    assert.equal(pane.ui.strict.button("Cancel"), null);
+    assert.equal(pane.ui.strict.find((n) => n.className === "check-summary"), null, "and the check made before the write");
+    assert.ok(pane.ui.strict.button("Check this column"), "the column's tools are back");
+  }
+  // A replacement that throws keeps the check for a retry, and its note stays in front of the read's failure.
+  const host = strictHost(plain(COST_CELL));
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }) });
+  await pane.start();
+  await pane.ui.strict.button("Check this column").click();
+  await pane.ui.strict.button("Replace 2 cells with the list's spelling").click();
+  host.bridge.replaceValues = async () => { host.bridge.readContext = async () => unreadable(); throw new Error("the script was stopped"); };
+  await pane.ui.strict.button("Replace 2 cells").click();
+  assert.equal(pane.ui.message.textContent, "Could not write the list's spelling into column C: the script was stopped. Cells written before the error, if any, keep the list's spelling. Could not read the column again: Exceeded maximum execution time");
+  assert.equal(pane.ui.strict.find((n) => n.className === "confirm"), null);
+  assert.ok(pane.ui.strict.find((n) => n.className === "check-summary"), "the check stays");
+  assert.ok(pane.ui.strict.button("Replace 2 cells with the list's spelling"));
+  await pane.ui.refresh.click();
+  assert.equal(pane.ui.message.textContent, "Cannot read the selection: Exceeded maximum execution time", "a read that fails on its own is said as before");
+});
+
+test("while a confirmed write is on its way, the status line says so and no column tool is offered, so a redraw cannot send a second request", async () => {
+  const host = strictHost(plain(COST_CELL), { column: columnOf(COST_CELL) });
+  const write = host.bridge.replaceValues;
+  let release = null;
+  host.bridge.replaceValues = (target, list) => new Promise((resolve) => { release = () => resolve(write(target, list)); });
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }) });
+  await pane.start();
+  await pane.ui.strict.button("Check this column").click();
+  await pane.ui.strict.button("Replace 2 cells with the list's spelling").click();
+  const yes = pane.ui.strict.button("Replace 2 cells");
+  const going = yes.click();
+  await settle();
+  assert.equal(pane.ui.message.textContent, "Writing the list's spelling into 2 cells of column C.", "not \"Nothing written yet\" while it is being written");
+  await pane.refresh(); // the sidebar's poll, or a selection event, while the write is on its way
+  assert.equal(pane.ui.strict.textContent, "Only values from the \"costCentres\" list.Writing the list's spelling into 2 cells of column C. The column's tools come back when the spreadsheet answers.");
+  assert.deepEqual(pane.ui.strict.all((n) => n.tagName === "button"), [], "no Replace, Check or validation button to start a second request");
+  await yes.click(); // the confirmation's own button, pressed again
+  release();
+  await going;
+  assert.equal(host.calls.filter(([what]) => what === "replace").length, 1, "one request");
+  assert.equal(pane.ui.message.textContent, "Wrote the list's spelling into 2 cells of column C.");
+  assert.ok(pane.ui.strict.button("Check this column"), "the tools are back");
+  // The same while list validation is turned on, and removed.
+  let done = null;
+  host.bridge.listValidation.apply = (target) => new Promise((resolve) => { done = () => resolve({ range: target.column + "2:" + target.column + "1048576" }); });
+  await pane.ui.strict.button("Turn on list validation for this column").click();
+  const on = pane.ui.strict.button("Turn it on").click();
+  await settle();
+  assert.equal(pane.ui.message.textContent, "Turning on list validation for column C.");
+  await pane.refresh();
+  assert.deepEqual(pane.ui.strict.all((n) => n.tagName === "button"), []);
+  done();
+  await on;
+  assert.match(pane.ui.message.textContent, /^List validation is on for C2:C1048576 on "Budget"/);
+  host.bridge.listValidation.remove = (target) => new Promise((resolve) => { done = () => resolve({ range: target.column + "2:" + target.column + "1048576" }); });
+  await pane.ui.strict.button("Remove list validation").click();
+  const off = pane.ui.strict.button("Remove it").click();
+  await settle();
+  assert.equal(pane.ui.message.textContent, "Removing the data validation from column C.");
+  assert.deepEqual(pane.ui.strict.all((n) => n.tagName === "button"), []);
+  done();
+  await off;
+  assert.equal(pane.ui.message.textContent, 'Removed the data validation from C2:C1048576 on "Budget".');
+});
+
+test("a check and a question belong to one sheet and one list: the same column letter on another sheet, or a header that brings another strict list, drops them", async () => {
+  const host = strictHost(plain(COST_CELL), { column: columnOf(COST_CELL) });
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }) });
+  await pane.start();
+  await pane.ui.strict.button("Check this column").click();
+  await pane.ui.strict.button("Replace 2 cells with the list's spelling").click();
+  const stale = pane.ui.strict.button("Replace 2 cells");
+  await host.select(Object.assign(plain(COST_CELL), { sheet: "Budget 2027" }));
+  assert.equal(pane.ui.context.textContent, 'C4 on Budget 2027, column "Cost centre": vocabulary costCentres', "the same rule applies on the other sheet");
+  assert.equal(pane.ui.strict.find((n) => n.className === "confirm"), null, "another sheet drops the question");
+  assert.equal(pane.ui.strict.find((n) => n.className === "check-summary"), null, "and the check");
+  assert.equal(pane.ui.message.textContent, "", "and its notice");
+  await stale.click();
+  assert.deepEqual(host.calls, [], "a button from the other sheet's question writes nothing");
+  await pane.ui.strict.button("Check this column").click();
+  await host.select(plain(COST_CELL));
+  assert.equal(pane.ui.strict.find((n) => n.className === "check-summary"), null, "a check of Budget 2027 is not shown for Budget");
+  // Two strict rules: the header of column C is edited, so the customers list applies to the same column of the same sheet.
+  const two = JSON.parse(ORGANIZATION);
+  two.columns = [{ match: { header: "^cost cent" }, vocabulary: "costCentres", strict: true }, { match: { header: "^customer" }, vocabulary: "customers", strict: true }];
+  const other = strictHost(plain(COST_CELL), { column: columnOf(COST_CELL) });
+  const second = Pane().createPane({ document, root: new Node("div"), bridge: other.bridge, core: sheets, storage: storageOf({ [KEY]: JSON.stringify(two) }) });
+  await second.start();
+  await second.ui.strict.button("Check this column").click();
+  await second.ui.strict.button("Replace 2 cells with the list's spelling").click();
+  const old = second.ui.strict.button("Replace 2 cells");
+  await other.select(Object.assign(plain(COST_CELL), { header: "Customer" }));
+  assert.equal(second.ui.strict.children[0].textContent, 'Only values from the "customers" list.');
+  assert.equal(second.ui.strict.find((n) => n.className === "confirm"), null, "the cost centre question does not carry over to the customers list");
+  assert.equal(second.ui.strict.find((n) => n.className === "check-summary"), null, "nor the cost centre check");
+  await old.click();
+  assert.deepEqual(other.calls, []);
+});
+
+test("a bridge that sends fewer row numbers than values gets no check", async () => {
+  const host = strictHost(Object.assign(plain(COST_CELL), { rows: [2, 3] }));
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }) });
+  await pane.start();
+  await pane.ui.strict.button("Check this column").click();
+  assert.equal(pane.ui.message.textContent, "Cannot check column C: the spreadsheet side of the add-in sent no row numbers. Update its files.");
+  assert.equal(pane.ui.strict.find((n) => n.className === "check-summary"), null, "no rows would be guessed");
+});
+
+test("the replacement's question ends with what the bridge says its host cannot tell apart", async () => {
+  const host = strictHost(plain(COST_CELL));
+  host.bridge.replaceNote = "A cell filled by an array formula in another cell is not recognised.";
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }) });
+  await pane.start();
+  await pane.ui.strict.button("Check this column").click();
+  await pane.ui.strict.button("Replace 2 cells with the list's spelling").click();
+  assert.equal(pane.ui.strict.find((n) => n.className === "confirm").textContent, 'Write the list\'s spelling into 2 cells of column C on "Budget", as listed above? Each cell is read again first; one that changed since the check, or that holds a formula, is left as it is. A cell filled by an array formula in another cell is not recognised.');
 });

@@ -15,8 +15,7 @@
   const SETTING = "actleSheetsConfig";
   const SHEET_ROWS = 1048576; // rows of a worksheet (Excel's specifications and limits); list validation covers row 2 to here
   // The longest list written into a validation rule, commas included. Not in the Office.js reference; Microsoft's
-  // VBA reference (Validation.Add) limits the same comma-delimited list to 255 characters, the libraries that write
-  // .xlsx files take 255, and a longer list is reported lost on reopening.
+  // VBA reference (Validation.Add) limits the same comma-delimited list to 255 characters.
   const LIST_SOURCE_MAX = 255;
   const VALIDATION_SET = ["ExcelApi", "1.8"]; // Range.dataValidation
   const SPILL_SET = ["ExcelApi", "1.12"]; // Range.getSpillParentOrNullObject, for the replacement only
@@ -151,7 +150,7 @@
     const comma = values.find((value) => value.includes(","));
     if (comma) return "the value " + JSON.stringify(comma) + " holds a comma, and Excel reads the list in a validation rule as values separated by commas";
     const length = values.join(",").length;
-    return length > LIST_SOURCE_MAX ? "it is " + length + " characters long with its commas, and Excel takes at most " + LIST_SOURCE_MAX + " in a validation rule" : null;
+    return length > LIST_SOURCE_MAX ? "it is " + length + " characters long with its commas, over the " + LIST_SOURCE_MAX + " Microsoft documents for such a list (for VBA; the Office.js reference names no limit)" : null;
   }
 
   function belowHeader(column) {
@@ -214,6 +213,8 @@
     }
     // Where Excel lacks the API set, the pane leaves list validation out instead of the manifest asking for more.
     const validation = Office.context.requirements.isSetSupported(VALIDATION_SET[0], VALIDATION_SET[1]);
+    // What replaceValues can tell apart besides a cell's own formula, for the replacement's question.
+    const spills = Office.context.requirements.isSetSupported(SPILL_SET[0], SPILL_SET[1]);
     const created = root.ActleSheetsPane.createPane({
       document,
       root: pane,
@@ -221,6 +222,9 @@
       storage,
       bridge: {
         readContext, writeValue, writeRows, writeFormula, replaceValues, loadConfig, saveConfig, onSelectionChanged,
+        replaceNote: spills
+          ? "A cell a dynamic array formula in another cell spills into is left too."
+          : "This Excel does not have " + SPILL_SET.join(" ") + ", so a cell a dynamic array formula in another cell spills into is not recognised and would be overwritten.",
         listValidation: validation ? { refusal: listRefusal, apply: setListValidation, remove: clearListValidation } : null,
         listValidationMissing: validation ? "" : "List validation is not offered: this Excel does not have " + VALIDATION_SET.join(" ") + ".",
       },

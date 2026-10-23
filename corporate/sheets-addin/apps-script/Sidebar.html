@@ -35,6 +35,8 @@
         writeRows: function (target, rows) { return call("writeRows", target, rows); },
         writeFormula: function (target, formula) { return call("writeFormula", target, formula); },
         replaceValues: function (target, changes) { return call("replaceValues", target, changes); },
+        // Code.gs skips a cell that holds a formula; a cell an array formula elsewhere fills holds none, so it cannot tell that one apart.
+        replaceNote: "A cell filled by an array formula in another cell (ARRAYFORMULA, FILTER, QUERY, SORT, UNIQUE, SPLIT, IMPORTRANGE and others) holds no formula of its own, so it is not recognised and would be overwritten.",
         // No limit on the number of values in a list rule was found in Google's documentation, so nothing is refused here; a rule the spreadsheet refuses comes back as an error.
         listValidation: {
           apply: function (target, values) { return call("setListValidation", target, values); },

@@ -17,6 +17,7 @@
 // bridge: { readContext() -> Promise<{sheet, address, text, header, values, rows, clipped}|null>,
 //           writeValue(target, text), writeRows(target, rows), writeFormula(target, formula),
 //           replaceValues({sheet, column}, [{row, from, to}]) -> Promise<{written: [row], skipped: [{row, text}], computed: [row], failed?: {row, message}}>,
+//           replaceNote: what the host's side does or cannot do beyond skipping a cell that holds a formula (added to the replacement's question),
 //           listValidation: null | { refusal?(values) -> reason|null, apply({sheet, column}, values, message) -> Promise<{range}>,
 //                                    remove({sheet, column}) -> Promise<{range}> },
 //           listValidationMissing: why there is no listValidation (shown as a hint),
@@ -179,8 +180,9 @@
     const make = (tag, attrs, children) => el(document, tag, attrs, children);
     // organization: the parsed browser copy (or what was saved this session); documentText: what the document carries;
     // fromDocument: the document's configuration is in use; offer: the document's, not yet used; pending: a block from it awaiting confirmation.
-    // strict: the strict column the cell is in; check: the last column check there; strictPending: a strict-column write awaiting confirmation.
-    const state = { config: core.parseConfig("").config, warnings: [], context: null, text: "", lastKey: "", message: "", reads: 0, organization: core.parseConfig(""), organizationText: "", documentText: "", fromDocument: false, offer: null, pending: null, strict: null, check: null, strictPending: null };
+    // strict: the strict column the cell is in; check: the last column check there; strictPending: a strict-column write awaiting confirmation;
+    // strictBusy: a confirmed strict-column write the host has not answered yet.
+    const state = { config: core.parseConfig("").config, warnings: [], context: null, text: "", lastKey: "", message: "", reads: 0, organization: core.parseConfig(""), organizationText: "", documentText: "", fromDocument: false, offer: null, pending: null, strict: null, check: null, strictPending: null, strictBusy: null };
     // The block buttons now shown, so focus can follow a button that a re-render (a selection event or the sidebar's poll) replaces.
     // strict: the strict column's buttons by name ("check", "replace", "validate", "unvalidate", "confirm", "cancel").
     const live = { insert: null, confirm: null, strict: new Map() };
@@ -360,6 +362,11 @@
       ui.strict.append(make("p", { class: "strict-rule", text: "Only values from the " + quoted(strict.name) + " list." }));
       // An address the pane cannot read names no column, so there is nothing to check or validate.
       if (!strict.at) return;
+      // While a confirmed write is on its way, no tool is offered: a redraw (the sidebar's poll, a selection event) must not open a second request.
+      if (state.strictBusy) {
+        ui.strict.append(make("p", { class: "hint", text: state.strictBusy.busy + " The column's tools come back when the spreadsheet answers." }));
+        return;
+      }
       const button = (name, cls, text, handler) => {
         const node = make("button", { type: "button", class: cls, text });
         node.addEventListener("click", handler);
@@ -456,10 +463,15 @@
       // A button from a check that is gone (another column, another configuration) asks nothing.
       if (state.check !== check) return;
       const n = check.result.fixes.length;
+      // Every cell the check found is written, also those counted but not listed.
+      const which = n > CHECK_ITEMS ? "the " + CHECK_ITEMS + " listed above and " + (n - CHECK_ITEMS) + " more the check found" : "as listed above";
+      // The bridge adds what its host's side cannot tell apart (a cell an array formula elsewhere fills).
+      const note = bridge.replaceNote ? " " + String(bridge.replaceNote) : "";
       ask({
         kind: "replace", key: check.key, from: "replace", sheet: check.sheet, letters: check.letters, fixes: check.result.fixes,
         notice: "Nothing written yet: confirm the list's spelling for " + cells(n) + " in column " + check.letters + ", or cancel.",
-        question: listOrigin() + "Write the list's spelling into " + cells(n) + " of column " + check.letters + " on " + quoted(check.sheet) + ", as listed above? Each cell is read again first; one that changed since the check, or whose value comes from a formula, is left as it is.",
+        question: listOrigin() + "Write the list's spelling into " + cells(n) + " of column " + check.letters + " on " + quoted(check.sheet) + ", " + which + "? Each cell is read again first; one that changed since the check, or that holds a formula, is left as it is." + note,
+        busy: "Writing the list's spelling into " + cells(n) + " of column " + check.letters + ".",
         confirmText: "Replace " + cells(n),
       });
     }
@@ -472,6 +484,7 @@
         kind: "validate", key, from: "validate", sheet: strict.sheet, letters: strict.at.letters, name: strict.name, values,
         notice: "Nothing written yet: confirm list validation for column " + strict.at.letters + ", or cancel.",
         question: listOrigin() + "Turn on list validation for column " + strict.at.letters + " on " + quoted(strict.sheet) + ", from row 2 down? A value typed into those cells that is not one of the " + values.length + " values of the " + quoted(strict.name) + " list is then refused. Values already in the column stay as they are, and a pasted value may not be checked. Data validation those cells have now is replaced.",
+        busy: "Turning on list validation for column " + strict.at.letters + ".",
         confirmText: "Turn it on",
       });
     }
@@ -483,6 +496,7 @@
         kind: "unvalidate", key, from: "unvalidate", sheet: strict.sheet, letters: strict.at.letters,
         notice: "Nothing changed yet: confirm removing the data validation from column " + strict.at.letters + ", or cancel.",
         question: "Remove the data validation from column " + strict.at.letters + " on " + quoted(strict.sheet) + ", from row 2 down? This clears any data validation those cells have, not only a list turned on here.",
+        busy: "Removing the data validation from column " + strict.at.letters + ".",
         confirmText: "Remove it",
       });
     }
@@ -508,31 +522,46 @@
       return text;
     }
 
-    /** The confirmed write. A button from a question that is gone writes nothing. */
+    /**
+     * The confirmed write. A button from a question that is gone writes
+     * nothing. Until the host answers, the status line says what is being
+     * written and the column's tools are not offered.
+     */
     async function confirmStrict(pending) {
       if (state.strictPending !== pending) return;
       state.strictPending = null;
+      state.strictBusy = pending;
+      say(pending.busy);
+      render();
       const target = { sheet: pending.sheet, column: pending.letters };
+      let report;
       try {
         if (pending.kind === "replace") {
           const result = await bridge.replaceValues(target, pending.fixes.map((fix) => ({ row: fix.row, from: fix.text, to: fix.value })));
           state.check = null;
-          say(replaced(pending, result));
+          report = replaced(pending, result);
         } else if (pending.kind === "validate") {
           const result = await bridge.listValidation.apply(target, pending.values, "Only values from the " + quoted(pending.name) + " list.");
-          say("List validation is on for " + result.range + " on " + quoted(pending.sheet) + ": a value typed there that is not in the " + quoted(pending.name) + " list is refused. Values already there are not checked; Check this column lists them.");
+          report = "List validation is on for " + result.range + " on " + quoted(pending.sheet) + ": a value typed there that is not in the " + quoted(pending.name) + " list is refused. Values already there are not checked; Check this column lists them.";
         } else {
           const result = await bridge.listValidation.remove(target);
-          say("Removed the data validation from " + result.range + " on " + quoted(pending.sheet) + ".");
+          report = "Removed the data validation from " + result.range + " on " + quoted(pending.sheet) + ".";
         }
       } catch (error) {
         const what = pending.kind === "replace" ? "write the list's spelling into" : pending.kind === "validate" ? "turn on list validation for" : "remove the data validation from";
         // A bridge that throws cannot say how far it got (an Excel error without trace messages, a script stopped by Google).
-        say("Could not " + what + " column " + pending.letters + ": " + reason(error) + (pending.kind === "replace" ? ". Cells written before the error, if any, keep the list's spelling." : ""));
+        // Excel clears the old rule before it sets the list in the same batch, so a rule it refuses can leave the cells with none.
+        const after = pending.kind === "replace" ? ". Cells written before the error, if any, keep the list's spelling." : pending.kind === "validate" ? ". Data validation those cells had before may already be cleared." : "";
+        // A host message that ends with a full stop does not get a second one before the note.
+        report = "Could not " + what + " column " + pending.letters + ": " + (after ? reason(error).replace(/\.+$/, "") : reason(error)) + after;
+      } finally {
+        state.strictBusy = null;
       }
-      // The cells changed under the pane: read the selection again so the column's values are current.
-      if (pending.kind === "replace") await refresh();
-      else render();
+      say(report);
+      // The question and a dropped check leave the screen now, whatever the read below does.
+      render();
+      // The cells changed under the pane: read the selection again so the column's values are current. A read that fails adds to the report.
+      if (pending.kind === "replace") await refresh(report);
       focus(live.strict.get(pending.from) || live.strict.get("check"));
     }
 
@@ -567,14 +596,18 @@
       }
     }
 
-    /** Read the selection; the input follows the cell only when the selection or its text changed. */
-    async function refresh() {
+    /**
+     * Read the selection; the input follows the cell only when the selection
+     * or its text changed. `report`: what a write just did, kept in front of a
+     * failed read's reason so it is not lost.
+     */
+    async function refresh(report) {
       const read = ++state.reads;
       let context = null;
       try {
         context = await bridge.readContext();
       } catch (error) {
-        if (read === state.reads) say("Cannot read the selection: " + reason(error));
+        if (read === state.reads) say(report ? report + " Could not read the column again: " + reason(error) : "Cannot read the selection: " + reason(error));
         return;
       }
       // A later read already answered: this one describes a selection that is gone.
