@@ -117,7 +117,7 @@
   function renderUsage(section, helpers, info) {
     const { api, el } = helpers;
     section.append(el("h2", { class: "mt", text: "Usage from the add-in" }));
-    section.append(el("p", { class: "hint", text: "The add-in counts the completions and blocks it writes, per day, with the name of the vocabulary or trigger it used. In its Usage section, Copy for the desk gives a text; paste it here and choose Import to add those uses to the statistics and usage reports. Counts only: the text holds no cell text, sheet or file names. Importing the same text again adds nothing; a later text adds what is new." }));
+    section.append(el("p", { class: "hint", text: "The add-in counts the completions and blocks it writes, per day, with the name of the organisation's vocabulary or trigger, when it has one. In its Usage section, Copy for the desk gives a text; paste it here and choose Import to add those uses to the statistics and usage reports. Counts only: the text holds no cell text, sheet or file names. Importing the same text again adds nothing; a later text adds what is new." }));
     const box = el("textarea", { placeholder: "Paste the usage text from the add-in", "aria-label": "Usage text from the add-in" });
     box.value = importState.text;
     const run = el("button", { class: "primary", text: "Import" });

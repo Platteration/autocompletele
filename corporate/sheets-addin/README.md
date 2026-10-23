@@ -352,17 +352,21 @@ What is counted:
   column's own values or a notes sentence has no name. While the document's
   own configuration is in use, every use is counted under source `document`
   with no name: that configuration's names are the document author's text.
+  What counts is the configuration in use when the write started, so **Stop
+  using it** while a write is on its way does not give it the document's
+  names.
 
 Limits (`LIMITS` in `core/sheets-usage.js`): the newest 120 days are kept, and
 older days are dropped (a day after today, from a clock that went back or a
 time zone crossed westwards, is kept until there are 120); 12 names a day, a
 further name is counted without it; a name of 1 to 40 characters with no
-control character and no emoji or other character outside the Basic
-Multilingual Plane, any other is counted without it; 100,000 uses a counter a
-day (a use past it is not counted) and 100,000,000 keystrokes. With these the
-longest text the pane can write is 273,931 bytes
-(`test/sheets-usage.test.js` builds it), under a Google user property
-store's 500 KB.
+control character and no character outside the Basic Multilingual Plane is
+kept, any other is counted without it (this leaves out most emoji, not all:
+a name with ✅ or ⚠ is kept); 100,000 uses a counter a day (a use past it is
+not counted) and 100,000,000 keystrokes. With these the longest text the pane
+can write is 279,691 bytes, with 12 names of 40 three-byte characters on each
+of 120 days (`test/sheets-usage.test.js` builds it), under a Google user
+property store's 500 KB.
 
 The text is JSON: `format` `"extle-usage"`, `version` 1, `instance` (32
 hexadecimal characters made once by the add-in with `crypto.getRandomValues`,
@@ -406,24 +410,36 @@ Where the counts are kept:
   save, which writes them all again; a sidebar opened in between starts
   with none. No scope was added to `appsscript.json`: whether the Properties
   service needs one of its own could not be confirmed, since Google's pages
-  could not be opened here; the document properties already run under the
-  same manifest.
+  could not be opened here. The document properties use the same service
+  under the same manifest; neither has been run against Google.
 - The **Usage** section says where the counts are kept, or that they are
   kept for this session only and why: the browser cannot keep them, or the
   stored counts could not be read, and then nothing is written over them. A
   save that fails is said ("The latest counts could not be kept (...)");
   counting goes on, and the next use saves again. Stored text that is not a
   usage text is replaced, and the pane says so. One save runs at a time; uses
-  counted while it is on its way go with the next.
+  counted while it is on its way go with the next, and the totals shown
+  include them meanwhile.
 - Several panes share one store: task panes in two workbooks of one browser,
   or a person's sidebars in two spreadsheets of the published add-on. A save
   therefore reads what is stored first and adds only the uses this pane
   counted since its own last save, and **Copy for the desk** reads the store
-  before it writes the text, so it holds what the other panes saved. In Excel
-  the read and the write follow each other with nothing in between; in
-  Google they are two calls to Code.gs, and two sidebars that save in the
-  same moment can still lose one's uses, since nothing locks the store. A
-  read that fails keeps the uses for the next save.
+  before it writes the text, so it holds what the other panes saved. Where
+  nothing readable is stored (a person's first save, or after a save that
+  failed halfway), the save writes what the pane held when it started, not
+  uses counted while it read, which go with the next save. Within one Excel
+  pane nothing runs between the read and the write; whether task panes in
+  two Excel windows, which may run in separate processes, can save between
+  each other's read and write was not checked. In Google they are two calls
+  to Code.gs, and two sidebars that save in the same moment can still lose
+  one's uses, since nothing locks the store. A read that fails keeps the uses
+  for the next save.
+- **Copy for the desk** saves first. When that save fails, it gives no text
+  and says so: until a save works, the pane may still hold an instance id of
+  its own, and once it works its uses join the stored counts under the stored
+  id, so a text copied before would have the desk count them twice. Try again
+  once the counts are saved. A pane that keeps its counts for this session
+  only never joins a store, so it always gives its text.
 
 Handing them over: **Usage** in the pane shows today's and the last 7 days'
 uses and keystrokes saved. **Copy for the desk** puts the text into the
@@ -513,11 +529,14 @@ without the API, a host error, a document's strict rule, and a question or
 check from the document's configuration after Stop using it or Save while
 the organisation's makes the same column strict) and the full-width formula
 guard; and the usage counts: only writes that succeeded, with the
-vocabulary's name or the trigger, none for a document's configuration, a
-stored text continued, a browser that cannot keep, read or save them, a
-bridge store used instead of the browser and never written after a failed
-read, one save at a time, two panes sharing one store, an older core without
-the usage model, and **Copy for the desk** with and without the clipboard.
+vocabulary's name or the trigger, none for a document's configuration (also
+when **Stop using it** comes while the write is on its way), a stored text
+continued, a browser that cannot keep, read or save them, a bridge store used
+instead of the browser and never written after a failed read, one save at a
+time, a use counted while a save reads an empty store saved once, two panes
+sharing one store, a **Copy** with nothing new that writes nothing back, an
+older core without the usage model, and **Copy for the desk** with and
+without the clipboard and after a save that failed.
 `hosts.test.js` evaluates `taskpane.js` against a fake Excel workbook behind
 the Office.js objects it touches (used range at row 1 and lower, header-only
 and empty sheets, the 5,000-row clip, the order of number format and value,
@@ -533,13 +552,16 @@ where ExcelApi 1.12 is there, a protected cell stops the writes with the
 cells written before it), list rule, clearing, the Excel limits (255 characters,
 a comma in a value), the missing ExcelApi 1.8, and a Google sheet with no row
 below the header; and the usage counts: `Code.gs` keeps them in the user
-properties in pieces (the longest text fits one store), the sidebar reads
+properties in pieces (the longest text fits one store; the property calls a
+save takes), the sidebar reads
 them before the selection and saves them after a write, the Excel task pane
 keeps them in `localStorage`. `corporate/test/sheets-usage.test.js` covers the
 usage model (names, caps, days, the merge, the longest text, the parser's refusals), and
 `corporate/test/sheets-app.test.js` the build, the bundle in a sandbox with
-and without `Object.hasOwn`, the desktop channels (the import included), the
-usage reports and the dashboard tab.
+and without `Object.hasOwn`, the desktop channels (the import included, with
+a ledger that stops partway and retention dropping old days), the pane and the
+desk together (no text after a failed save), the usage reports and the
+dashboard tab.
 
 ## Not verified here
 
@@ -606,10 +628,18 @@ Google account or a browser:
   to the next on each platform; that Apps Script's user properties need no
   scope beyond `appsscript.json` and keep the pieces as the fake does (how
   Google counts a store's 500 KB, keys included or not, was not found); the
-  daily quota for property reads and writes (a third-party page gives
-  50,000; Google's could not be read), which a save per use spends a few of;
-  how long a `google.script.run` save takes; and whether either frame lets
-  `navigator.clipboard.writeText` through.
+  daily quota for property reads and writes, which search summaries of
+  Google's [quotas](https://developers.google.com/apps-script/guides/services/quotas)
+  page give as 50,000 for a consumer account and 500,000 for Google
+  Workspace (the page itself could not be opened here, and one third-party
+  page gives 50,000 for both); how long a `google.script.run` save takes;
+  and whether either frame lets `navigator.clipboard.writeText` through. The
+  pane saves after each counted use (uses counted while a save is on its way
+  share the next one), and a save spends 2 + n property reads and 2 + n
+  writes, n being the pieces the text takes, plus a delete for each piece a
+  shorter text no longer needs: 6 calls for a text of one piece, 74 for the
+  longest (35 pieces). **Copy for the desk** with nothing new spends 1 + n
+  reads.
 - `manifest.xml` has not been validated by Office or sideloaded; the icons it
   references are not shipped.
 - The pane's layout (`pane.css`), including the document configuration's

@@ -118,13 +118,16 @@ test("the usage text holds the format, the version, the instance id and the days
 });
 
 test("the longest text the add-in can write stays below the parser's cap and a Google user property store", () => {
-  // Every day of 120 holds 12 names of 40 three-byte characters and every unnamed counter, each at its caps.
+  // Every day of 120 holds 12 names of 40 three-byte characters (the most a kept character takes: no surrogate, no
+  // control character, and JSON escapes " and \ in 2 bytes) under the longest kind and source, and every unnamed counter, each at its caps.
   const state = usage.createUsage({ random: fixed(7) });
   const day = new Date(2026, 9, 23);
   const unnamed = [["completion", "vocabulary"], ["completion", "column"], ["completion", "notes"], ["completion", "document"], ["block", "formula"], ["block", "rows"], ["block", "document"]];
+  const wide = "€₤₥₦₧₨₩₪₫₭₮₯"; // a character of three UTF-8 bytes for each name
+  assert.equal(Buffer.byteLength(wide), 3 * wide.length);
   for (let d = 0; d < usage.LIMITS.days; d++, day.setDate(day.getDate() - 1)) {
     const list = [];
-    for (let i = 0; i < usage.LIMITS.namesPerDay; i++) list.push(["completion", "vocabulary", String(i).padStart(2, "0") + "€".repeat(usage.LIMITS.nameLength - 2), usage.LIMITS.count, usage.LIMITS.keystrokes]);
+    for (let i = 0; i < usage.LIMITS.namesPerDay; i++) list.push(["completion", "vocabulary", wide[i].repeat(usage.LIMITS.nameLength), usage.LIMITS.count, usage.LIMITS.keystrokes]);
     for (const [kind, source] of unnamed) list.push([kind, source, "", usage.LIMITS.count, usage.LIMITS.keystrokes]);
     state.days[usage.dayOf(new Date(day))] = list;
   }
@@ -134,7 +137,8 @@ test("the longest text the add-in can write stays below the parser's cap and a G
   // developers.google.com/apps-script/guides/services/quotas: 500 KB per property store; Code.gs adds a key per 8,192-byte piece.
   const bytes = Buffer.byteLength(text, "utf8");
   assert.ok(bytes + Math.ceil(bytes / 8192) * 40 < 500000, bytes + " bytes");
-  assert.equal(bytes, 273931, "the figure the add-in README gives");
+  assert.equal(bytes, 279691, "the figure the add-in README gives");
+  assert.equal(text.length, 164491);
 });
 
 test("parseUsage refuses malformed or oversized text with a reason, and never throws", () => {

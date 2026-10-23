@@ -16,8 +16,9 @@ const { createAssistant } = require("../desktop/assistant.js");
 const { SAMPLE_SECTION } = require("../desktop/apps/sheets/sample.js");
 const build = require("../sheets-addin/build.js");
 const report = require("../core/report.js");
+const metrics = require("../core/metrics.js");
 const admin = require("../admin/actle-admin.js");
-const { Node, el, sandboxed, plain } = require("../sheets-addin/test/fakes.js");
+const { Node, el, sandboxed, plain, fakeDocument, storageOf } = require("../sheets-addin/test/fakes.js");
 
 const ADDIN = path.join(__dirname, "..", "sheets-addin");
 const RENDERER = path.join(__dirname, "..", "desktop", "renderer", "apps", "sheets.js");
@@ -424,6 +425,10 @@ test("sheets:importUsage adds each use once as an extle entry at local noon of i
   // The entries are kept as kind sheets: a new assistant on the same folder reads them back.
   const reopened = createAssistant({ dataDir, now: () => new Date(2026, 9, 21, 12).getTime() });
   assert.equal(sheetEntries(reopened).length, 12, "metrics.jsonl holds kind sheets, which the ledger reads as such");
+  // A name is matched against its own list only: a block named like a vocabulary, a completion named like a trigger.
+  const crossed = usageText({ "2026-10-21": [["block", "formula", "customers", 1, 2], ["completion", "vocabulary", "/vat", 1, 3]] }, "12".repeat(16));
+  assert.equal(assistant.invoke("sheets:importUsage", { text: crossed }).added, 2);
+  assert.deepEqual(sheetEntries(assistant).slice(-2).map((e) => [e.trigger, e.source, e.keystrokesSaved]), [["", "", 2], ["", "", 3]], "both counted without a name");
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -447,6 +452,8 @@ test("sheets:importUsage refuses days after today, days before the statistics' h
   const many = usageText({ "2026-10-19": [["completion", "column", "", 20003, 40006]], "2026-10-20": [["block", "formula", "/vat", 2, 28]] }, "ef".repeat(16));
   const capped = assistant.invoke("sheets:importUsage", { text: many });
   assert.deepEqual(capped, { ok: true, added: 20000, alreadyImported: 0, days: 1, refused: ["5 uses past the 20000 one import adds were not imported; import the same text again to add them."], broadcast: { metrics: true, apps: true } });
+  const firstPart = sheetEntries(assistant).slice(2);
+  assert.deepEqual([firstPart.length, firstPart.reduce((sum, e) => sum + e.keystrokesSaved, 0)], [20000, 40000], "the keystrokes go with the uses: 20000 of 20003 uses take 40000 of 40006");
   const rest = assistant.invoke("sheets:importUsage", { text: many });
   assert.deepEqual([rest.added, rest.alreadyImported, rest.refused], [5, 20000, []]);
   const fromMany = sheetEntries(assistant).slice(2);
@@ -473,8 +480,12 @@ test("sheets:importUsage refuses days after today, days before the statistics' h
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
-test("an import the desk cannot record adds nothing, a ledger that stops partway leaves the rest for the next import, and an audit that fails is said", () => {
-  const records = [];
+test("an import the desk cannot record adds nothing; a ledger that stops partway leaves the rest for the next import and never counts a use twice; an audit that fails is said", () => {
+  // The desk's own ledger: an entry is kept in memory, then appended to metrics.jsonl (here `disk`), which can throw.
+  const ledger = metrics.createLedger({ now: () => new Date(2026, 9, 21, 12).getTime() });
+  const disk = [];
+  let appendsLeft = Infinity; // appends that work before the disk is full
+  ledger.onRecord((entry) => { if (appendsLeft-- <= 0) throw new Error("disk full"); disk.push(entry); });
   const files = {};
   const audits = [];
   const host = (options) => ({
@@ -482,25 +493,54 @@ test("an import the desk cannot record adds nothing, a ledger that stops partway
     now: () => new Date(2026, 9, 21, 12).getTime(),
     audit: (entry) => { if (options.audit) throw new Error(options.audit); audits.push(entry); },
     appData: (id) => ({ load: (fallback) => (files[id] ? JSON.parse(files[id]) : fallback), save: (value) => { if (options.save) throw new Error(options.save); files[id] = JSON.stringify(value); } }),
-    ledger: { record: (entry) => { if (options.stopAfter != null && records.length >= options.stopAfter) throw new Error("disk full"); records.push(entry); return entry; } },
+    ledger,
   });
   const text = usageText({ "2026-10-20": [["completion", "vocabulary", "customers", 3, 48]] });
   const [unwritable] = loadApps(host({ save: "read-only file system" }), { ids: ["sheets"] });
   assert.deepEqual(unwritable.ipc["sheets:importUsage"]({ text }), { ok: false, error: "Not imported: could not record the import: read-only file system" });
-  assert.deepEqual(records, [], "nothing recorded when the import itself cannot be recorded");
-  const [stopping] = loadApps(host({ stopAfter: 2 }), { ids: ["sheets"] });
+  assert.deepEqual(ledger.entries(), [], "nothing recorded when the import itself cannot be recorded");
+  // The second append fails: the first use is on disk, the second only in this session's statistics.
+  appendsLeft = 1;
+  const [stopping] = loadApps(host({}), { ids: ["sheets"] });
   const partial = stopping.ipc["sheets:importUsage"]({ text });
-  assert.deepEqual(partial, { ok: false, added: 2, error: "Added 2 of 3 uses to the statistics, then stopped: disk full; importing the same text again adds the rest.", broadcast: { metrics: true, apps: true } });
-  assert.deepEqual(JSON.parse(files.sheets).imported, { [INSTANCE]: { "2026-10-20": { '["completion","vocabulary","customers"]': [2, 32] } } }, "only what was recorded counts as imported");
+  assert.deepEqual(partial, { ok: false, added: 2, error: "Added 2 of 3 uses to the statistics, then stopped: disk full; the last of them is in this session's statistics but may be missing from metrics.jsonl, and is not added again; importing the same text again adds the rest.", broadcast: { metrics: true, apps: true } });
+  assert.deepEqual([ledger.entries().length, disk.length], [2, 1]);
+  assert.deepEqual(JSON.parse(files.sheets).imported, { [INSTANCE]: { "2026-10-20": { '["completion","vocabulary","customers"]': [2, 32] } } }, "what the statistics hold counts as imported");
   assert.equal(JSON.parse(files.sheets).lastImport.added, 2);
-  const [working] = loadApps(host({}), { ids: ["sheets"] });
-  const again = working.ipc["sheets:importUsage"]({ text });
+  appendsLeft = Infinity;
+  const again = stopping.ipc["sheets:importUsage"]({ text });
   assert.deepEqual([again.ok, again.added, again.alreadyImported], [true, 1, 2]);
-  assert.equal(records.length, 3);
-  assert.equal(records.reduce((sum, e) => sum + e.keystrokesSaved, 0), 48);
+  assert.deepEqual([ledger.entries().length, disk.length], [3, 2], "three uses in the statistics, not four; the one the disk missed stays missing there");
+  assert.equal(ledger.entries().reduce((sum, e) => sum + e.keystrokesSaved, 0), 48);
+  // The last append fails: every use is in the statistics, so there is no rest to add.
+  appendsLeft = 0;
+  const last = stopping.ipc["sheets:importUsage"]({ text: usageText({ "2026-10-21": [["block", "formula", "/vat", 1, 14]] }) });
+  assert.deepEqual([last.ok, last.added, last.error], [false, 1, "Added 1 of 1 uses to the statistics, then stopped: disk full; the last of them is in this session's statistics but may be missing from metrics.jsonl, and is not added again."]);
+  appendsLeft = Infinity;
+  assert.equal(stopping.ipc["sheets:importUsage"]({ text: usageText({ "2026-10-21": [["block", "formula", "/vat", 1, 14]] }) }).added, 0);
+  assert.equal(ledger.entries().length, 4);
   const [silent] = loadApps(host({ audit: "audit.jsonl is read-only" }), { ids: ["sheets"] });
   const noted = silent.ipc["sheets:importUsage"]({ text: usageText({ "2026-10-21": [["completion", "column", "", 1, 1]] }) });
   assert.deepEqual([noted.ok, noted.added, noted.note], [true, 1, "The audit line could not be written: audit.jsonl is read-only"]);
+});
+
+test("sheets:importUsage forgets what it imported for days the statistics no longer keep", () => {
+  const dataDir = temp();
+  fs.writeFileSync(path.join(dataDir, "policy.json"), JSON.stringify({ organization: "Org", sheets: SAMPLE_SECTION, retention: { metricsDays: 30 } }));
+  let now = new Date(2026, 9, 21, 12).getTime();
+  const assistant = createAssistant({ dataDir, now: () => now });
+  const record = () => JSON.parse(fs.readFileSync(path.join(dataDir, "apps", "sheets.json"), "utf8")).imported;
+  const text = usageText({ "2026-10-01": [["completion", "column", "", 1, 2]], "2026-10-20": [["completion", "column", "", 1, 2]] });
+  assert.equal(assistant.invoke("sheets:importUsage", { text }).added, 2);
+  assert.deepEqual(Object.keys(record()[INSTANCE]), ["2026-10-01", "2026-10-20"]);
+  now = new Date(2026, 10, 10, 12).getTime(); // 2026-10-01 is now more than 30 days back, 2026-10-20 is not
+  assert.equal(assistant.invoke("sheets:importUsage", { text: usageText({ "2026-11-10": [["completion", "column", "", 1, 2]] }, "cd".repeat(16)) }).added, 1);
+  assert.deepEqual(Object.keys(record()[INSTANCE]), ["2026-10-20"], "the older day is dropped at the next import");
+  now = new Date(2026, 11, 31, 12).getTime(); // every day of the first text is past
+  assistant.invoke("sheets:importUsage", { text: usageText({ "2026-12-31": [["completion", "column", "", 1, 2]] }, "cd".repeat(16)) });
+  assert.deepEqual(Object.keys(record()), ["cd".repeat(16)], "an add-in with no day left is dropped");
+  assert.deepEqual(Object.keys(record()["cd".repeat(16)]), ["2026-12-31"]);
+  fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
 test("an imported extle use is an organisation item in the usage report and in actle-admin report when the policy names it, and part of the personal total otherwise", () => {
@@ -532,6 +572,57 @@ test("an imported extle use is an organisation item in the usage report and in a
   for (const dir of [dataDir, files]) fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("from the pane to the desk: a pane whose save failed gives no text, so the desk never adds its uses under two instance ids; a pane that keeps counts for this session only always gives one", async () => {
+  const { assistant, dataDir } = desk();
+  const { createPane } = sandboxed(path.join(ADDIN, "pane.js")).window.ActleSheetsPane;
+  const config = JSON.stringify(sheets.exportConfig(SAMPLE_SECTION));
+  const cell = { sheet: "Orders 2026", address: "B4", text: "acm", header: "Customer", values: ["ACME"], clipped: false };
+  let kept = ""; // one Google user property store shared by two sidebars
+  const open = (keeps) => {
+    const side = { unreadable: "" };
+    const bridge = { readContext: async () => plain(cell), writeValue: async () => {}, writeRows: async () => {}, writeFormula: async () => {}, loadConfig: async () => "", saveConfig: async () => {} };
+    if (keeps) {
+      bridge.loadUsage = async () => { if (side.unreadable) throw new Error(side.unreadable); return kept; };
+      bridge.saveUsage = async (text) => { kept = text; };
+    }
+    side.pane = createPane({ document: fakeDocument(), root: new Node("div"), bridge, core: sheets, storage: keeps ? storageOf({ actleSheetsConfig: config }) : null, now: () => new Date(2026, 9, 21, 10), clipboard: null });
+    side.use = async () => {
+      side.pane.ui.input.value = "acm";
+      await side.pane.ui.input.fire("input");
+      await side.pane.ui.completions.find((n) => n.className === "completion").click();
+      await side.pane.saving();
+    };
+    side.paste = async () => {
+      await side.pane.copyUsage();
+      return assistant.invoke("sheets:importUsage", { text: side.pane.ui.usageText.value });
+    };
+    return side;
+  };
+  const one = open(true);
+  const two = open(true);
+  await one.pane.start();
+  await two.pane.start(); // both start on an empty store, each with an instance id of its own
+  two.unreadable = "Exceeded maximum execution time";
+  await two.use();
+  const refused = await two.paste();
+  assert.equal(two.pane.ui.usageText.value, "", "no text while the counts cannot be saved");
+  assert.match(two.pane.ui.usageStatus.textContent, /^Nothing copied: the counts could not be saved first/);
+  assert.equal(refused.ok, false, "so nothing to import");
+  await one.use(); // the store now holds one's instance id
+  two.unreadable = "";
+  const imported = await two.paste(); // two's use joins the stored counts, under one's id
+  assert.deepEqual([imported.ok, imported.added], [true, 2]);
+  assert.deepEqual(plain(Object.values(sheets.usage.parseUsage(kept).usage.days)), [[["completion", "vocabulary", "customers", 2, 32]]]);
+  assert.equal(sheetEntries(assistant).length, 2, "two uses, two entries");
+  // Counts kept for this session only are never merged into another store, so their text is always given.
+  const alone = open(false);
+  await alone.pane.start();
+  await alone.use();
+  assert.match(alone.pane.ui.usageNote.textContent, /^Counts are kept for this session only/);
+  assert.deepEqual([(await alone.paste()).added, sheetEntries(assistant).length], [1, 3]);
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
 test("the dashboard tab imports a pasted usage text, shows the result and the last import, keeps a refused text in the box, and says when the channel threw", async () => {
   const { assistant, dataDir } = desk();
   const calls = [];
@@ -540,6 +631,7 @@ test("the dashboard tab imports a pasted usage text, shows the result and the la
   const section = new Node("section");
   await tab.render(section, helpers, {});
   assert.ok(section.find((n) => n.tagName === "h2" && n.textContent === "Usage from the add-in"));
+  assert.match(section.textContent, /per day, with the name of the organisation's vocabulary or trigger, when it has one\./, "a column's own values, a notes sentence and the document's configuration give no name");
   assert.match(section.textContent, /Nothing imported yet\./);
   const box = () => section.find((n) => n.tagName === "textarea" && n.attrs["aria-label"] === "Usage text from the add-in");
   const line = () => section.all((n) => n.attrs.role === "status").pop();

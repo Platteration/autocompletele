@@ -233,26 +233,39 @@ function createApp(host) {
       return { ok: false, error: "Not imported: could not record the import: " + error.message };
     }
     const progress = plan.map(() => [0, 0]);
+    // The ledger keeps an entry in memory before it appends it to metrics.jsonl, so an append that
+    // fails leaves the entry in this session's statistics. Its length tells whether that happened.
+    const before = host.ledger.entries().length;
+    let current; // [plan index, keystrokes] of the entry being recorded
     try {
       plan.forEach((item, i) => {
         const base = Math.floor(item.share / item.take);
         const rest = item.share - base * item.take;
         for (let n = 0; n < item.take; n++) {
           const keystrokesSaved = base + (n < rest ? 1 : 0);
+          current = [i, keystrokesSaved];
           host.ledger.record({ at: item.at, kind: "sheets", app: NAMES.sheets.name, trigger: item.trigger, source: item.trigger ? "organization" : "", keystrokesSaved });
           progress[i][0] += 1;
           progress[i][1] += keystrokesSaved;
         }
       });
     } catch (error) {
-      const recorded = progress.reduce((total, pair) => total + pair[0], 0);
-      let kept = "importing the same text again adds the rest.";
+      let recorded = progress.reduce((total, pair) => total + pair[0], 0);
+      // An entry in memory but perhaps not on disk counts as imported: a second import must not count it twice.
+      const unsaved = host.ledger.entries().length - before > recorded;
+      if (unsaved) {
+        progress[current[0]][0] += 1;
+        progress[current[0]][1] += current[1];
+        recorded += 1;
+      }
+      let kept = recorded < added ? "importing the same text again adds the rest." : "";
       try {
         remember(progress, Object.assign({}, summary, { added: recorded, days: new Set(plan.filter((item, i) => progress[i][0]).map((item) => item.day)).size }));
       } catch (again) {
         kept = "and the import could not be corrected (" + again.message + "), so importing the same text again does not add the rest.";
       }
-      return { ok: false, added: recorded, error: "Added " + recorded + " of " + added + " uses to the statistics, then stopped: " + error.message + "; " + kept, broadcast: { metrics: true, apps: true } };
+      const lost = unsaved ? "; the last of them is in this session's statistics but may be missing from " + FILES.metrics + ", and is not added again" : "";
+      return { ok: false, added: recorded, error: "Added " + recorded + " of " + added + " uses to the statistics, then stopped: " + error.message + lost + (kept ? "; " + kept : "."), broadcast: { metrics: true, apps: true } };
     }
     const result = { ok: true, added, alreadyImported: already, days, refused: reasons, broadcast: { metrics: true, apps: true } };
     try {

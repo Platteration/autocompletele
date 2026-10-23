@@ -179,8 +179,8 @@ replacement or list validation), per day: how many and the keystrokes saved, wit
 the vocabulary's name or the trigger when it comes from the organisation's copy in
 the browser; while a document's own configuration is in use, without a name. It
 keeps 120 days, 12 names a day and names of up to 40 characters (a longer one, or one
-with a control character or an emoji or another character outside the Basic
-Multilingual Plane, is counted without it). The counts are kept
+with a control character or a character outside the Basic Multilingual Plane, which
+rules out most emoji but not all, is counted without it). The counts are kept
 in the browser (Excel) or in the person's own Apps Script user properties (Google),
 never with the document. The add-in cannot reach the desk, so its Usage section
 gives a text the person copies and pastes into the desk's extle tab; each use not
@@ -314,7 +314,8 @@ prints desks, hours saved, estimated value, totals per team, organisation
 shortcuts by use and the ones nobody used (an extle vocabulary or trigger as
 `sheets <name>`; a vocabulary and a trigger with the same name share one line;
 a name the add-in does not keep, longer than 40 characters or with a control
-character or an emoji, is never listed, since no use can carry it), and writes the same as CSV to a
+character or a character outside the Basic Multilingual Plane, is never listed, since
+no use can carry it), and writes the same as CSV to a
 new file (`--csv` never replaces an existing file: name a new one, or delete
 the old one first). An unreadable report is skipped with a warning.
 

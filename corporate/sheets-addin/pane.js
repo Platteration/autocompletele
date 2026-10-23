@@ -241,7 +241,7 @@
       ]),
       make("details", { class: "usage" }, [
         make("summary", { text: "Usage" }),
-        make("p", { class: "hint", text: "extle counts the completions and blocks it writes into cells: per day, how many and the keystrokes they saved, with the name of the organisation's vocabulary or trigger. Never cell text, sheet or file names. Copy them for the desk to add them to your statistics there." }),
+        make("p", { class: "hint", text: "extle counts the completions and blocks it writes into cells: per day, how many and the keystrokes they saved, with the name of the organisation's vocabulary or trigger, when it has one. Never cell text, sheet or file names. Copy them for the desk to add them to your statistics there." }),
         ui.usageTotals,
         ui.usageNote,
         make("div", { class: "actions" }, [ui.copyUsage]),
@@ -667,6 +667,8 @@
       const where = target();
       if (!where) return;
       const typed = state.text;
+      // Read before the write: Stop using it while the write is on its way must not give this use the document's names.
+      const fromDocument = state.fromDocument;
       const value = state.text.slice(0, completion.start) + completion.value;
       if (core.formulaLike(value)) {
         say("Not written to " + where.address + ": starting with " + JSON.stringify(value[0]) + ", the cell could read it as a formula. Change the first character, then choose again.");
@@ -685,7 +687,7 @@
       // A vocabulary completion is counted with the vocabulary's name; the column's own values and sentences without one.
       const kind = (column && column.kind) || profileKind;
       const source = completion.source === "vocabulary" ? "vocabulary" : kind === "notes" ? "notes" : "column";
-      countUse({ kind: "completion", source, name: source === "vocabulary" && column ? column.vocabulary : "", inserted: value, typed });
+      countUse({ kind: "completion", source, name: source === "vocabulary" && column ? column.vocabulary : "", inserted: value, typed, document: fromDocument });
       render();
     }
 
@@ -718,6 +720,7 @@
     async function writeBlock(block, where) {
       state.pending = null;
       const typed = state.text;
+      const fromDocument = state.fromDocument; // read before the write, as in choose
       try {
         if (block.formula) await bridge.writeFormula(where, block.formula);
         else await bridge.writeRows(where, block.rows);
@@ -731,7 +734,7 @@
       say("Inserted " + block.label + " at " + where.address + ".");
       // Rows count a keystroke for each move to the next cell (a tab or a new line), as typing them would.
       const inserted = block.formula ? block.formula : block.rows.map((row) => row.map((cell) => String(cell == null ? "" : cell)).join("\t")).join("\n");
-      countUse({ kind: "block", source: block.formula ? "formula" : "rows", name: block.trigger, inserted, typed });
+      countUse({ kind: "block", source: block.formula ? "formula" : "rows", name: block.trigger, inserted, typed, document: fromDocument });
       render();
     }
 
@@ -786,12 +789,15 @@
       renderUsage();
     }
 
-    /** Count a write that succeeded, then keep the counts; while the document's configuration is in use, without a name. */
+    /**
+     * Count a write that succeeded, then keep the counts. event.document: the
+     * document's configuration was in use when the write started (the core
+     * then counts it without a name).
+     */
     function countUse(event) {
       if (!usage.state) return;
-      const given = Object.assign({ document: state.fromDocument }, event);
-      if (!core.usage.record(usage.state, given, now())) return;
-      core.usage.record(usage.delta, given, now());
+      if (!core.usage.record(usage.state, event, now())) return;
+      core.usage.record(usage.delta, event, now());
       renderUsage();
       persistUsage();
     }
@@ -804,24 +810,33 @@
       return usage.busy;
     }
 
+    /** A copy of a usage state, so a save can keep what the pane held when it took the delta. */
+    function copyOf(counts) {
+      const days = {};
+      for (const key of Object.keys(counts.days)) days[key] = counts.days[key].map((counter) => counter.slice());
+      return { instance: counts.instance, days };
+    }
+
     /**
      * What is stored now (another pane in this browser, or another sidebar of
      * the same person, may have saved since), with the uses counted here since
      * the last save added; written back only when there is anything to add.
-     * Where nothing readable is stored, the counts this pane holds are written.
+     * Where nothing readable is stored, `base` is written: the counts this pane
+     * held when it took the delta. Not the live counts: a use counted while
+     * the bridge reads is in the next delta, and would be added twice.
      */
-    async function saveUsage(delta) {
+    async function saveUsage(delta, base) {
       const adding = Object.keys(delta.days).length > 0;
       const merge = (text) => {
         const parsed = text ? core.usage.parseUsage(text) : null;
-        return parsed && parsed.ok ? core.usage.mergeUsage(parsed.usage, delta) : usage.state;
+        return parsed && parsed.ok ? core.usage.mergeUsage(parsed.usage, delta) : base;
       };
       if (usage.store === "bridge") {
         const next = merge(String((await bridge.loadUsage()) || ""));
         if (adding) await bridge.saveUsage(core.usage.serializeUsage(next));
         return next;
       }
-      // getItem and setItem with nothing in between, so another pane of this browser cannot save in the gap.
+      // getItem and setItem with nothing in between in this pane; whether a pane in another process can save in the gap was not checked.
       const next = merge(storage.getItem(USAGE_KEY) || "");
       if (adding) storage.setItem(USAGE_KEY, core.usage.serializeUsage(next));
       return next;
@@ -832,9 +847,12 @@
       while (usage.dirty) {
         usage.dirty = false;
         const delta = usage.delta;
+        const base = copyOf(usage.state);
         usage.delta = { instance: usage.state.instance, days: {} };
         try {
-          usage.state = await saveUsage(delta);
+          const next = await saveUsage(delta, base);
+          // Uses counted while the save was on its way are not in what was saved; they stay in the counts shown and go with the next save.
+          usage.state = core.usage.mergeUsage(next, usage.delta);
           usage.failure = "";
         } catch (error) {
           // The uses go with the next save.
@@ -849,11 +867,20 @@
     /**
      * The usage text, in the read-only box and selected; the clipboard is
      * tried as well, and the box is there when it refuses. The stored counts
-     * are read first, so what other panes saved is in the text too.
+     * are read first, so what other panes saved is in the text too. When that
+     * save fails, no text is given: the pane may still hold its own instance
+     * id, and once a save works its uses join the stored counts under another
+     * id, so the desk would add them twice. Counts kept for this session only
+     * are never merged, so their text is always given.
      */
     async function copyUsage() {
       if (!usage.state) return;
       await persistUsage();
+      if (usage.store && usage.failure) {
+        ui.usageText.value = "";
+        ui.usageStatus.textContent = "Nothing copied: the counts could not be saved first, and a text copied before they are saved could count uses twice on the desk. Try Copy for the desk again later.";
+        return;
+      }
       const text = core.usage.serializeUsage(usage.state);
       ui.usageText.value = text;
       focus(ui.usageText);

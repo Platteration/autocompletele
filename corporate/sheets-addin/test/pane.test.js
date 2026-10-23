@@ -1029,9 +1029,11 @@ async function completeWith(pane, text) {
 test("the pane counts each completion and block it writes, with the vocabulary's name or the trigger, and nothing for a write that was refused, failed or only proposed", async () => {
   const storage = storageOf({ [KEY]: ORGANIZATION });
   const host = strictHost(plain(CUSTOMER_CELL), { column: columnOf(Object.assign(plain(CUSTOMER_CELL), { rows: [2, 3, 5] })) });
-  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage, now: TODAY });
+  const root = new Node("div");
+  const pane = Pane().createPane({ document, root, bridge: host.bridge, core: sheets, storage, now: TODAY });
   await pane.start();
   assert.equal(pane.ui.usageNote.textContent, "Counts are kept in this browser.");
+  assert.match(texts(root, "hint").join("\n"), /per day, how many and the keystrokes they saved, with the name of the organisation's vocabulary or trigger, when it has one\./, "the notes sentence and the column's own values below give none");
   assert.equal(pane.ui.usageTotals.textContent, "Today: 0 uses, 0 keystrokes saved. Last 7 days: 0 uses, 0 keystrokes saved.");
   await pane.ui.completions.all((n) => n.className === "completion")[0].click(); // "acm" -> "Acme Logistics GmbH"
   assert.deepEqual(counters(pane), [["completion", "vocabulary", "customers", 1, 16]], "19 graphemes written, 3 typed");
@@ -1277,4 +1279,92 @@ test("two panes that share the stored counts (two workbooks in one browser, two 
   await two.pane.saving();
   assert.deepEqual(JSON.parse(kept).days["2026-10-23"], [["completion", "vocabulary", "customers", 3, 48]], "the next save brings the uses that waited, and keeps the other sidebar's");
   assert.equal(two.pane.ui.usageNote.textContent, "Counts are kept by the spreadsheet's side of the add-in.", "a bridge that does not say where says so");
+  // Copy with nothing new reads the bridge's store and writes nothing back to it.
+  const calls = [];
+  const { loadUsage, saveUsage } = one.host.bridge;
+  one.host.bridge.loadUsage = () => { calls.push("loadUsage"); return loadUsage(); };
+  one.host.bridge.saveUsage = (text) => { calls.push("saveUsage"); return saveUsage(text); };
+  await one.pane.copyUsage();
+  assert.deepEqual(calls, ["loadUsage"], "no saveUsage when this pane has nothing new");
+  assert.deepEqual(sheets.usage.parseUsage(one.pane.ui.usageText.value).usage.days["2026-10-23"], [["completion", "vocabulary", "customers", 3, 48]]);
+});
+
+test("a use is counted with the configuration in use when its write started: Stop using it while the write is on its way keeps the document's names out", async () => {
+  const carried = JSON.stringify({ vocabularies: { "Client list from Q3 deal": ["Acme Logistics GmbH"] }, columns: [{ match: { header: "^customer" }, vocabulary: "Client list from Q3 deal" }], blocks: [{ trigger: "/clientX-bonus", formula: "=SUM(A1:A9)" }] });
+  const host = fakeHost(plain(CUSTOMER_CELL));
+  host.config(carried);
+  // Each write waits until the test lets it through, as a google.script.run round trip would.
+  const waiting = [];
+  const later = (write) => (...args) => new Promise((resolve) => waiting.push(() => resolve(write(...args))));
+  host.bridge.writeValue = later(host.bridge.writeValue);
+  host.bridge.writeFormula = later(host.bridge.writeFormula);
+  const storage = storageOf({ [KEY]: ORGANIZATION });
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage, now: TODAY });
+  await pane.start();
+  await pane.ui.origin.button("Use the document's configuration").click();
+  const completing = pane.ui.completions.all((n) => n.className === "completion")[0].click();
+  await settle();
+  assert.equal(waiting.length, 1, "the completion's write is on its way");
+  await pane.ui.origin.button("Stop using it").click();
+  waiting.shift()();
+  await completing;
+  assert.equal(pane.ui.message.textContent, 'Wrote "Acme Logistics GmbH" to B4.');
+  assert.deepEqual(counters(pane), [["completion", "document", "", 1, 16]], "a completion");
+  await pane.ui.origin.button("Use the document's configuration").click();
+  await host.select({ sheet: "Orders 2026", address: "A3", text: "/clientX-bonus", header: "Order", values: [], clipped: false });
+  await pane.ui.block.button("Insert /clientX-bonus (formula =SUM(A1:A9))").click();
+  const writing = pane.ui.block.button("Write the formula").click();
+  await settle();
+  assert.equal(waiting.length, 1, "the confirmed formula's write is on its way");
+  await pane.ui.origin.button("Stop using it").click();
+  waiting.shift()();
+  await writing;
+  assert.equal(pane.ui.message.textContent, "Inserted /clientX-bonus at A3.");
+  assert.deepEqual(counters(pane), [["completion", "document", "", 1, 16], ["block", "document", "", 1, 0]], "and a confirmed block");
+  await pane.saving();
+  for (const name of ["Q3", "clientX"]) {
+    assert.equal(JSON.stringify(pane.usage.state).includes(name), false, name + " is kept nowhere");
+    assert.equal(storage.getItem(USAGE).includes(name), false, name + " is not stored");
+  }
+});
+
+test("a use counted while a save reads an empty store is saved once, the counts shown keep the uses a save did not carry, and Copy waits for a save that works", async () => {
+  let kept = "";
+  let gate = null; // while set, a read of the store waits for it
+  let saves = 0;
+  let failFrom = Infinity; // the save from which saveUsage throws
+  const host = fakeHost(plain(CUSTOMER_CELL));
+  host.bridge.loadUsage = async () => { if (gate) await gate.promise; return kept; };
+  host.bridge.saveUsage = async (text) => { saves += 1; if (saves >= failFrom) throw new Error("Limit exceeded: Properties read/write"); kept = text; };
+  const hold = () => { let release; const promise = new Promise((resolve) => { release = resolve; }); gate = { promise, release }; };
+  const open = () => { const g = gate; gate = null; g.release(); };
+  const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }), now: TODAY, clipboard: null });
+  await pane.start();
+  hold();
+  await completeWith(pane, "acm");
+  await completeWith(pane, "acm"); // counted while the first save waits for its read of an empty store
+  open();
+  await pane.saving();
+  assert.deepEqual(JSON.parse(kept).days["2026-10-23"], [["completion", "vocabulary", "customers", 2, 32]], "two uses stored, not three");
+  assert.equal(pane.ui.usageTotals.textContent, "Today: 2 uses, 32 keystrokes saved. Last 7 days: 2 uses, 32 keystrokes saved.");
+  // A use counted while a save is on its way, and the save after it fails: the counts shown still hold it.
+  hold();
+  await completeWith(pane, "acm");
+  await completeWith(pane, "acm");
+  failFrom = saves + 2;
+  open();
+  await pane.saving();
+  assert.deepEqual(JSON.parse(kept).days["2026-10-23"], [["completion", "vocabulary", "customers", 3, 48]], "the first of the two was saved");
+  assert.equal(pane.ui.usageNote.textContent, "The latest counts could not be kept (Limit exceeded: Properties read/write); they stay for this session, and the next use tries again.");
+  assert.equal(pane.ui.usageTotals.textContent, "Today: 4 uses, 64 keystrokes saved. Last 7 days: 4 uses, 64 keystrokes saved.", "the use the failed save did not keep is still shown");
+  // Copy saves first; while that fails, it gives no text.
+  pane.ui.usageText.value = "an older text";
+  await pane.copyUsage();
+  assert.equal(pane.ui.usageText.value, "");
+  assert.equal(pane.ui.usageStatus.textContent, "Nothing copied: the counts could not be saved first, and a text copied before they are saved could count uses twice on the desk. Try Copy for the desk again later.");
+  failFrom = Infinity;
+  await pane.copyUsage();
+  assert.deepEqual(sheets.usage.parseUsage(pane.ui.usageText.value).usage.days["2026-10-23"], [["completion", "vocabulary", "customers", 4, 64]]);
+  assert.equal(kept, pane.ui.usageText.value, "the text is what was saved");
+  assert.match(pane.ui.usageStatus.textContent, /^The text is selected in the box/);
 });

@@ -608,7 +608,7 @@ function longestUsage() {
   const L = sheets.usage.LIMITS;
   for (let d = 0; d < L.days; d++, day.setDate(day.getDate() - 1)) {
     const list = [];
-    for (let i = 0; i < L.namesPerDay; i++) list.push(["completion", "vocabulary", String(i).padStart(2, "0") + "€".repeat(L.nameLength - 2), L.count, L.keystrokes]);
+    for (let i = 0; i < L.namesPerDay; i++) list.push(["completion", "vocabulary", "€₤₥₦₧₨₩₪₫₭₮₯"[i].repeat(L.nameLength), L.count, L.keystrokes]);
     for (const [kind, source] of [["completion", "vocabulary"], ["completion", "column"], ["completion", "notes"], ["completion", "document"], ["block", "formula"], ["block", "rows"], ["block", "document"]]) list.push([kind, source, "", L.count, L.keystrokes]);
     state.days[sheets.usage.dayOf(new Date(day))] = list;
   }
@@ -625,7 +625,8 @@ test("Code.gs keeps the usage text in the person's user properties, in pieces, a
   assert.equal(gs.loadUsage(), longest);
   const pieces = [...fake.userProps.keys()].filter((key) => /^actleSheetsUsage\.\d+$/.test(key));
   assert.equal(fake.userProps.get("actleSheetsUsage.count"), String(pieces.length));
-  assert.equal(pieces.length, 34, "273,931 bytes in pieces of at most 8,192; a piece ends early rather than split a character");
+  assert.equal(Buffer.byteLength(longest), 279691);
+  assert.equal(pieces.length, 35, "279,691 bytes in pieces of at most 8,192; a piece ends early rather than split a character");
   for (const key of pieces) assert.ok(Buffer.byteLength(fake.userProps.get(key)) <= gs.CHUNK_BYTES, key);
   assert.ok(fake.calls.every(([what]) => what.startsWith("user.")), "only the user store was written");
   assert.deepEqual(fake.calls[0], ["user.setProperty", "actleSheetsUsage.count", 1], "the count is reset first");
@@ -633,6 +634,21 @@ test("Code.gs keeps the usage text in the person's user properties, in pieces, a
   assert.deepEqual([...fake.props.keys()].sort(), ["actleSheetsConfig.0", "actleSheetsConfig.count"]);
   gs.saveUsage('{"format":"extle-usage"}');
   assert.deepEqual([...fake.userProps.keys()].sort(), ["actleSheetsUsage.0", "actleSheetsUsage.count"], "a shorter text deletes the pieces it no longer needs");
+  // What one save of the pane costs in property calls (loadUsage, then saveUsage): the README's figures.
+  const store = fake.globals.PropertiesService.getUserProperties();
+  const spent = { getProperty: 0, setProperty: 0, deleteProperty: 0 };
+  for (const name of Object.keys(spent)) {
+    const call = store[name];
+    store[name] = (...args) => { spent[name] += 1; return call(...args); };
+  }
+  const save = (text) => { for (const name of Object.keys(spent)) spent[name] = 0; gs.loadUsage(); gs.saveUsage(text); return [spent.getProperty, spent.setProperty, spent.deleteProperty]; };
+  assert.deepEqual(save('{"format":"extle-usage"}'), [3, 3, 0], "one piece: 2 + 1 reads, 2 + 1 writes");
+  assert.deepEqual(save(longest), [3, 37, 0], "a longer text read as one piece, written as 35");
+  assert.deepEqual(save(longest), [37, 37, 0], "the longest: 2 + 35 reads, 2 + 35 writes");
+  assert.deepEqual(save('{"format":"extle-usage"}'), [37, 3, 34], "a shorter text deletes the pieces it no longer needs");
+  for (const name of Object.keys(spent)) spent[name] = 0;
+  gs.loadUsage();
+  assert.equal(spent.getProperty, 2, "Copy with nothing new only reads: 1 + 1 for one piece");
   const halfway = appsScript({ sheets: {}, active: {}, userProperties: { "actleSheetsUsage.count": "1", "actleSheetsUsage.0": "old" }, userFailAt: 3 });
   assert.throws(() => halfway.gs.saveUsage(longest), /property write failed/);
   assert.equal(halfway.gs.loadUsage(), "", "a save that failed halfway leaves nothing, never a mix of pieces");
