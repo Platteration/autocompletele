@@ -16,7 +16,7 @@ module.exports = {
   extract: require("./extract.js"),
   filer: require("./filer.js"),
   paletteSearch: require("./palette-search.js"),
-  // Suite modules: Reply, Sheets, Forms, Guard and Notes (desktop/apps/ holds their shells).
+  // Suite modules of mactle, extle, cactle, gactle and dactle (desktop/apps/ holds their shells).
   reply: require("./reply.js"),
   sheets: require("./sheets.js"),
   forms: require("./forms.js"),

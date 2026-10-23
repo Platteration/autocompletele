@@ -154,8 +154,8 @@ it is bounded on purpose:
 - Never for credential prompts, password managers, terminals or secure-input
   fields, even when a rule says `learn`. actle recognises the first three by
   process name or window title; in them no field text is held and no keyword
-  rule or gactle check runs, but shortcuts still expand. In a secure-input
-  field nothing is read at all.
+  rule or check of gactle (the compliance warnings app) runs, but shortcuts
+  still expand. In a secure-input field nothing is read at all.
 - Only text typed into fields, per session, after scrubbing; window titles are
   not stored.
 - Locally, under the app-data folder, encrypted with a key held in the

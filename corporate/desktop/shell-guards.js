@@ -16,7 +16,7 @@ const UNPROMPTED_POPOVERS = new Set(["filing"]);
 /**
  * The BrowserWindow method that shows a popover: "showInactive" or "show".
  * A filing popover, and any popover created with `focusable: false` (keyword
- * offers, Guard warnings: they open while the person types elsewhere), is
+ * offers, gactle warnings: they open while the person types elsewhere), is
  * shown inactive. On macOS, Electron's show() activates the application for
  * a window that is not a panel even when the window cannot take the keys,
  * which hands the keys to another actle window such as an open dashboard.

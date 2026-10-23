@@ -47,7 +47,7 @@ contextBridge.exposeInMainWorld("actle", {
   removeFilingFolder: invoke("filing:removeFolder"),
   ignoreFilingFolder: invoke("filing:ignoreFolder"),
   rescanFilingFolder: invoke("filing:rescan"),
-  // A filing index entry id, or the exact path of the last Sheets export; any other path is refused.
+  // A filing index entry id, or the exact path of the last extle export; any other path is refused.
   revealFiled: invoke("filing:reveal"),
   // The suite's apps: tabs and channels they register (desktop/apps/index.js).
   listApps: invoke("apps:list"),

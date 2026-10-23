@@ -17,7 +17,7 @@
 //    pattern that runs out of time is disabled for the rest of the session
 //    and reported once.
 //
-// Pure: no Node built-ins, so the Sheets add-in can bundle it.
+// Pure: no Node built-ins, so the extle add-in can bundle it.
 "use strict";
 
 const LIMITS = Object.freeze({ maxPatternLength: 256, maxUnbounded: 4, largeRepeat: 32, maxInput: 10000 });

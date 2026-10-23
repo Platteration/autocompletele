@@ -26,9 +26,9 @@
 // * A popover closes before the paste: shell.closePopover(), then await
 //   shell.settle() (gives the focus back), then shell.sender.replace(...).
 // * Blank answers travel as { answers: { name: value } } from inputs named
-//   "answer:<name>" (Notes still uses { values } and "value:<name>").
-// * Audit entries hold ids and counts only. Reply, Forms, Notes and Sheets
-//   write "<app>-<verb>" events; Guard writes event "guard" with an outcome.
+//   "answer:<name>" (dactle still uses { values } and "value:<name>").
+// * Audit entries hold ids and counts only. mactle, cactle, dactle and extle
+//   write "<app>-<verb>" events; gactle writes event "guard" with an outcome.
 //
 // The host handed to createApp:
 //   { store, engine, ledger, policy: () => policy, settings: () => settings, saveSettings(next),
@@ -41,10 +41,13 @@ const APP_IDS = Object.freeze(["reply", "sheets", "forms", "guard", "notes"]);
 
 // The names people see, by id, and what each app covers. Only the names
 // changed: ids, policy sections, channels, metric kinds, audit events, files
-// and storage keys keep the id. Filing is built into the desk rather than
-// loaded through this registry; its name is listed here so the six are in one
-// place. The dashboard pages (renderer/apps/<id>.js, index.html) cannot load
-// this file and repeat the names; test/apps-registry.test.js holds them to it.
+// and storage keys keep the id. factle (filing) is built into the desk rather
+// than loaded through this registry; its name is listed here so the six are in
+// one place. The dashboard pages (renderer/apps/<id>.js, index.html and
+// dashboard.js) cannot load this file and repeat the names.
+// test/apps-registry.test.js holds each tab's first heading, the factle tab
+// and dashboard.js's "Delete learned text" question to this table; each tab's
+// error line is pinned as a literal in that app's own test.
 const NAMES = Object.freeze({
   reply: Object.freeze({ name: "mactle", covers: "replies to mail" }),
   sheets: Object.freeze({ name: "extle", covers: "Excel and Google Sheets" }),

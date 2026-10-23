@@ -48,7 +48,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   ignoredFolders: [],         // policy watch folders the person turned off ("Never for this folder")
 });
 
-// Settings the suite's apps keep in settings.json (desktop/apps): Notes
+// Settings the suite's apps keep in settings.json (desktop/apps): dactle
 // remembers the author. settings.json holds these and DEFAULT_SETTINGS'
 // keys only; anything else a caller sends is dropped.
 const APP_SETTINGS = Object.freeze({ notesAuthor: "" });

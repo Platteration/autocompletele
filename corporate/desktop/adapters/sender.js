@@ -51,7 +51,7 @@ const platforms = {
     deletes: (n) => n > 0 ? "{DEL " + n + "}" : "",
     left: (n) => n > 0 ? "{LEFT " + n + "}" : "",
     paste: () => "^v",
-    // Named keys the suite's apps press between fields (Forms) or lines.
+    // Named keys the suite's apps press between fields (cactle) or lines.
     key: (name) => ({ tab: "{TAB}", enter: "{ENTER}", escape: "{ESC}" })[name] || "",
   },
   darwin: {
@@ -122,7 +122,7 @@ function createSender(options) {
     return "typing is unavailable";
   }
 
-  // The person's clipboard text is kept once per run of jobs (a whole Forms
+  // The person's clipboard text is kept once per run of jobs (a whole cactle
   // fill), then the text to paste is written and awaited before any key is
   // sent. Nothing is put back until the run's last keys went out and the
   // application had RESTORE_DELAY_MS to read the clipboard: a restore on a

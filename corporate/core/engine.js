@@ -347,7 +347,7 @@ function createEngine(options) {
    * the next chat message, another window. So only warnings are raised, their
    * rules without the insert, and offers wait for the next word end in the
    * field. Every action is marked `leftField`: an app whose action can type
-   * text (Guard's Fix) must not type it for such an action.
+   * text (gactle's Fix) must not type it for such an action.
    */
   function wordEndChecks(byKey) {
     const actions = [];

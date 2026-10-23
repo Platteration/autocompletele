@@ -162,7 +162,7 @@ test("the pane's settings keep the pasted configuration with the document and in
   const storage = storageOf();
   const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage });
   await pane.start();
-  assert.match(pane.ui.summary.textContent, /^No configuration yet: export it from the actle desktop app/);
+  assert.equal(pane.ui.summary.textContent, "No configuration yet: export it from the actle desktop app (extle tab) and paste the file's contents above.");
   assert.equal(pane.ui.context.textContent, 'B4 on Orders 2026, column "Customer": label column, 3 values');
   assert.deepEqual(pane.ui.completions.all((n) => n.className === "completion").map((b) => b.textContent), ["ACME"], "without a configuration the column's own values complete");
   const section = sheets.exportConfig(SAMPLE_SECTION);

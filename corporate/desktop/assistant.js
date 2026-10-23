@@ -294,7 +294,7 @@ function createAssistant(options) {
     store.saveSuggestions([]);
     cachedCandidates = null;
     audit({ event: "corpus-deleted", by: "person", sessions: before.sessions + before.locked });
-    // Apps that keep learned data of their own (Forms' stored sessions) delete it too.
+    // Apps that keep learned data of their own (cactle's stored sessions) delete it too.
     notifyApps("onClearLearning");
     emit("candidates", candidates());
     return corpusInfo();

@@ -547,8 +547,8 @@ function registerIpc() {
     for (const file of files) enqueueFiling(file);
     return { ok: true, queued: files.length };
   });
-  // An index entry id from the Filing tab, or the exact path of the last
-  // Sheets export; never any other path (shell-guards.js revealTarget).
+  // An index entry id from the factle tab, or the exact path of the last
+  // extle export; never any other path (shell-guards.js revealTarget).
   handle("filing:reveal", async (request) => {
     const sheets = await assistant.invoke("sheets:info");
     const target = guards.revealTarget(request, {

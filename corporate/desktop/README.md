@@ -40,49 +40,50 @@ length minus the query and the Enter key.
 
 factle, the document filing app, watches the folders named in the policy's
 `filing.watch` (and any the person adds on the factle tab). A new file is
-read once it has stopped growing, and a popover proposes its name and folder. A file can land while you are typing
-in another application, so the popover appears without taking the keyboard
-focus, nothing in it is selected, and it files nothing until you click its
-name, a blank or a button; after that Enter files it and Esc skips it (Skip
-needs no click). A click in its first 0.7 seconds on screen does not count
-and leaves no caret in the Name field (it was probably aimed at the window
-underneath), and once the popover loses the focus it needs a new click, so
-keys typed for another application are never filed. "Never for this
-folder" turns off every watch still on that the document came from: its
-own folder, or a watched folder above it that includes sub-folders (a
-notification names the folder then), and documents already waiting from
-there are not shown; when no watch that is on covers the document any more
-(for example it was turned off on the factle tab meanwhile), the popover
-says so and stays open. The factle tab lists watched folders (a policy
-folder can be turned off on this desk; turning one off or removing your own
-also drops the documents still waiting from it), the rules, and filed
-documents with Undo (refused, with the file left where it is, when the filed
-document has changed since it was filed) and Reveal. "File existing
-documents…" proposes a filing for each document already in a folder, one at
-a time. When the
-organisation pauses the desk, an open popover and the search palette close
-(what was typed into a fill-in popover is discarded); documents waiting to
-be filed stay in the queue, the one whose popover closed first, and are
-proposed again when the organisation resumes the desk.
+read once it has stopped growing, and a popover proposes its name and
+folder. A file can land while you are typing in another application, so the
+popover appears without taking the keyboard focus, nothing in it is
+selected, and it files nothing until you click its name, a blank or a
+button; after that Enter files it and Esc skips it (Skip needs no click). A
+click in its first 0.7 seconds on screen does not count and leaves no caret
+in the Name field (it was probably aimed at the window underneath), and once
+the popover loses the focus it needs a new click, so keys typed for another
+application are never filed. "Never for this folder" turns off every watch
+still on that the document came from: its own folder, or a watched folder
+above it that includes sub-folders (a notification names the folder then),
+and documents already waiting from there are not shown; when no watch that
+is on covers the document any more (for example it was turned off on the
+factle tab meanwhile), the popover says so and stays open. The factle tab
+lists watched folders (a policy folder can be turned off on this desk;
+turning one off or removing your own also drops the documents still waiting
+from it), the rules, and filed documents with Undo (refused, with the file
+left where it is, when the filed document has changed since it was filed)
+and Reveal. "File existing documents…" proposes a filing for each document
+already in a folder, one at a time. When the organisation pauses the desk,
+an open popover and the search palette close (what was typed into a fill-in
+popover is discarded); documents waiting to be filed stay in the queue, the
+one whose popover closed first, and are proposed again when the organisation
+resumes the desk.
 
 ## Windows and the bridge
 
 Every window keeps the page it was opened with: a navigation a page starts
 is cancelled and `window.open` is denied (`shell-guards.js`). Reveal on the
 factle tab sends the filed document's index id and Show file on the extle
-(Excel and Google Sheets) tab the path of the last configuration export; `filing:reveal` shows nothing
-else in the file manager (the documents popover still reveals the files the
-policy's document sets name). The filing popover, keyword offers and the
-compliance warnings of gactle open while you type elsewhere and are shown with `showInactive()`,
-so they do not activate actle.
+(Excel and Google Sheets) tab the path of the last configuration export;
+`filing:reveal` shows nothing else in the file manager (the documents
+popover still reveals the files the policy's document sets name). The filing
+popover, keyword offers and the compliance warnings of gactle open while you
+type elsewhere and are shown with `showInactive()`, so they do not activate
+actle.
 
 ## mactle: replies to mail
-Copy the message you are answering, then choose "mactle: Reply to the copied message…" in the tray menu
-or "mactle: Reply to copied message" in the search palette. A popover lists the organisation's replies
-whose keywords appear in the message, best fit first, blanks filled from it; ↑ ↓ or a click picks
-one, blanks the message did not answer are asked right there, Enter closes the popover and pastes
-the text where you were writing (never with an open blank). The mactle tab shows the replies with
-offered/inserted counts, the extractors and a "Try it" box that ranks a pasted message without
+Copy the message you are answering, then choose "mactle: Reply to the copied message…" in the tray
+menu or "mactle: Reply to copied message" in the search palette. A popover lists the organisation's
+replies whose keywords appear in the message, best fit first, blanks filled from it; ↑ ↓ or a click
+picks one, blanks the message did not answer are asked right there, Enter closes the popover and
+pastes the text where you were writing (never with an open blank). The mactle tab shows the replies
+with offered/inserted counts, the extractors and a "Try it" box that ranks a pasted message without
 counting anything; counts live in `apps/reply.json`, the message is never stored.
 
 ## extle: Excel and Google Sheets

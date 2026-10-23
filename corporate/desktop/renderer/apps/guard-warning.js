@@ -1,4 +1,4 @@
-// A Guard rule fired on what the person is writing: show each warning with
+// A gactle rule fired on what the person is writing: show each warning with
 // its severity, message and masked findings, offer the rule's fix, and let
 // the person dismiss them all. The window never takes the focus, so the field
 // being typed in keeps it; main.js closes the window after a fix or Dismiss,

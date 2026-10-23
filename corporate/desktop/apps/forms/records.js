@@ -10,7 +10,7 @@
 // into the plan popover, never a value of a field whose name has one of the
 // SECRET_WORDS below as a whole word (other names, such as accountNumber or
 // passportNumber, are not recognised), and never a value the scrubber masks
-// or Guard's IBAN or national ID detector flags.
+// or gactle's IBAN or national ID detector flags.
 "use strict";
 
 const crypto = require("node:crypto");
@@ -28,8 +28,8 @@ const SECRET_WORDS = new Set([
   "password", "passwd", "passcode", "passphrase", "pass", "pwd", "pin", "secret", "token", "otp", "apikey", "credential", "credentials",
   "cvv", "cvc", "iban", "bic", "ssn", "nino", "dni", "nir",
 ]);
-// Guard's detectors for what the scrubber does not mask: IBANs (mod 97) and national ID numbers (US, GB, ES, FR, checked).
-// Card numbers (Luhn), labelled secrets and long tokens are the scrubber's: Guard's card-number and secret detectors use the same patterns, so they find nothing the scrubber left.
+// gactle's detectors for what the scrubber does not mask: IBANs (mod 97) and national ID numbers (US, GB, ES, FR, checked).
+// Card numbers (Luhn), labelled secrets and long tokens are the scrubber's: gactle's card-number and secret detectors use the same patterns, so they find nothing the scrubber left.
 const VALUE_DETECTORS = Object.freeze(["iban", "national-id"]);
 
 function asText(value) {
@@ -114,7 +114,7 @@ function isSecretField(name) {
   return words.some((word) => SECRET_WORDS.has(word)) || /\bapi key\b/.test(words.join(" "));
 }
 
-/** True for a value that must not be stored: the scrubber masks it (a card number, a labelled secret, a long token), or Guard's IBAN or national ID detector fires on it. */
+/** True for a value that must not be stored: the scrubber masks it (a card number, a labelled secret, a long token), or gactle's IBAN or national ID detector fires on it. */
 function isSensitiveValue(value) {
   const text = String(value == null ? "" : value);
   if (capture.scrub(text).redactions > 0) return true;

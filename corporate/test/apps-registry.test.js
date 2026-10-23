@@ -9,6 +9,7 @@ const path = require("node:path");
 const { createEngine } = require("../core/engine.js");
 const orgPolicy = require("../core/org-policy.js");
 const vm = require("node:vm");
+const { execFileSync } = require("node:child_process");
 const { loadApps, validate, APP_IDS, NAMES } = require("../desktop/apps/index.js");
 const { createAssistant } = require("../desktop/assistant.js");
 
@@ -210,7 +211,7 @@ test("the assistant routes channels, palette items, lifecycle hooks and engine h
   assert.ok(events.includes("policy:Org"));
 });
 
-test("the names people see come from one table: the tabs, their first lines, the tray and palette entries and the built-in factle tab", async () => {
+test("the names people see come from one table: the tabs, their first lines, the tray and palette entries, the built-in factle tab and the Delete learned text question", async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(NAMES)), {
     reply: { name: "mactle", covers: "replies to mail" },
     sheets: { name: "extle", covers: "Excel and Google Sheets" },
@@ -265,5 +266,16 @@ test("the names people see come from one table: the tabs, their first lines, the
   const page = fs.readFileSync(path.join(__dirname, "..", "desktop", "renderer", "index.html"), "utf8");
   assert.equal(page.match(/<button role="tab" data-tab="filing"[^>]*>([^<]*)<\/button>/)[1], NAMES.filing.name);
   assert.equal(page.match(/<section id="tab-filing"[^>]*>\s*<h2>([^<]*)<\/h2>/)[1], NAMES.filing.name + ": " + NAMES.filing.covers);
+
+  // dashboard.js is not run by any test; its "Delete learned text" question names cactle's stored fills.
+  const dashboard = fs.readFileSync(path.join(__dirname, "..", "desktop", "renderer", "dashboard.js"), "utf8");
+  const questions = [...dashboard.matchAll(/window\.confirm\("([^"]*)"\)/g)].map((m) => m[1]).filter((q) => q.startsWith("Delete all learned text"));
+  assert.deepEqual(questions, ["Delete all learned text on this computer, including suggestions not yet exported and the fills " + NAMES.forms.name + " stored for learning? Proposals based on it disappear. Your shortcuts and statistics are not affected."]);
   fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("the simulator heads the filing walk-through and each app's with the name and what it covers", () => {
+  const lines = execFileSync(process.execPath, [path.join(__dirname, "..", "desktop", "simulate.js")], { encoding: "utf8" }).split("\n");
+  assert.ok(lines.includes(NAMES.filing.name + ": " + NAMES.filing.covers), "factle: document filing");
+  assert.deepEqual(lines.filter((line) => line.endsWith(" (app)")), APP_IDS.map((id) => NAMES[id].name + ": " + NAMES[id].covers + " (app)"));
 });

@@ -10,7 +10,7 @@
 // records from fields filled together, but only the values that came from
 // the policy (records.js policyValues and sessionFrom): never what was typed
 // into the popover, a value of a field named with one of records.js's secret
-// words, or a value the scrubber masks or Guard's IBAN or national ID
+// words, or a value the scrubber masks or gactle's IBAN or national ID
 // detector flags. Stored fills older than the policy's retention.corpusDays
 // go at start and at every fill, and all go with "Delete learned text"
 // (onClearLearning).
