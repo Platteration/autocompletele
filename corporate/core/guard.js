@@ -1,4 +1,4 @@
-// actle Guard: compliance checks on what a person is about
+// gactle: compliance checks on what a person is about
 // to send, in any application. Administrators ship rule packs per regulation
 // in the policy; a rule combines keywords and detectors (card numbers, IBANs,
 // national ID numbers, internal project codes, forbidden promises, secrets),

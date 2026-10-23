@@ -1,4 +1,4 @@
-// Headless walk-through of actle Forms for desktop/simulate.js: a ticket
+// Headless walk-through of cactle for desktop/simulate.js: a ticket
 // window gets the focus, a record trigger is typed, the plan is shown, a
 // copied order reference fills the customer fields through the lookup list,
 // a missing blank is answered, the fill runs through a stand-in shell that

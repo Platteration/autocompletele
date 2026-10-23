@@ -21,7 +21,7 @@ adds what a business asks for:
 - **Document shortcuts**: typing `/sld` lists the files the organisation marked
   as the standard hand-outs for "shipping logistics department", so they can be
   attached in one step.
-- **Document filing (actle Filer)**: new files in watched folders (downloads,
+- **Document filing (factle)**: new files in watched folders (downloads,
   scanner output) are read on the desk, named from the organisation's naming
   rule (`[[date]]_[[client]]_invoice_[[ref]]`) and moved to the folder the rule
   says, after the person confirms. Filed documents are indexed by name, folder
@@ -100,7 +100,7 @@ corporate/
   desktop/                    Electron shell, input and typing adapters, folder watcher, dashboard, headless simulator
     apps/                     the suite's apps (reply, sheets, forms, guard, notes): shell logic, simulate steps
     renderer/apps/            their dashboard tabs and popovers
-  sheets-addin/               Excel task pane and Google Sheets sidebar for actle Sheets (build.js bundles the core)
+  sheets-addin/               Excel task pane and Google Sheets sidebar for extle (build.js bundles the core)
 ```
 
 The core has no dependencies beyond Node's standard library and the two
@@ -136,7 +136,7 @@ the desktop shell only carries actions out.
    managers and terminals actle recognises.
 5. The folder watcher reports a new document once it has stopped growing. The
    assistant reads it, proposes a name and folder from the filing rules, and
-   the shell asks the person to confirm. See "Document filing" in
+   the shell asks the person to confirm. See "factle: document filing" in
    `shared/ORG-POLICY.md`.
 6. Every insertion is recorded in the metrics log with the keystrokes it
    saved (graphemes inserted minus graphemes typed). Time saved is estimated
@@ -154,7 +154,7 @@ it is bounded on purpose:
 - Never for credential prompts, password managers, terminals or secure-input
   fields, even when a rule says `learn`. actle recognises the first three by
   process name or window title; in them no field text is held and no keyword
-  rule or Guard check runs, but shortcuts still expand. In a secure-input
+  rule or gactle check runs, but shortcuts still expand. In a secure-input
   field nothing is read at all.
 - Only text typed into fields, per session, after scrubbing; window titles are
   not stored.
@@ -171,9 +171,12 @@ it is bounded on purpose:
 
 ## The suite
 
-actle Filer above is the first of six dedicated business apps that share one
-engine, one policy file and one desk. The other five are built on the app
-registry in `desktop/apps/` (one folder per app: its shell logic, a dashboard
+factle, the document filing app above, is the first of six dedicated business
+apps that share one engine, one policy file and one desk. The desktop
+assistant that runs them is actle; each app has its own name, while its
+policy section keeps the id (`filing`, `reply`, `sheets`, `forms`, `guard`,
+`notes`). The other five are built on the app registry in `desktop/apps/`
+(one folder per app: its shell logic, a dashboard
 tab under `renderer/apps/`, popovers, a headless `simulate.js` and tests), with
 their rules in `core/<app>.js` and their policy sections documented in
 `shared/ORG-POLICY.md`. Like everything else here, nothing leaves the desk:
@@ -182,11 +185,11 @@ stored is ids and counts.
 
 | App | Where | What works today |
 | --- | --- | --- |
-| actle Reply | `core/reply.js`, `desktop/apps/reply/` | Tray entry and palette item rank the organisation's replies against the copied message (quoted history and Outlook header blocks dropped), fill blanks from it (sender name from the sign-off, greeted name, order and ticket references, date, amount, policy extractors), ask for the rest in a popover, close it and paste the text; per-reply counts, library warnings and a "Try it" box on the Reply tab; kind `reply` in metrics and usage reports. Cannot read the compose window or the recipients (the message must be copied first), cannot tell whether a reply was edited before sending, and the popover and tab have not been seen in Electron. |
-| actle Sheets | `core/sheets.js`, `desktop/apps/sheets/`, `sheets-addin/` | Works: the Sheets tab shows vocabularies, column rules and blocks, tries completions against pasted column values and exports the section for the add-in (a failed write is reported, not thrown); `sheets-addin/build.js` bundles the core for the browser reproducibly, and the shared pane plus the Excel (Office.js) and Google (Apps Script) bridges are driven headlessly against fake hosts in `sheets-addin/test/`. Not verified: the task pane, the sidebar and the manifest were never run against a real Excel or Google Sheets; the add-in records no usage metrics. |
-| actle Forms | `core/forms.js`, `desktop/apps/forms/` | With the caret in a form's first field, typing a record's trigger (or picking the record in the palette) opens a plan popover for the form matched to the focused window: a copied or typed reference fills the customer fields from a lookup list, open blanks are asked, and Fill closes the popover and pastes the values in Tab order with a Tab per form field in between, counting one `form` insert; a key that fails stops the fill with a notification and counts nothing. Fills on matched forms are stored for learning with only the values that came from the record and the lookup row (nothing typed into the popover, no value of a field whose name has one of the listed secret words, no value the scrubber masks or in which Guard detects an IBAN or a national ID). They are removed once older than `retention.corpusDays` (at start and at every fill) and deleted by "Clear stored fills" or "Delete learned text". Field sets filled together three times become proposals, labelled "Learned record N on <form>", that the person can name and accept as own records. Fill is refused while the organisation has paused actle, also when the pause arrives during the 150 ms focus wait. Not working: selectors are shown but not used (Tab order from the form's first field only), nothing is read from the form, fills without a matched form are not stored, no tray entry; the popover and tab have not been seen in Electron. |
-| actle Guard | `core/guard.js`, `desktop/apps/guard/` | Works: word-end checks of the typed field (a word ended by Enter, Tab or a shortcut key included) against the policy's rule packs (card numbers, IBANs, e-mail addresses, phone numbers, national IDs US/GB/ES/FR, forbidden phrases, internal codes, secrets), a warning window that never takes the focus with masked findings (one at a time; a later warning replaces it), text and shortcut fixes typed at the caret, remove fixes through the clipboard with a note that the copy covers only what was typed in the field, a fix refused after the focus moved or while actle is paused, a clipboard fix refused when the field holds 4,000 characters or more, Dismiss, counts-only audit and metrics, a dashboard tab with packs, counts per rule and a "Try it" box with recipients and application; channels `guard:info`, `guard:summary`, `guard:check`; headless simulation. Does not: read recipients (external rules need `assumeExternal` or the Try-it box), edit text already in the field, fill a shortcut's blanks, keep its window open after one fix, hold back a message sent with Enter or Ctrl+Enter (the warning for that last word appears as it goes out, without a fix), see pasted text, check the last word before a mouse click on Send, run in the credential prompts, password managers or terminals actle recognises, or block anything (`block` is a label). The popover and tab have not been seen in Electron. |
-| actle Notes | `core/notes.js`, `desktop/apps/notes/` | A document trigger or a palette item opens a fill popover (blanks, author remembered, comma-separated lists, short lists of a repeated section named with their counts), closes it and pastes minutes, handovers and logs with date, weekday and caret placed; a tray or palette entry rebuilds the action block of a copied note on the clipboard (owners, due dates resolved, hand-typed lines kept, idempotent); Notes tab with documents, author setting and a "Try it" box; metrics kind `notes`, usage reports name documents. Does not read the editor: action items come only from the clipboard and a note's document is guessed from its block heading; on macOS the app cannot hide actle's windows before the paste; phrasing suggestions from earlier notes are not offered. |
+| mactle (replies to mail) | `core/reply.js`, `desktop/apps/reply/` | Tray entry and palette item rank the organisation's replies against the copied message (quoted history and Outlook header blocks dropped), fill blanks from it (sender name from the sign-off, greeted name, order and ticket references, date, amount, policy extractors), ask for the rest in a popover, close it and paste the text; per-reply counts, library warnings and a "Try it" box on the mactle tab; kind `reply` in metrics and usage reports. Cannot read the compose window or the recipients (the message must be copied first), cannot tell whether a reply was edited before sending, and the popover and tab have not been seen in Electron. |
+| extle (Excel and Google Sheets) | `core/sheets.js`, `desktop/apps/sheets/`, `sheets-addin/` | Works: the extle tab shows vocabularies, column rules and blocks, tries completions against pasted column values and exports the section for the add-in (a failed write is reported, not thrown); `sheets-addin/build.js` bundles the core for the browser reproducibly, and the shared pane plus the Excel (Office.js) and Google (Apps Script) bridges are driven headlessly against fake hosts in `sheets-addin/test/`. Not verified: the task pane, the sidebar and the manifest were never run against a real Excel or Google Sheets; the add-in records no usage metrics. |
+| cactle (CRM and ticket forms) | `core/forms.js`, `desktop/apps/forms/` | With the caret in a form's first field, typing a record's trigger (or picking the record in the palette) opens a plan popover for the form matched to the focused window: a copied or typed reference fills the customer fields from a lookup list, open blanks are asked, and Fill closes the popover and pastes the values in Tab order with a Tab per form field in between, counting one `form` insert; a key that fails stops the fill with a notification and counts nothing. Fills on matched forms are stored for learning with only the values that came from the record and the lookup row (nothing typed into the popover, no value of a field whose name has one of the listed secret words, no value the scrubber masks or in which gactle detects an IBAN or a national ID). They are removed once older than `retention.corpusDays` (at start and at every fill) and deleted by "Clear stored fills" or "Delete learned text". Field sets filled together three times become proposals, labelled "Learned record N on <form>", that the person can name and accept as own records. Fill is refused while the organisation has paused actle, also when the pause arrives during the 150 ms focus wait. Not working: selectors are shown but not used (Tab order from the form's first field only), nothing is read from the form, fills without a matched form are not stored, no tray entry; the popover and tab have not been seen in Electron. |
+| gactle (compliance warnings) | `core/guard.js`, `desktop/apps/guard/` | Works: word-end checks of the typed field (a word ended by Enter, Tab or a shortcut key included) against the policy's rule packs (card numbers, IBANs, e-mail addresses, phone numbers, national IDs US/GB/ES/FR, forbidden phrases, internal codes, secrets), a warning window that never takes the focus with masked findings (one at a time; a later warning replaces it), text and shortcut fixes typed at the caret, remove fixes through the clipboard with a note that the copy covers only what was typed in the field, a fix refused after the focus moved or while actle is paused, a clipboard fix refused when the field holds 4,000 characters or more, Dismiss, counts-only audit and metrics, a dashboard tab with packs, counts per rule and a "Try it" box with recipients and application; channels `guard:info`, `guard:summary`, `guard:check`; headless simulation. Does not: read recipients (external rules need `assumeExternal` or the Try-it box), edit text already in the field, fill a shortcut's blanks, keep its window open after one fix, hold back a message sent with Enter or Ctrl+Enter (the warning for that last word appears as it goes out, without a fix), see pasted text, check the last word before a mouse click on Send, run in the credential prompts, password managers or terminals actle recognises, or block anything (`block` is a label). The popover and tab have not been seen in Electron. |
+| dactle (minutes, handovers and logs) | `core/notes.js`, `desktop/apps/notes/` | A document trigger or a palette item opens a fill popover (blanks, author remembered, comma-separated lists, short lists of a repeated section named with their counts), closes it and pastes minutes, handovers and logs with date, weekday and caret placed; a tray or palette entry rebuilds the action block of a copied note on the clipboard (owners, due dates resolved, hand-typed lines kept, idempotent); dactle tab with documents, author setting and a "Try it" box; metrics kind `notes`, usage reports name documents. Does not read the editor: action items come only from the clipboard and a note's document is guessed from its block heading; on macOS the app cannot hide actle's windows before the paste; phrasing suggestions from earlier notes are not offered. |
 
 Each app's popover closes before the paste and refuses to paste while a
 blank is unfilled. The Electron windows have not been run here (see Status);
@@ -235,11 +238,11 @@ in `desktop/` and the checklist at the end of `desktop/README.md`.
   person's action.
 - The suite apps were not run in Electron, Excel or Google Sheets here (no
   display, no Office, no Google account); each is exercised headlessly by its
-  tests and the simulator. Forms fills fields in Tab order only (selectors
-  from the policy are shown, not used); Guard cannot change text already in a
-  field (a corrected copy goes to the clipboard); Reply and Notes read the
+  tests and the simulator. cactle fills fields in Tab order only (selectors
+  from the policy are shown, not used); gactle cannot change text already in a
+  field (a corrected copy goes to the clipboard); mactle and dactle read the
   message or note from the clipboard because the desk cannot read a window's
-  text; the Sheets add-in reports no usage back to the desk.
+  text; the extle add-in reports no usage back to the desk.
 - Document filing reads PDFs and scanned images by file name only. Reading
   their text needs a PDF library and OCR in `desktop/` (the core stays
   dependency-free); that is the owner's call. Filing by sender or source

@@ -1,4 +1,4 @@
-// actle Notes: the desktop side of core/notes.js. A document's trigger typed
+// dactle: the desktop side of core/notes.js. A document's trigger typed
 // in any application (or the document picked in the search palette) opens
 // the "fill" popover: one input per blank, the author prefilled from the
 // person's own setting, list blanks as comma-separated values. Insert renders
@@ -12,10 +12,12 @@
 const core = require("../../../core/notes.js");
 const metrics = require("../../../core/metrics.js");
 const { simulate } = require("./simulate.js");
+const { NAMES } = require("../index.js");
 
 const ID = "notes";
-const TRAY_LABEL = "Update action items in the copied note";
-const PALETTE_LABEL = "Update action items in copied note";
+const NAME = NAMES[ID].name;
+const TRAY_LABEL = NAME + ": Update action items in the copied note";
+const PALETTE_LABEL = NAME + ": Update action items in copied note";
 const UPDATED = "Action items updated on your clipboard: select your note and paste.";
 const NONE_FOUND = "No action items found in the copied note.";
 const DATA_VERSION = 1;
@@ -339,7 +341,7 @@ function createApp(host) {
 
   const app = {
     id: ID,
-    title: "Notes",
+    title: NAME,
     tab: true,
     ipc: {
       "notes:info": () => info(),

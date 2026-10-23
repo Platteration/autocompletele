@@ -1,4 +1,4 @@
-// actle Guard: dashboard tab. The organisation's rule packs, the internal
+// gactle: dashboard tab. The organisation's rule packs, the internal
 // domains and codes, the counts of warnings raised, fixed, dismissed and left
 // unanswered (from the audit trail, which holds rule ids and outcomes only),
 // and a "Try it" box that runs the same check on a text with recipients and
@@ -51,9 +51,10 @@
       const info = await api.invoke("guard:info");
       section.textContent = "";
       if (!info || info.ok === false) {
-        section.append(el("p", { class: "hint", text: "Guard is not available: " + ((info && info.error) || "no answer from the app.") }));
+        section.append(el("p", { class: "hint", text: "gactle is not available: " + ((info && info.error) || "no answer from the app.") }));
         return;
       }
+      section.append(el("h2", { text: "gactle: compliance warnings" }));
       section.append(el("p", { class: "hint", text: "While you write, the text of the current field (what was typed or inserted since it got the focus, up to 4,000 characters, held in memory only) is checked against the organisation's rule packs when a word ends. A rule that fires shows a warning with its findings masked and, where the rule has one, a fix. Recipients cannot be read, so rules for outside recipients " + (info.assumeExternal ? "treat every message as going outside (assumeExternal)." : "stay silent unless the policy sets assumeExternal.") + " Only rule ids and outcomes are recorded; nothing you typed is." }));
       if (info.paused) section.append(el("div", { class: "banner" }, [el("div", { text: "Paused by your organisation: nothing is checked." })]));
       if (info.warnings.length) section.append(el("div", { class: "banner" }, info.warnings.map((warning) => el("div", { text: warning }))));

@@ -1,4 +1,4 @@
-// Headless walk-through of actle Notes for desktop/simulate.js: a notes
+// Headless walk-through of dactle for desktop/simulate.js: a notes
 // window gets the focus, the minutes trigger is typed, the blanks are filled
 // through a stand-in shell and the rendered note is printed; then a note with
 // three action items is "copied", the tray entry rebuilds its action block on

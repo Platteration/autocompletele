@@ -1,4 +1,4 @@
-// actle Forms: what the app keeps of its own in apps/forms.json, and the
+// cactle: what the app keeps of its own in apps/forms.json, and the
 // pure rules over it. Own records (accepted proposals) sit next to the
 // policy's records with the policy winning a clash; fills are stored as
 // sessions so core/forms.js can propose new records; proposals the person

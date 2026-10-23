@@ -11,6 +11,7 @@ const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
 const { createFolderWatcher } = require("./filer.js");
 const guards = require("./shell-guards.js");
+const { NAMES } = require("./apps/index.js");
 const { personal } = require("../core/index.js");
 
 const SINGLE = app.requestSingleInstanceLock();
@@ -316,7 +317,7 @@ async function submitFiling(state, payload) {
     // a path the page sends.
     const file = state.proposal.path;
     const covering = guards.watchesCovering(file, assistant.filingFolders().active);
-    if (!covering.length) return { ok: false, error: "This document's folder is no longer watched, so there is nothing to turn off. Skip it, or change folders on the Filing tab." };
+    if (!covering.length) return { ok: false, error: "This document's folder is no longer watched, so there is nothing to turn off. Skip it, or change folders on the " + NAMES.filing.name + " tab." };
     for (const folder of covering) {
       if (folder.source === "organization") assistant.filingIgnoreFolder(folder.raw, true);
       else assistant.filingRemoveFolder(folder.raw);

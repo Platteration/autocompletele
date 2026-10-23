@@ -247,7 +247,7 @@ test("a configuration the document carries is offered with its origin and what i
   assert.equal(pane.ui.context.textContent, 'B4 on Orders 2026, column "Customer": vocabulary customers');
   assert.deepEqual(buttons(), ["Acme Logistics GmbH", "Northern Acme Ltd"], "the organisation's configuration stays in use");
   assert.equal(pane.ui.origin.textContent,
-    "This document carries its own actle Sheets configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration, which stays in use."
+    "This document carries its own extle configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration, which stays in use."
     + "Using the document's would add block \"/total\" (formula " + formula + "); replace vocabulary \"customers\" (1 values instead of 4); remove vocabulary \"costCentres\"; replace the column rules (1 instead of 3); remove block \"/exp\"; remove block \"/vat\"."
     + "Use the document's configuration" + "Keep the organisation's", "the formula block first, names and triggers quoted");
   assert.equal(pane.ui.configText.value, ORGANIZATION, "the box holds the organisation's copy, never the document's");
@@ -294,7 +294,7 @@ test("a configuration the document carries is offered with its origin and what i
   await pane.ui.origin.button("Stop using it").click();
   assert.equal(pane.ui.message.textContent, "Back to your organisation's configuration.");
   assert.equal(pane.ui.block.textContent, "");
-  assert.match(pane.ui.origin.textContent, /^This document carries its own actle Sheets configuration/, "offered again");
+  assert.match(pane.ui.origin.textContent, /^This document carries its own extle configuration/, "offered again");
   await pane.ui.origin.button("Keep the organisation's").click();
   assert.equal(pane.ui.origin.textContent, "");
   assert.equal(storage.getItem(KEY), ORGANIZATION, "the browser copy never took the document's text");
@@ -331,7 +331,7 @@ test("with no organisation copy in this browser, the document's configuration is
   const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage });
   await pane.start();
   assert.equal(pane.ui.context.textContent, 'B4 on Orders 2026, column "Customer": label column, 3 values');
-  const NONE_YET = "This document carries its own actle Sheets configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration. This browser has none yet: paste the file the actle desktop app exports under Settings."
+  const NONE_YET = "This document carries its own extle configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration. This browser has none yet: paste the file the actle desktop app exports under Settings."
     + "Using the document's would add block \"/vat\" (formula =ROUND(B2*0.19, 2)); add vocabulary \"customers\" (4 values); add vocabulary \"costCentres\" (3 values); replace the column rules (3 instead of 0); add block \"/exp\" (2 rows x 3 columns)."
     + "Use the document's configuration" + "Not now";
   assert.equal(pane.ui.origin.textContent, NONE_YET);
@@ -384,7 +384,7 @@ test("a document that redefines one of the organisation's triggers: the offer na
   const pane = Pane().createPane({ document, root: new Node("div"), bridge: host.bridge, core: sheets, storage: storageOf({ [KEY]: ORGANIZATION }) });
   await pane.start();
   assert.equal(pane.ui.origin.textContent,
-    "This document carries its own actle Sheets configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration, which stays in use."
+    "This document carries its own extle configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration, which stays in use."
     + "Using the document's would change block \"/vat\" (formula " + formula + ")."
     + "Use the document's configuration" + "Keep the organisation's", "the trigger the person already uses, with the document's formula in full");
   assert.ok(pane.ui.block.button("Insert VAT at 19% (formula =ROUND(B2*0.19, 2))"), "until then the organisation's /vat applies");
@@ -475,7 +475,7 @@ test("Save never erases a configuration the document carries unseen, says when i
   assert.deepEqual(host.calls, [], "nothing was written to the document");
   assert.equal(storage.getItem(KEY), "");
   assert.equal(pane.ui.message.textContent, "Configuration saved in this browser only; the box is empty, so this document's own configuration was left as it is.");
-  assert.match(pane.ui.origin.textContent, /^This document carries its own actle Sheets configuration.*This browser has none yet/s, "and offers it again");
+  assert.match(pane.ui.origin.textContent, /^This document carries its own extle configuration.*This browser has none yet/s, "and offers it again");
   const failing = storageOf();
   failing.setItem = () => { throw new Error("quota"); };
   for (const [kept, message] of [[failing, "Configuration saved nowhere: quota; the box is empty, so this document's own configuration was left as it is."], [null, "Configuration saved nowhere (this browser cannot keep a copy); the box is empty, so this document's own configuration was left as it is."]]) {

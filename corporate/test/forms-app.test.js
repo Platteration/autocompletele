@@ -1,4 +1,4 @@
-// actle Forms through the desktop assistant (plain Node): a record trigger
+// cactle through the desktop assistant (plain Node): a record trigger
 // typed in a form window opens the plan popover, its Fill closes the popover
 // and types the values through a fake shell with a Tab per field passed
 // over, and what reaches the metrics, the audit file, the app data (own
@@ -82,7 +82,7 @@ test("the sample section parses with no warnings and the app loads through the r
   assert.deepEqual(parsed.forms.records.map((r) => [r.id, r.trigger]), [["refund-case", "refund/"], ["complaint", "cmp/"], ["address-change", undefined]]);
   const [app] = loadApps({ policy: () => parsed, engine: { library: [] }, appData: () => ({ load: () => ({}), save: () => {} }), now: () => NOW, log: () => {} }, { ids: ["forms"] });
   assert.equal(app.id, "forms");
-  assert.equal(app.title, "Forms");
+  assert.equal(app.title, "cactle");
   assert.deepEqual(Object.keys(app.ipc), ["forms:info", "forms:lookup", "forms:clipboardReference", "forms:plan", "forms:acceptProposal", "forms:dismissProposal", "forms:deleteOwnRecord", "forms:clearSessions"]);
   assert.equal(app.extension.id, "forms");
   assert.equal(app.popovers.plan.file, "apps/forms-plan");
@@ -320,7 +320,7 @@ test("three similar fills become a proposal; accepted it is an own record with a
   assert.deepEqual(assistant.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: "sig/" }), { ok: false, error: "The trigger sig/ is already used by the shortcut sig/." });
   assert.deepEqual(assistant.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: "/sld" }), { ok: false, error: "The trigger /sld is already used by the document set /sld." });
   assert.deepEqual(assistant.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: "/mins" }), { ok: false, error: "The trigger /mins is already used by the notes document Meeting minutes." }, "Forms sits before Notes in the registry: its trigger would hide the document");
-  assert.deepEqual(assistant.invoke("forms:acceptProposal", { digest: "sha256:0", trigger: "ok/" }), { ok: false, error: "This proposal has changed. Look at the Forms tab again." });
+  assert.deepEqual(assistant.invoke("forms:acceptProposal", { digest: "sha256:0", trigger: "ok/" }), { ok: false, error: "This proposal has changed. Look at the cactle tab again." });
   assert.equal(stored(dataDir).records.length, 0);
 
   const unlabelled = assistant.invoke("forms:acceptProposal", { digest: proposal.digest, trigger: "r3/" });
@@ -1142,5 +1142,5 @@ test("the dashboard page shows records, lookups, forms, proposals and own record
   assert.match(empty.textContent, /Last focused window: none yet\. No form matched\./);
   const failed = dom.document.createElement("section");
   await w2.actleApps.forms.render(failed, Object.assign({}, helpers, { api: { invoke: async () => ({ ok: false, error: "unknown channel forms:info" }) } }), {});
-  assert.match(failed.textContent, /Forms is not available: unknown channel forms:info/);
+  assert.match(failed.textContent, /cactle is not available: unknown channel forms:info/);
 });

@@ -4,6 +4,7 @@
 "use strict";
 
 const nodePath = require("node:path");
+const { NAMES } = require("./apps/index.js");
 
 // Popovers that open on an event the person did not just cause. A filing
 // popover appears when a file settles in a watched folder (a browser download
@@ -30,7 +31,7 @@ function popoverShowMethod(kind, options) {
 
 /**
  * The path filing:reveal may show in the file manager, or null. A renderer
- * sends a filing index entry id (the Filing tab) or, for the Sheets tab, the
+ * sends a filing index entry id (the factle tab) or, for the extle tab, the
  * exact path of the last add-in configuration export. Anything else, an
  * entry's path included, is refused. Threat: a renderer that runs code it
  * should not (none is known; this is defence in depth) pointing Explorer or
@@ -96,7 +97,7 @@ function ignoredFoldersMessage(filePath, turnedOff, options) {
   const wider = (turnedOff || []).filter((watch) => fold(p.resolve(watch.path)) !== own);
   if (!wider.length) return null;
   return "No longer watching " + turnedOff.map((watch) => watch.path + (watch.recursive ? " (and its sub-folders)" : "")).join(", ")
-    + " for documents to file on this desk. The Filing tab turns a folder back on.";
+    + " for documents to file on this desk. The " + NAMES.filing.name + " tab turns a folder back on.";
 }
 
 /**

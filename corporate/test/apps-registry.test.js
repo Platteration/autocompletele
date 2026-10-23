@@ -8,7 +8,8 @@ const os = require("node:os");
 const path = require("node:path");
 const { createEngine } = require("../core/engine.js");
 const orgPolicy = require("../core/org-policy.js");
-const { loadApps, validate, APP_IDS } = require("../desktop/apps/index.js");
+const vm = require("node:vm");
+const { loadApps, validate, APP_IDS, NAMES } = require("../desktop/apps/index.js");
 const { createAssistant } = require("../desktop/assistant.js");
 
 function temp() {
@@ -207,4 +208,62 @@ test("the assistant routes channels, palette items, lifecycle hooks and engine h
   assert.ok(events.includes("focus:outlook"));
   assert.ok(events.includes("settings:false"));
   assert.ok(events.includes("policy:Org"));
+});
+
+test("the names people see come from one table: the tabs, their first lines, the tray and palette entries and the built-in factle tab", async () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(NAMES)), {
+    reply: { name: "mactle", covers: "replies to mail" },
+    sheets: { name: "extle", covers: "Excel and Google Sheets" },
+    forms: { name: "cactle", covers: "CRM and ticket forms" },
+    guard: { name: "gactle", covers: "compliance warnings" },
+    notes: { name: "dactle", covers: "minutes, handovers and logs in Word, Docs or any editor" },
+    filing: { name: "factle", covers: "document filing" },
+  });
+  assert.deepEqual(Object.keys(NAMES), APP_IDS.concat("filing"), "every app of the registry has a name, and filing");
+
+  const dataDir = temp();
+  fs.copyFileSync(path.join(__dirname, "..", "shared", "org-policy.example.json"), path.join(dataDir, "policy.json"));
+  const assistant = createAssistant({ dataDir, now: () => new Date(2026, 9, 21, 12).getTime() });
+  assert.deepEqual(assistant.appsInfo().map((app) => [app.id, app.title]), APP_IDS.map((id) => [id, NAMES[id].name]), "the tab labels");
+  const tray = assistant.apps.filter((app) => typeof app.trayItems === "function").flatMap((app) => app.trayItems().map((item) => item.label));
+  assert.deepEqual(tray, ["mactle: Reply to the copied message…", "dactle: Update action items in the copied note"]);
+  assert.deepEqual(assistant.paletteSearch("mactle").map((item) => [item.kind, item.trigger])[0], ["app:reply", "mactle: Reply to copied message"]);
+  assert.deepEqual(assistant.paletteSearch("dactle").map((item) => [item.kind, item.trigger])[0], ["app:notes", "dactle: Update action items in copied note"]);
+
+  // Each tab page opens with "<name>: <what it covers>". The pages cannot
+  // load the table, so they are run under Node (a few lines of DOM) and held to it.
+  class Node {
+    constructor(tag) { Object.assign(this, { tagName: tag, children: [], attrs: {}, text: "", value: "", className: "" }); }
+    get textContent() { return this.text + this.children.map((child) => (typeof child === "string" ? child : child.textContent)).join(""); }
+    set textContent(value) { this.text = String(value); this.children = []; }
+    setAttribute(key, value) { this.attrs[key] = String(value); }
+    append(...nodes) { this.children.push(...nodes); }
+    addEventListener() {}
+    replaceWith() {}
+  }
+  const el = (tag, attrs, children) => {
+    const node = new Node(tag);
+    for (const [key, value] of Object.entries(attrs || {})) {
+      if (key === "class") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else node.setAttribute(key, value);
+    }
+    node.append(...(children || []));
+    return node;
+  };
+  const helpers = { api: { invoke: async (channel, payload) => assistant.invoke(channel, payload) }, el, text: (node, value) => { node.textContent = value; }, announce: () => {}, seconds: (n) => n + " s", preview: (value) => String(value || "").slice(0, 140) };
+  for (const id of APP_IDS) {
+    const window = {};
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "desktop", "renderer", "apps", id + ".js"), "utf8"), { window });
+    const section = new Node("section");
+    await window.actleApps[id].render(section, helpers, {});
+    const first = section.children[0];
+    assert.equal(first.tagName + " " + first.textContent, "h2 " + NAMES[id].name + ": " + NAMES[id].covers, id);
+  }
+
+  // Filing is built into the dashboard page itself.
+  const page = fs.readFileSync(path.join(__dirname, "..", "desktop", "renderer", "index.html"), "utf8");
+  assert.equal(page.match(/<button role="tab" data-tab="filing"[^>]*>([^<]*)<\/button>/)[1], NAMES.filing.name);
+  assert.equal(page.match(/<section id="tab-filing"[^>]*>\s*<h2>([^<]*)<\/h2>/)[1], NAMES.filing.name + ": " + NAMES.filing.covers);
+  fs.rmSync(dataDir, { recursive: true, force: true });
 });

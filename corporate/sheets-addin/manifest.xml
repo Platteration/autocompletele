@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  actle Sheets: Office task-pane add-in manifest for Excel.
+  extle: Office task-pane add-in manifest for Excel.
   Placeholders to replace before sideloading or publishing:
     - Id: 7b1f6c9a-0000-4000-8000-000000000001 is a placeholder GUID; generate your own.
     - https://localhost:3000 is where `taskpane.html`, `pane.js`, `pane.css`, `dist/sheets-core.js`
@@ -16,8 +16,8 @@
   <Version>0.1.0.0</Version>
   <ProviderName>actle</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="actle Sheets"/>
-  <Description DefaultValue="Column-aware completion from your organisation's vocabularies, and blocks and formulas by trigger."/>
+  <DisplayName DefaultValue="extle"/>
+  <Description DefaultValue="extle: column-aware completion in Excel from your organisation's vocabularies, and blocks and formulas by trigger."/>
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
   <SupportUrl DefaultValue="https://localhost:3000/README.md"/>
@@ -81,11 +81,11 @@
         <bt:Url id="actle.Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="actle.Group.Label" DefaultValue="actle"/>
-        <bt:String id="actle.OpenPane.Label" DefaultValue="Sheets"/>
+        <bt:String id="actle.Group.Label" DefaultValue="extle"/>
+        <bt:String id="actle.OpenPane.Label" DefaultValue="Open extle"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="actle.OpenPane.Tip" DefaultValue="Complete cells from your organisation's vocabularies and insert blocks or formulas by trigger."/>
+        <bt:String id="actle.OpenPane.Tip" DefaultValue="Open the extle pane: complete cells from your organisation's vocabularies and insert blocks or formulas by trigger."/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

@@ -1,4 +1,4 @@
-// actle Guard through the desktop assistant (plain Node): typing in a mail
+// gactle through the desktop assistant (plain Node): typing in a mail
 // window raises masked warnings through the engine, the warning popover's
 // submit fixes or dismisses them through a fake shell, and what reaches the
 // metrics, the audit file and the dashboard channels. Then the two pages
@@ -86,7 +86,7 @@ test("the sample section parses with no warnings and the app loads through the r
   assert.deepEqual(parsed.guard.packs.map((p) => p.id), ["pci", "gdpr", "legal"]);
   const [app] = loadApps({ policy: () => parsed, engine: { library: [], fieldText: "" }, now: () => NOW, log: () => {} }, { ids: ["guard"] });
   assert.equal(app.id, "guard");
-  assert.equal(app.title, "Guard");
+  assert.equal(app.title, "gactle");
   assert.deepEqual(Object.keys(app.ipc), ["guard:info", "guard:summary", "guard:check"]);
   assert.equal(app.extension.id, "guard");
   assert.equal(typeof app.extension.check, "function");
@@ -674,5 +674,5 @@ test("the dashboard page lists packs and rules, the counts, and tries a text wit
   assert.match(bare.textContent, /has no rule packs/);
   assert.match(bare.textContent, /No warnings recorded yet/);
   await window.actleApps.guard.render(bare, { ...helpers, api: { invoke: async () => ({ ok: false, error: "unknown channel guard:info" }) } }, {});
-  assert.match(bare.textContent, /Guard is not available: unknown channel guard:info/);
+  assert.match(bare.textContent, /gactle is not available: unknown channel guard:info/);
 });

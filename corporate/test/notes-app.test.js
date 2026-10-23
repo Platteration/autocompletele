@@ -1,4 +1,4 @@
-// actle Notes through the desktop assistant (plain Node): a document trigger
+// dactle through the desktop assistant (plain Node): a document trigger
 // typed in a notes window opens the fill popover, its Insert renders and
 // pastes the note through a fake shell, the tray entry rebuilds the action
 // block of a copied note on the clipboard, and what reaches the metrics, the
@@ -70,7 +70,7 @@ test("the sample section parses with no warnings and the app loads through the r
   assert.deepEqual(report.organizationShortcuts(parsed).filter((s) => s.kind === "notes"), [{ trigger: "minutes", kind: "notes" }, { trigger: "handover", kind: "notes" }, { trigger: "shift-log", kind: "notes" }], "usage reports can name every document");
   const [app] = loadApps({ policy: () => parsed, engine: { library: [] }, appData: () => ({ load: () => ({}), save: () => {} }), now: () => NOW, log: () => {} }, { ids: ["notes"] });
   assert.equal(app.id, "notes");
-  assert.equal(app.title, "Notes");
+  assert.equal(app.title, "dactle");
   assert.deepEqual(Object.keys(app.ipc), ["notes:info", "notes:render", "notes:actions", "notes:update", "notes:setAuthor"]);
   assert.equal(app.extension.id, "notes");
   assert.equal(app.popovers.fill.file, "apps/notes-fill");
@@ -347,7 +347,7 @@ test("the simulation walks through the sample headlessly, with or without a note
     assert.match(text, /\| Wednesday 2026-10-21\n {4}\| Minute taker: Dana Reyes/);
     assert.match(text, /\| - Ann Lee\n {4}\| - Bob Osei\n {4}\| - Cy Park/);
     assert.match(text, /author remembered for next time: Dana Reyes/);
-    assert.match(text, /tray "Update action items in the copied note" -> 3 action items; Action items updated on your clipboard/);
+    assert.match(text, /tray "dactle: Update action items in the copied note" -> 3 action items; Action items updated on your clipboard/);
     assert.match(text, /\| - Sam will restock ward 3 by Friday \(due 2026-10-23\)\n {4}\| - TODO: Omar to book the room for the review\n {4}\| - @priya\.k to call the vendor tomorrow \(due 2026-10-22\)/);
     assert.match(text, /again -> 3 action items, note unchanged/);
     assert.match(text, /metrics entries for the clipboard updates: none/);
@@ -505,7 +505,7 @@ test("the dashboard page lists the documents, saves the author, and tries a note
   assert.match(section.textContent, /No action items found\.The note is already up to date:/);
   assert.equal(assistant.ledger.entries().length, 0, "trying counts nothing");
   await window.actleApps.notes.render(again, { ...helpers, api: { invoke: async () => ({ ok: false, error: "unknown channel notes:info" }) } }, {});
-  assert.match(again.textContent, /Notes is not available: unknown channel notes:info/);
+  assert.match(again.textContent, /dactle is not available: unknown channel notes:info/);
   const none = desk({ notes: null });
   const empty = dom.document.createElement("section");
   await window.actleApps.notes.render(empty, { ...helpers, api: { invoke: async (channel, payload) => none.assistant.invoke(channel, payload) } }, {});

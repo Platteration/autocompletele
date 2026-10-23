@@ -1,4 +1,4 @@
-// actle Forms: dashboard tab. The organisation's records, lookup lists and
+// cactle: dashboard tab. The organisation's records, lookup lists and
 // forms, the person's own records with Delete, the proposals learned from
 // stored fills with Accept and Dismiss, the window last focused and the form
 // it matched, a "Try a lookup" box, and the stored fills with Clear.
@@ -110,9 +110,10 @@
       rendered = section;
       section.textContent = "";
       if (!info || info.ok === false) {
-        section.append(el("p", { class: "hint", text: "Forms is not available: " + ((info && info.error) || "no answer from the app.") }));
+        section.append(el("p", { class: "hint", text: "cactle is not available: " + ((info && info.error) || "no answer from the app.") }));
         return;
       }
+      section.append(el("h2", { text: "cactle: CRM and ticket forms" }));
       section.append(el("p", { class: "hint", text: "Put the caret in the first field of a form and type a record's trigger, or pick the record in the search palette. The popover shows the form matched to the focused window, fills the customer fields from a lookup list when a reference is copied or typed, asks for the blanks still open, and types the values in Tab order with a Tab for every field passed over. " + info.notes.selectors + " " + info.notes.noForm }));
       if (info.paused) section.append(el("div", { class: "banner" }, [el("div", { text: "Paused by your organisation: no record is offered." })]));
       if (info.warnings.length) section.append(el("div", { class: "banner" }, info.warnings.map((warning) => el("div", { text: warning }))));

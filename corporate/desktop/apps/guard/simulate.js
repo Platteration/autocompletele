@@ -1,4 +1,4 @@
-// Headless walk-through of actle Guard for desktop/simulate.js: a message
+// Headless walk-through of gactle for desktop/simulate.js: a message
 // with a Luhn-valid card number and a contract without the disclaimer is
 // typed into a mail window. Each warning opens its own popover as it fires,
 // as main.js shows one window per word end, and the person answers it

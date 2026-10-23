@@ -93,7 +93,7 @@ test("Office.onReady builds the pane in Excel and says so elsewhere; the pane th
   const { host, root, bridge, sandbox } = excelPane({ sheets: { "Orders 2026": ORDERS }, active: { sheet: "Orders 2026", address: "B4" }, settings: { actleSheetsConfig: CONFIG } });
   assert.equal(host.Office.ready, bridge.start, "start is registered with Office.onReady");
   assert.equal(bridge.start({ host: "Word" }), null);
-  assert.equal(root.textContent, "actle Sheets runs in Excel. Open this pane from an Excel workbook.");
+  assert.equal(root.textContent, "extle runs in Excel. Open this pane from an Excel workbook.");
   const pane = bridge.start({ host: host.Office.HostType.Excel });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(pane.ui.context.textContent, 'B4 on Orders 2026, column "Customer": label column, 4 values', "the workbook's configuration is offered, not applied");
@@ -122,7 +122,7 @@ test("a workbook whose settings carry another configuration cannot replace the o
   const pane = bridge.start({ host: host.Office.HostType.Excel });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(pane.ui.completions.all((n) => n.className === "completion").map((b) => b.textContent), ["Acme Logistics GmbH", "Northern Acme Ltd"], "the organisation's vocabulary, not the workbook's");
-  assert.match(pane.ui.origin.textContent, /^This document carries its own actle Sheets configuration in its settings\..*would add block "\/total" \(formula =WEBSERVICE\(.*remove block "\/vat"\./s, "the formula block is listed first, the triggers quoted");
+  assert.match(pane.ui.origin.textContent, /^This document carries its own extle configuration in its settings\..*would add block "\/total" \(formula =WEBSERVICE\(.*remove block "\/vat"\./s, "the formula block is listed first, the triggers quoted");
   assert.doesNotMatch(pane.ui.origin.textContent, /\/sig/, "the formula-like rows block was dropped when the configuration was read");
   for (const address of ["A7", "A8", "A9"]) {
     await host.select("Orders 2026", address);
@@ -223,10 +223,10 @@ test("Code.gs keeps the configuration in document properties cut by UTF-8 bytes,
 test("Code.gs adds the menu, opens the sidebar and serves the includes", () => {
   const { fake, gs } = appsScript({ sheets: {}, active: {} });
   gs.onOpen();
-  assert.equal(fake.ui.menus[0].title, "actle Sheets");
+  assert.equal(fake.ui.menus[0].title, "extle");
   assert.deepEqual(fake.ui.menus[0].items, [["Open sidebar", "showSidebar"]]);
   gs.showSidebar();
-  assert.deepEqual(fake.ui.sidebars, [{ file: "Sidebar", title: "actle Sheets" }]);
+  assert.deepEqual(fake.ui.sidebars, [{ file: "Sidebar", title: "extle" }]);
   assert.equal(gs.include("sheets-core"), "<!-- include sheets-core -->");
 });
 
@@ -252,7 +252,7 @@ test("the sidebar page talks to Code.gs through google.script.run, asks for 5000
   const pane = root.find((n) => n.className === "context");
   const origin = root.find((n) => n.className === "origin");
   assert.equal(origin.textContent,
-    "This document carries its own actle Sheets configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration. This browser has none yet: paste the file the actle desktop app exports under Settings."
+    "This document carries its own extle configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration. This browser has none yet: paste the file the actle desktop app exports under Settings."
     + "Using the document's would add block \"/vat\" (formula =ROUND(B2*0.19, 2)); add vocabulary \"customers\" (4 values); add vocabulary \"costCentres\" (3 values); replace the column rules (3 instead of 0); add block \"/exp\" (2 rows x 3 columns)."
     + "Use the document's configuration" + "Not now", "the spreadsheet's configuration, as Code.gs's loadConfig returned it through google.script.run, is offered");
   assert.equal(pane.textContent, 'B4 on Orders 2026, column "Customer": label column, 4 values', "and not applied before the person chooses it");
@@ -317,4 +317,25 @@ test("the Office manifest, the pages and the Apps Script files are consistent wi
   const appsscript = JSON.parse(fs.readFileSync(path.join(ADDIN, "apps-script", "appsscript.json"), "utf8"));
   assert.equal(appsscript.runtimeVersion, "V8");
   assert.deepEqual(appsscript.oauthScopes, ["https://www.googleapis.com/auth/spreadsheets.currentonly", "https://www.googleapis.com/auth/script.container.ui"], "the current spreadsheet only");
+});
+
+test("the add-in is named extle wherever Excel shows it, within the manifest's documented lengths", () => {
+  const manifest = fs.readFileSync(path.join(ADDIN, "manifest.xml"), "utf8");
+  const attr = (pattern) => (manifest.match(pattern) || [])[1];
+  assert.equal(attr(/<DisplayName DefaultValue="([^"]*)"\/>/), "extle");
+  assert.match(attr(/<Description DefaultValue="([^"]*)"\/>/), /^extle: /);
+  assert.equal(attr(/<bt:String id="actle\.Group\.Label" DefaultValue="([^"]*)"\/>/), "extle", "the ribbon group");
+  assert.equal(attr(/<bt:String id="actle\.OpenPane\.Label" DefaultValue="([^"]*)"\/>/), "Open extle", "the button and its supertip title");
+  assert.match(attr(/<bt:String id="actle\.OpenPane\.Tip" DefaultValue="([^"]*)"\/>/), /^Open the extle pane: /);
+  assert.match(manifest, /<ProviderName>actle<\/ProviderName>/, "the provider stays actle");
+  // learn.microsoft.com/javascript/api/manifest: DisplayName up to 125 characters, Description up to 250, a ShortStrings string up to 125, a LongStrings string up to 250.
+  assert.ok(attr(/<DisplayName DefaultValue="([^"]*)"\/>/).length <= 125);
+  assert.ok(attr(/<Description DefaultValue="([^"]*)"\/>/).length <= 250);
+  const strings = (block) => [...(manifest.match(new RegExp("<bt:" + block + ">([\\s\\S]*?)</bt:" + block + ">")) || ["", ""])[1].matchAll(/DefaultValue="([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(strings("ShortStrings"), ["extle", "Open extle"]);
+  assert.ok(strings("ShortStrings").every((text) => text.length <= 125));
+  assert.equal(strings("LongStrings").length, 1);
+  assert.ok(strings("LongStrings").every((text) => text.length <= 250));
+  const page = fs.readFileSync(path.join(ADDIN, "taskpane.html"), "utf8");
+  assert.match(page, /<title>extle<\/title>/);
 });

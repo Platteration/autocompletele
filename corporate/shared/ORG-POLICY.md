@@ -8,6 +8,13 @@ skipped with a warning shown on the dashboard, never a refusal.
 
 `org-policy.example.json` in this folder is a complete example.
 
+The suite's apps each read their own section of the policy: factle, the
+document filing app (`filing`); mactle, the replies to mail app (`reply`);
+extle, the Excel and Google Sheets app (`sheets`); cactle, the CRM and ticket
+forms app (`forms`); gactle, the compliance warnings app (`guard`); and
+dactle, the minutes, handovers and logs app (`notes`). See **The suite**
+below.
+
 | Field | Meaning |
 | ----- | ------- |
 | `version` | `1`. A newer number is accepted with a warning; unknown fields are ignored. |
@@ -39,7 +46,7 @@ skipped with a warning shown on the dashboard, never a refusal.
 | `reporting.includeApps` | `true` adds per-application totals to usage reports (default `false`). |
 | `retention.metricsDays` | Days of statistics kept on disk (default 365). |
 | `retention.corpusDays` | Days of learning text kept on disk (default 90). |
-| `reply.replies[]` | One prewritten reply: `id` (defaults to its position; a duplicate gets `-dup`), `label` (defaults to the id), `keywords` (list, required; whole words in the copied message, case-insensitive unless `caseSensitive` is true), `match` (`any` default, or `all`), and exactly one of `text` (may carry `[[blanks]]`, `{cursor}` and the other placeholders) or `shorthand` (a trigger from the merged library; a reply whose shorthand is not in the library is never offered and is listed as a warning on the Reply tab). |
+| `reply.replies[]` | One prewritten reply: `id` (defaults to its position; a duplicate gets `-dup`), `label` (defaults to the id), `keywords` (list, required; whole words in the copied message, case-insensitive unless `caseSensitive` is true), `match` (`any` default, or `all`), and exactly one of `text` (may carry `[[blanks]]`, `{cursor}` and the other placeholders) or `shorthand` (a trigger from the merged library; a reply whose shorthand is not in the library is never offered and is listed as a warning on the mactle tab). |
 | `reply.replies[].extract` | Extractors for this reply only, same shape as `reply.extract`, layered on top of the section's values: one with the same name wins over the section extractor or the built-in blank when it finds a value. The built-ins and the section extractors are not run again for the reply, so a section extractor's override of a built-in stays. |
 | `reply.extract` | How blanks are filled from the message, by blank name: `{ "pattern": "regex", "group": n }` (first match, case-insensitive; `group` defaults to 0, the whole match) or `{ "after": "Label" }` (what follows the label on the same line, without the separator, at the first occurrence where something follows it; a value on the line below the label is not found); a bare string is a pattern. A policy extractor wins over the built-in blank of the same name when it finds a value. Built-in blanks: `name` and `firstName` (from the last sign-off line, such as "Kind regards," followed by the name), `greeted` (from a greeting in the first three lines), `order`, `reference` (ticket, case, ref, invoice; at least three digits, never a date), `date` (first date, ISO), `amount` (first amount with a currency). |
 | `reply.max` | How many replies the popover lists (default 3, 1 to 10). |
@@ -72,7 +79,7 @@ skipped with a warning shown on the dashboard, never a refusal.
 
 ## The suite
 
-actle Filer (document filing, above) and the five apps below share one engine,
+factle (document filing, above) and the five apps below share one engine,
 one policy file and one desk: each reads its own section of the policy
 (invalid parts are warnings, never a refusal; layers merge lists by id),
 registers its tab, popovers, tray and palette entries through
@@ -82,11 +89,12 @@ one namespace across the library, document sets, forms records and notes
 documents; a shared trigger is a warning and only the first owner (in that
 order) can be typed.
 
-## actle Reply
+## mactle: replies to mail
 
-The desk cannot read the compose window, so the person copies the message
-they are answering and chooses "Reply to the copied message…" in the tray
-menu or "Reply to copied message" in the search palette. Quoted lines and
+mactle reads the policy's `reply` section. The desk cannot read the compose
+window, so the person copies the message they are answering and chooses
+"mactle: Reply to the copied message…" in the tray menu or "mactle: Reply to
+copied message" in the search palette. Quoted lines and
 everything below "On … wrote:" (one line or wrapped onto two), "-----Original
 Message-----" or a From:/Sent:/To:/Subject: header block are dropped; the
 first 20,000 characters of the rest are used. The replies whose keywords
@@ -111,10 +119,10 @@ the copied message, the values found in it, the answers typed or the pasted
 text. The "Try it" box ranks a pasted message without counting or storing
 anything. Usage reports name reply ids as organisation items (kind `reply`).
 
-## actle Sheets
+## extle: Excel and Google Sheets
 
-Column-aware completion in Excel and Google Sheets from the `sheets` section. The
-desk cannot see cells: its **Sheets** tab shows the section (vocabularies, column
+Column-aware completion in Excel and Google Sheets: extle reads the policy's
+`sheets` section. The desk cannot see cells: its **extle** tab shows the section (vocabularies, column
 rules, blocks), tries a completion against pasted column values and exports the
 section as `apps/sheets-config.json` for the add-in in `corporate/sheets-addin/`,
 whose Settings take that file. An export that cannot be written is reported, never thrown.
@@ -141,42 +149,42 @@ written only after a confirmation that shows the formula, or the rows and the ra
 they replace. Never stored or sent: cell
 contents, what is typed in the pane or in "Try it". No data leaves the spreadsheet
 (the Excel pane loads Office.js from Microsoft's CDN; nothing else is fetched). No
-metrics are recorded for Sheets, because the desk never inserts text for it.
+metrics are recorded for extle, because the desk never inserts text for it.
 
-## actle Forms
+## cactle: CRM and ticket forms
 
-Fill a whole form at once from a named record. Section `forms` (`records`, `lookups`, `forms`), parsed by `core/forms.js` and run by `desktop/apps/forms/`.
+Fill a whole form at once from a named record. cactle reads section `forms` (`records`, `lookups`, `forms`), parsed by `core/forms.js` and run by `desktop/apps/forms/`.
 
 On a desk: with the caret in the form's first field, typing a record's trigger, or picking the record in the search palette (a record without a trigger is listed as `form:<id>`), opens the plan popover. It names the form matched to the window that had the focus; with no match the record's fields are filled in record order. The Reference box runs the lookups (exact key, or a key pattern inside longer text); when the popover opens the clipboard is tried once and a key found there pre-fills the reference. The row's columns fill form fields of the same name and the record's `[[blanks]]`; blanks still open are asked in the popover, which also lists the fields Tab will pass over. Fill is refused, with the popover kept open, while a blank is open or the form has none of the record's fields. Otherwise the popover closes first, so the keys reach the form and not actle's own window; the Electron shell then waits 150 ms for the focus to return, each value is pasted in Tab order with one Tab per form field between two values, and the first paste deletes the typed trigger (on its own when the first value belongs to a later field). Selectors are shown, not used. A key that fails stops the fill: a notification names the field it stopped at, nothing is counted or stored, and there is no retry from the popover. A complete fill is one `form` insert named by the record id (an own record's fill: `own-record`), with the typed trigger, a typed reference and typed answers subtracted. A paused policy offers no record, and Fill in a popover opened before the pause is refused ("Paused by your organisation."). A pause that arrives during the 150 ms wait stops the fill before its first key, with a notification; a fill that has started typing finishes.
 
-Stored in `apps/forms.json`: own records accepted from proposals (id `own-` + 8 hex characters of the proposal digest, label, trigger, fields, the form learned on, when); fills made on a matched form as the form id and only the values that came from the policy (record text none of whose blanks the person answered, and lookup-row columns; what the person types into the popover is never written), at most 500 (oldest dropped), removed once older than `retention.corpusDays` (at start and at every fill; a fill without a time counts as expired), all deleted by "Clear stored fills" on the Forms tab and by "Delete learned text" on the Learning tab (that button is enabled only while learn-mode text is stored); dismissed proposals as `sha256:` digests. The file is plain JSON, so names and e-mail addresses from lookup rows are readable on the desk (the learning corpus, by contrast, is encrypted). The audit file gets `form-filled`, `form-record-accepted`, `form-proposal-dismissed`, `form-record-deleted` and `form-sessions-cleared` with ids and counts.
+Stored in `apps/forms.json`: own records accepted from proposals (id `own-` + 8 hex characters of the proposal digest, label, trigger, fields, the form learned on, when); fills made on a matched form as the form id and only the values that came from the policy (record text none of whose blanks the person answered, and lookup-row columns; what the person types into the popover is never written), at most 500 (oldest dropped), removed once older than `retention.corpusDays` (at start and at every fill; a fill without a time counts as expired), all deleted by "Clear stored fills" on the cactle tab and by "Delete learned text" on the Learning tab (that button is enabled only while learn-mode text is stored); dismissed proposals as `sha256:` digests. The file is plain JSON, so names and e-mail addresses from lookup rows are readable on the desk (the learning corpus, by contrast, is encrypted). The audit file gets `form-filled`, `form-record-accepted`, `form-proposal-dismissed`, `form-record-deleted` and `form-sessions-cleared` with ids and counts.
 
-Never stored: the value of a field whose name contains, as a whole word (split at case changes, digits and punctuation), password, passwd, passcode, passphrase, pass, pwd, PIN, secret, token, OTP, API key, credential(s), CVV, CVC, IBAN, BIC, SSN, NINO, DNI or NIR (`userPin`, `api-key`, `password2` and `payeeIBAN` count; `secretary`, `tokenizer`, `pinned` and `passenger` do not, and neither do other names such as `accountNumber` or `passportNumber`); a record field whose template has a blank named that way; a value the capture scrubber would mask (card numbers, labelled secrets, long tokens) or on which Guard's `iban` or `national-id` (US, GB, ES, FR) detector fires; anything typed into the popover (answers, and every field that carries one); a fill made without a matched form; the clipboard text (only a lookup key found in it reaches the popover); a value, reference or answer in the audit file.
+Never stored: the value of a field whose name contains, as a whole word (split at case changes, digits and punctuation), password, passwd, passcode, passphrase, pass, pwd, PIN, secret, token, OTP, API key, credential(s), CVV, CVC, IBAN, BIC, SSN, NINO, DNI or NIR (`userPin`, `api-key`, `password2` and `payeeIBAN` count; `secretary`, `tokenizer`, `pinned` and `passenger` do not, and neither do other names such as `accountNumber` or `passportNumber`); a record field whose template has a blank named that way; a value the capture scrubber would mask (card numbers, labelled secrets, long tokens) or on which gactle's `iban` or `national-id` (US, GB, ES, FR) detector fires; anything typed into the popover (answers, and every field that carries one); a fill made without a matched form; the clipboard text (only a lookup key found in it reaches the popover); a value, reference or answer in the audit file.
 
 Learning: field sets filled together in at least 3 fills of one form with at least 2 constant fields are proposed; text that differs from fill to fill becomes a blank. A proposal whose fields equal an existing record (policy or own), or one that was dismissed, is not shown. Accepting needs a trigger of at most 40 characters without spaces that no record, library shortcut, document set or notes document uses. A proposal is labelled "Learned record N on <form label>" (the form's id when the policy no longer has the form), N being the lowest number for which no record and no earlier proposal has that label, never with a learned value; the dashboard prefills that label as the record's name, which the person may change, and an empty name keeps it. A fill of an own record notifies "Filled N fields." without its label. A policy record with an own record's id hides the own record (warned on the tab); one with its trigger takes the trigger and the own record stays palette-only.
 
-Limits: nothing is read from the form, so the caret must be in the form's first field when the trigger is typed and a form's fields must be listed in the application's Tab order; the Forms tab shows the first 20 rows of a lookup; there is no tray entry.
+Limits: nothing is read from the form, so the caret must be in the form's first field when the trigger is typed and a form's fields must be listed in the application's Tab order; the cactle tab shows the first 20 rows of a lookup; there is no tray entry.
 
-## Guard
+## gactle: compliance warnings
 
-actle Guard checks what a person types against the organisation's rule packs (policy section `guard`, parsed by `core/guard.js`, desktop app `desktop/apps/guard/`). At every word end, including a word ended by Enter, Tab or a shortcut key such as Ctrl+Enter (the usual ways a message is sent), the engine hands the text typed or inserted in the current field since it got the focus (the last 4,000 characters, held in memory only, and only while the policy has rule packs) to the core. The desk observes keys and cannot hold one back, so a warning raised by the key that sends a message appears as the message goes out, and comes without a fix (where the rule has one, the window says to check the message and correct it by hand); it is still recorded as raised. The last word before a mouse click (on Send, for example) is not checked, because a click resets what actle holds of the field. No field text is held and nothing is checked in a secure-input field or in the credential prompts, password managers and terminals actle recognises by process name or window title (see Capture modes). A rule that fires opens the "Before you send" window, which never takes the focus, with the rule's label, a severity tag, the message, the findings masked (a card number shows its last four digits, a secret only its label and stars), a Fix button when the rule has one, and Dismiss. The shell shows one such window at a time: a warning or offer that fires at a later word end replaces it, and the warnings left in it count as unanswered. Each rule fires once per field until the focus moves. A severity is a label; nothing is blocked.
+gactle checks what a person types against the organisation's rule packs (policy section `guard`, parsed by `core/guard.js`, desktop app `desktop/apps/guard/`). At every word end, including a word ended by Enter, Tab or a shortcut key such as Ctrl+Enter (the usual ways a message is sent), the engine hands the text typed or inserted in the current field since it got the focus (the last 4,000 characters, held in memory only, and only while the policy has rule packs) to the core. The desk observes keys and cannot hold one back, so a warning raised by the key that sends a message appears as the message goes out, and comes without a fix (where the rule has one, the window says to check the message and correct it by hand); it is still recorded as raised. The last word before a mouse click (on Send, for example) is not checked, because a click resets what actle holds of the field. No field text is held and nothing is checked in a secure-input field or in the credential prompts, password managers and terminals actle recognises by process name or window title (see Capture modes). A rule that fires opens the "Before you send" window, which never takes the focus, with the rule's label, a severity tag, the message, the findings masked (a card number shows its last four digits, a secret only its label and stars), a Fix button when the rule has one, and Dismiss. The shell shows one such window at a time: a warning or offer that fires at a later word end replaces it, and the warnings left in it count as unanswered. Each rule fires once per field until the focus moves. A severity is a label; nothing is blocked.
 
 Fixes: a text fix at the end and a shorthand fix are typed at the caret and counted as a `guard` insert (keystrokes saved = the inserted text). A `remove` fix and a text fix at the start cannot edit text already in the field, because the shell only types at the caret: a corrected copy of what actle saw typed in the field goes to the clipboard with a notification saying it covers only that text, to paste over it; nothing is counted. When the field holds 4,000 characters or more the copy would start mid-word, so the clipboard fix is refused with a message to correct by hand. Every fix is refused while the organisation has paused actle, and once the focus moved since the warning was raised (the window stays open across applications), so nothing is ever typed into another application; Dismiss still answers it. A shorthand fix uses the policy library's shortcut (the person's own only when the policy has none with that trigger) and refuses a shortcut with `[[blanks]]`, telling the person to type the trigger. While a fix is pasting, the window takes no other answer.
 
-Recipients: the shell cannot read them, so rules with `recipients: "external"` fire while typing only when `guard.assumeExternal` is `true`. The Guard tab's "Try it" box runs the same check on a pasted text with recipients (comma-separated) and, optionally, an application typed in, and counts and audits nothing.
+Recipients: the shell cannot read them, so rules with `recipients: "external"` fire while typing only when `guard.assumeExternal` is `true`. The gactle tab's "Try it" box runs the same check on a pasted text with recipients (comma-separated) and, optionally, an application typed in, and counts and audits nothing.
 
 Stored: one line per outcome in `audit.jsonl` (`event: "guard"`, rule id, pack id, `raised`, `fixed` or `dismissed`, time), and for a typed fix one metrics entry (kind `guard`, rule id, source `organization`), which usage reports name per rule. Never stored: the field text, recipients, findings (not even masked), the Try-it text.
 
 Limits: Fix closes the window, so other warnings shown with it count as unanswered; so do warnings whose window was replaced by a later one or was still open when actle quit. Pasted text, a mail client's signature and text typed before the field got the focus are not seen and are not in a clipboard copy. While the organisation pauses actle, nothing is typed into the engine and nothing is checked.
 
-## actle Notes
+## dactle: minutes, handovers and logs
 
-Minutes, handovers and logs in the organisation's house style. Policy section `notes`; desktop app `desktop/apps/notes/`.
+Minutes, handovers and logs in the organisation's house style, pasted into Word, Docs or any editor. dactle reads policy section `notes`; desktop app `desktop/apps/notes/`.
 
 * **Insert a document.** Type its `trigger` in any application (same boundary rule as shortcuts; a library shortcut or a document set with the same trigger wins), or pick the document in the search palette. A popover asks for the document's blanks: one input each, the `author` blank prefilled from the person's own setting, a list blank (a list line of its own such as `- [[attendees]]`, or a blank used only in `repeat` sections) as one comma-separated line. Insert renders the title, the sections, `{date}`, `{time}`, `{weekday}` and the answers, closes the popover so the editor has the focus again, deletes the typed trigger and pastes the note; the caret goes to `{cursor}`, else the first empty section, else the end of the sections. A document whose `actions` are on gets an empty action block at the end unless one of its sections already carries that heading. Nothing is inserted while a blank is empty: the popover names the missing ones, and a list blank of a `repeat` section with fewer values than the section has copies is named with its counts (`owner (2 of 3 values)`). A paste the sender could not do is reported by a notification; a fault while counting an insert that already reached the editor is logged and notified, never shown as a failed insert.
-* **Action items.** The editor cannot be read, so the person copies the whole note and chooses "Update action items in the copied note" in the tray menu (or the palette entry). Sentences with an owner (`@name`, or a capitalised name followed by "will" or "to"), a due phrase ("by Friday", "tomorrow", "by 3 November 2026", "next week") or one of `actions.patterns` are collected under `actions.heading`, with due dates written as ISO where a weekday or date was given. The block is replaced where it stands or appended; lines typed into it by hand are kept; running it twice changes nothing. The result goes back to the clipboard with a notification and the person pastes over the note. A document's own `actions.heading` is used when the note holds a block under it, else the policy's. When no items are found and the note has no block, the clipboard is left alone.
+* **Action items.** The editor cannot be read, so the person copies the whole note and chooses "dactle: Update action items in the copied note" in the tray menu (or the palette entry). Sentences with an owner (`@name`, or a capitalised name followed by "will" or "to"), a due phrase ("by Friday", "tomorrow", "by 3 November 2026", "next week") or one of `actions.patterns` are collected under `actions.heading`, with due dates written as ISO where a weekday or date was given. The block is replaced where it stands or appended; lines typed into it by hand are kept; running it twice changes nothing. The result goes back to the clipboard with a notification and the person pastes over the note. A document's own `actions.heading` is used when the note holds a block under it, else the policy's. When no items are found and the note has no block, the clipboard is left alone.
 * **Statistics.** An inserted note is counted under kind `notes` with the document `id` (source organisation): the pasted length minus the typed trigger, the palette query and the answers typed into the blanks (a prefilled author is not typed). Clipboard updates count nothing: actle typed nothing. Usage reports name documents by `id`.
-* **Stored.** `settings.json`: `notesAuthor`, the author last inserted with or saved on the Notes tab. `apps/notes.json`: inserts per document id and the number of clipboard updates. `audit.jsonl`: `notes-inserted` (document id, via, number of blanks answered, keystrokes saved) and `notes-actions-updated` (via, number of items).
+* **Stored.** `settings.json`: `notesAuthor`, the author last inserted with or saved on the dactle tab. `apps/notes.json`: inserts per document id and the number of clipboard updates. `audit.jsonl`: `notes-inserted` (document id, via, number of blanks answered, keystrokes saved) and `notes-actions-updated` (via, number of items).
 * **Never stored.** The note, its headings, the answers and the clipboard text are written nowhere by actle; the dashboard's "Try it" box works on the pasted text in memory only.
 * **Limits.** The document a copied note came from is not known: only its block heading is matched. Dates in due phrases follow `dateOrder`. `paused` stops the triggers and palette items (engine and assistant) and the tray entry and Insert (the app). A document without blanks still opens the popover (Enter inserts it). Closing the popover gives the editor the focus back on Windows and Linux; on macOS only the shell can hide actle's own windows, which the app cannot do. Phrasings from earlier notes (`core/notes.js` `phrasings`) are not offered: no corpus of notes is kept.
 
@@ -193,7 +201,7 @@ that itself repeats (`(a+)+`), repeats a group of alternatives without a bound
 (`(a|b)*`; use a character class `[ab]*` instead), or has more than four
 unbounded repeats. On the desk each pattern also runs with a 50 ms budget on
 capped text; one that runs out is turned off until the next start, with a
-dashboard warning and an audit line (`policy-pattern-disabled`). The Sheets
+dashboard warning and an audit line (`policy-pattern-disabled`). The extle
 add-in has the load-time check and the caps, not the budget.
 
 ## Central distribution (signed policies)
@@ -284,7 +292,7 @@ library already uses it. `--out` writes a new `shorthands.json`-format file
 (it never replaces an existing one) to review and then add to the policy's
 `library` before signing.
 
-## Document filing
+## factle: document filing
 
 A desk watches the folders in `filing.watch` (plus the person's own). When a
 file appears and has stopped growing, the desk reads it locally (plain text,
@@ -302,7 +310,7 @@ when no such watch is left. Skip, or Esc in the popover, leaves the file
 untouched at any time. A document is never overwritten, even when two desks, or a desk and
 `actle-admin file --apply`, file the same name into the same folder at the
 same moment (a second copy gets ` (2)`); a name with an unfilled blank is
-refused; and a filing can be undone from the Filing tab while the filed
+refused; and a filing can be undone from the factle tab while the filed
 document is unchanged (when the file at the filed path has another size or
 modification time, or is not a file, Undo leaves it and its entry where they
 are). A name is cut to 150 characters as Windows counts them (most emoji count
@@ -340,13 +348,13 @@ the name of a file in the current folder is refused too.
 * **triggers**: a rolling buffer of the last 200 characters is matched against
   triggers and document shortcuts and is never written anywhere. This is what
   the personal Windows app does in every application. While the policy has
-  keyword rules or Guard packs, the text of the current field (up to 4,000
+  keyword rules or gactle rule packs, the text of the current field (up to 4,000
   characters) is also held in memory to check them, and dropped when the focus
   moves. A word ended by Enter, Tab, a shortcut key or a caret key raises
-  warnings only (keyword warnings without their insert, Guard warnings without
+  warnings only (keyword warnings without their insert, gactle warnings without
   a fix), because the key may have sent the message or left the window;
   offers wait for the next word typed in the field. No field text is held,
-  and no keyword rule or Guard check runs, in the credential prompts, password
+  and no keyword rule or gactle check runs, in the credential prompts, password
   managers and terminals actle recognises.
 * **learn**: in addition, the text typed in that application is kept per
   field session (until the focus moves), scrubbed, and stored under the data

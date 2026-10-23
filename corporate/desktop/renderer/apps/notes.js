@@ -1,4 +1,4 @@
-// actle Notes: dashboard tab. The organisation's documents with their
+// dactle: dashboard tab. The organisation's documents with their
 // triggers, sections, blanks and action-block setting; the author setting
 // prefilled into every note; and a "Try it" box that finds the action items
 // of a pasted note and shows the updated note, the way the tray entry does on
@@ -45,9 +45,10 @@
       const info = await api.invoke("notes:info");
       section.textContent = "";
       if (!info || info.ok === false) {
-        section.append(el("p", { class: "hint", text: "Notes is not available: " + ((info && info.error) || "no answer from the app.") }));
+        section.append(el("p", { class: "hint", text: "dactle is not available: " + ((info && info.error) || "no answer from the app.") }));
         return;
       }
+      section.append(el("h2", { text: "dactle: minutes, handovers and logs in Word, Docs or any editor" }));
       section.append(el("p", { class: "hint", text: "Type a document's trigger in any application, or pick the document in the search palette, and a small form asks for its blanks; Enter pastes the note with the date, the weekday and your name filled in. The caret lands where the document says. Action items written anywhere in a note (a name followed by \"will\" or \"to\", an @mention, a due phrase, or one of the organisation's patterns) are collected into the action block: copy the note, choose \"" + info.trayLabel + "\" in the tray menu or \"" + info.paletteLabel + "\" in the palette, then paste over the note. Lines you typed into the block by hand are kept. Clipboard updates are not counted in the statistics." }));
       if (info.paused) section.append(el("div", { class: "banner" }, [el("div", { text: "Paused by your organisation: no documents are offered." })]));
 

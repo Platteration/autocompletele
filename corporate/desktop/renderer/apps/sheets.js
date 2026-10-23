@@ -1,4 +1,4 @@
-// actle Sheets: dashboard tab. Shows the policy's vocabularies, column rules
+// extle: dashboard tab. Shows the policy's vocabularies, column rules
 // and blocks, tries completions against pasted column values through the
 // sheets:complete channel, and exports the section for the add-in. Rebuilt on
 // every change; what was typed into "Try it" is kept across rebuilds.
@@ -105,9 +105,10 @@
       const info = await api.invoke("sheets:info");
       section.textContent = "";
       if (!info || !info.ok) {
-        section.append(el("p", { class: "hint", text: "actle Sheets could not read the policy: " + ((info && info.error) || "unknown error") }));
+        section.append(el("p", { class: "hint", text: "extle could not read the policy: " + ((info && info.error) || "unknown error") }));
         return;
       }
+      section.append(el("h2", { text: "extle: Excel and Google Sheets" }));
       section.append(el("p", { class: "hint", text: "Vocabularies, column rules and blocks come from the organisation policy (section sheets)" + (info.organization ? " of " + info.organization : "") + ". The desktop assistant cannot see spreadsheet cells, so completing happens in the Excel task pane or the Google Sheets sidebar of the add-in below; a vocabulary column completes to the organisation's one spelling, other columns to their own values, and a / trigger inserts rows or a formula." }));
       section.append(el("h2", { text: "Vocabularies" }));
       section.append(table(el, ["Name", { text: "Values" }, { text: "Aliases" }, "Examples"], info.vocabularies.map((v) => el("tr", {}, [

@@ -1,4 +1,4 @@
-// actle Sheets add-in: the pane shared by the Excel task pane and the Google
+// extle add-in: the pane shared by the Excel task pane and the Google
 // Sheets sidebar. It builds its own elements, reads cells and writes
 // completions only through the host bridge it is given, and completes with
 // the ActleSheets bundle. No framework, no inline handlers.
@@ -139,7 +139,7 @@
     const config = parsed.config;
     const names = Object.keys(config.vocabularies);
     if (!names.length && !config.columns.length && !config.blocks.length && !parsed.warnings.length) {
-      return "No configuration yet: export it from the actle desktop app (Sheets tab) and paste the file's contents above.";
+      return "No configuration yet: export it from the actle desktop app (extle tab) and paste the file's contents above.";
     }
     const head = names.length + " vocabularies (" + names.join(", ") + "), " + config.columns.length + " column rules, " + config.blocks.length + " blocks.";
     return parsed.warnings.length ? head + " Skipped: " + parsed.warnings.join("; ") : head;
@@ -315,7 +315,7 @@
           renderOrigin();
         });
         ui.origin.append(
-          make("p", { text: "This document carries its own actle Sheets configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration" + (hasOrganization ? ", which stays in use." : ". This browser has none yet: paste the file the actle desktop app exports under Settings.") }),
+          make("p", { text: "This document carries its own extle configuration in its settings. It travels with the file, so whoever saved the file chose it; it is not your organisation's configuration" + (hasOrganization ? ", which stays in use." : ". This browser has none yet: paste the file the actle desktop app exports under Settings.") }),
           make("p", { text: "Using the document's would " + listed.join("; ") + "." }),
           make("div", { class: "actions" }, [use, keep]),
         );

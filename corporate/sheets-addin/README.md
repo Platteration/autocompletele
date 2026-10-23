@@ -1,10 +1,11 @@
-# actle Sheets add-in (Excel and Google Sheets)
+# extle add-in (Excel and Google Sheets)
 
 Column-aware completion inside the spreadsheet. The actle desktop assistant
-cannot see cells, so this folder holds the other half of actle Sheets: a
-task pane for Excel and a sidebar for Google Sheets that read the selected
-cell, its column header (row 1) and the column's existing values, and offer
-completions from the organisation's vocabularies and from the column itself.
+cannot see cells, so this folder holds the other half of extle, the Excel and
+Google Sheets app: a task pane for Excel and a sidebar for Google Sheets that
+read the selected cell, its column header (row 1) and the column's existing
+values, and offer completions from the organisation's vocabularies and from
+the column itself.
 Clicking a completion writes it into the cell **as text**, so a code such as
 `CC-100` or a value that looks like a date is not reinterpreted. A `/` trigger
 typed into the pane's input inserts the policy's block of rows or formula at
@@ -60,7 +61,7 @@ change to the core.
 ## Configuration
 
 The pane needs the `sheets` section of the organisation policy. On the
-desktop assistant's **Sheets** tab, **Export add-in configuration** writes it
+desktop assistant's **extle** tab, **Export add-in configuration** writes it
 to `apps/sheets-config.json` in the data folder and shows the path. Open the
 pane's **Settings**, paste the file's contents and save. The pane accepts the
 exported section, a whole policy file (its `sheets` section is used) or the
@@ -177,7 +178,9 @@ loads Office.js from Microsoft's CDN; nothing else is fetched.
    File → Options → Trust Center → Trusted Add-in Catalogs, then
    Insert → My Add-ins → Shared Folder; on macOS, copy the manifest to
    `~/Library/Containers/com.microsoft.Excel/Data/Documents/wef`; in Excel on
-   the web, Insert → Add-ins → Upload My Add-in.
+   the web, Insert → Add-ins → Upload My Add-in. The manifest puts an
+   **Open extle** button in an **extle** group on the Home tab; it opens the
+   pane.
 4. Deploy: host the files on your own HTTPS origin, point the manifest at it
    and publish the manifest through the Microsoft 365 admin center
    (Integrated apps) so every desk gets it.
@@ -195,7 +198,7 @@ column is marked "first rows only".
    `pane.html`; `appsscript.json` is the manifest, shown after enabling it in
    the project settings). With `clasp`, `clasp push` from `apps-script/` does
    the same.
-3. Reload the spreadsheet: the **actle Sheets** menu opens the sidebar.
+3. Reload the spreadsheet: the **extle** menu opens the sidebar.
 4. For every sheet in the organisation, publish the script as a Workspace
    add-on or editor add-on from the Apps Script project (Deploy → New
    deployment) and install it for the domain.

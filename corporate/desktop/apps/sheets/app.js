@@ -1,4 +1,4 @@
-// actle Sheets: the desktop half. The assistant cannot see spreadsheet cells,
+// extle: the desktop half. The assistant cannot see spreadsheet cells,
 // so this app shows what the policy's sheets section holds, lets a person try
 // completions against pasted column values, and exports the section for the
 // Excel / Google Sheets add-in in corporate/sheets-addin, which does the
@@ -12,6 +12,7 @@ const path = require("node:path");
 const sheets = require("../../../core/sheets.js");
 const { FILES } = require("../../../core/store.js");
 const { SAMPLE_SECTION } = require("./sample.js");
+const { NAMES } = require("../index.js");
 
 const CONFIG_DATA_ID = "sheets-config"; // only letters and a dash, so the store keeps the name as is
 const ADDIN_FOLDER = path.resolve(__dirname, "..", "..", "..", "sheets-addin");
@@ -161,7 +162,7 @@ function createApp(host) {
 
   return {
     id: "sheets",
-    title: "Sheets",
+    title: NAMES.sheets.name,
     tab: true,
     ipc: {
       "sheets:info": () => info(),

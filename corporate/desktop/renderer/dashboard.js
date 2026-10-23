@@ -223,7 +223,7 @@
   }
 
   $("corpus-clear").addEventListener("click", async () => {
-    if (!window.confirm("Delete all learned text on this computer, including suggestions not yet exported and the fills Forms stored for learning? Proposals based on it disappear. Your shortcuts and statistics are not affected.")) return;
+    if (!window.confirm("Delete all learned text on this computer, including suggestions not yet exported and the fills cactle stored for learning? Proposals based on it disappear. Your shortcuts and statistics are not affected.")) return;
     await api.clearLearning();
     announce("Learned text deleted");
   });

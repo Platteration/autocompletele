@@ -91,7 +91,7 @@ test("a document belongs to its own watch folder and to every recursive watch ab
 test("turning off a recursive parent says so; turning off the document's own folder needs no message", () => {
   const inbox = { path: "/data/inbox", recursive: true };
   const message = guards.ignoredFoldersMessage("/data/inbox/sub/doc.txt", [inbox], { platform: "linux" });
-  assert.equal(message, "No longer watching /data/inbox (and its sub-folders) for documents to file on this desk. The Filing tab turns a folder back on.");
+  assert.equal(message, "No longer watching /data/inbox (and its sub-folders) for documents to file on this desk. The factle tab turns a folder back on.");
   assert.equal(guards.ignoredFoldersMessage("/data/inbox/doc.txt", [inbox], { platform: "linux" }), null);
   assert.match(guards.ignoredFoldersMessage("/data/inbox/sub/doc.txt", [inbox, { path: "/data/inbox/sub" }], { platform: "linux" }), /\/data\/inbox \(and its sub-folders\), \/data\/inbox\/sub for/);
   assert.equal(guards.ignoredFoldersMessage("S:\\Scans\\doc.pdf", [{ path: "s:/scans" }], { platform: "win32" }), null);
@@ -448,7 +448,7 @@ test("'Never for this folder' from a sub-folder of a recursive watch turns that 
   assert.deepEqual(info.folders.active, [], "the recursive watch is off");
   assert.deepEqual(info.status.folders, [], "and no longer watched");
   assert.equal(shell.popovers("filing.html")[0].destroyed, true);
-  assert.ok(shell.record.notified.includes("No longer watching " + inbox + " (and its sub-folders) for documents to file on this desk. The Filing tab turns a folder back on."));
+  assert.ok(shell.record.notified.includes("No longer watching " + inbox + " (and its sub-folders) for documents to file on this desk. The factle tab turns a folder back on."));
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(shell.popovers("filing.html").length, 1, "b.txt, queued from the same folder, is not proposed");
 });
@@ -502,7 +502,7 @@ test("'Never for this folder' refuses, and keeps the popover open, when that pol
   await shell.invoke("filing:ignoreFolder", { path: inbox }); // on the Filing tab, while the popover is open
   const before = shell.record.notified.length;
   const result = await shell.invoke("popover:submit", { action: "ignoreFolder" });
-  assert.deepEqual(result, { ok: false, error: "This document's folder is no longer watched, so there is nothing to turn off. Skip it, or change folders on the Filing tab." });
+  assert.deepEqual(result, { ok: false, error: "This document's folder is no longer watched, so there is nothing to turn off. Skip it, or change folders on the factle tab." });
   assert.equal(popover.destroyed, false);
   assert.equal(shell.record.notified.length, before, "no notification about a folder that was already off");
   assert.deepEqual((await shell.invoke("settings:get")).ignoredFolders, [inbox]);
@@ -520,7 +520,7 @@ test("'Never for this folder' when no watch covers the document any more keeps t
   assert.ok(popover, "the person's own folder proposes the document");
   await shell.invoke("filing:removeFolder", own); // removed on the Filing tab meanwhile
   const result = await shell.invoke("popover:submit", { action: "ignoreFolder" });
-  assert.deepEqual(result, { ok: false, error: "This document's folder is no longer watched, so there is nothing to turn off. Skip it, or change folders on the Filing tab." });
+  assert.deepEqual(result, { ok: false, error: "This document's folder is no longer watched, so there is nothing to turn off. Skip it, or change folders on the factle tab." });
   assert.equal(popover.destroyed, false);
 });
 
@@ -541,7 +541,7 @@ test("filing:reveal shows a filed document by its index id and the Sheets export
   assert.deepEqual(shell.record.revealed, []);
   assert.deepEqual(await shell.invoke("filing:reveal", entry.id), { ok: true });
   assert.deepEqual(shell.record.revealed, [entry.path]);
-  // The Sheets tab's Show file button sends the path sheets:info gave it.
+  // The extle tab's Show file button sends the path sheets:info gave it.
   assert.equal((await shell.invoke("app:invoke", { channel: "sheets:exportConfig" })).ok, true);
   const sheets = await shell.invoke("app:invoke", { channel: "sheets:info" });
   assert.deepEqual(await shell.invoke("filing:reveal", sheets.lastExport.path), { ok: true });
@@ -652,7 +652,7 @@ test("main.js waits for the promise clipboard: an app's palette choice opens its
   const picked = await shell.invoke("popover:get");
   assert.equal(picked.candidates[0].id, "late-delivery");
   await shell.invoke("popover:close");
-  const entry = (shell.record.trayMenu || []).find((item) => item.label === "Reply to the copied message…");
+  const entry = (shell.record.trayMenu || []).find((item) => item.label === "mactle: Reply to the copied message…");
   assert.ok(entry, JSON.stringify((shell.record.trayMenu || []).map((item) => item.label)));
   await entry.click();
   assert.equal(shell.popovers("reply-pick.html").length, 2, "the tray entry opened it too");

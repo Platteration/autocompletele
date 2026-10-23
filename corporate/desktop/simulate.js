@@ -9,6 +9,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createAssistant } = require("./assistant.js");
+const { NAMES } = require("./apps/index.js");
 
 const POLICY_FILE = path.join(__dirname, "..", "shared", "org-policy.example.json");
 const FALLBACK_POLICY = {
@@ -131,7 +132,7 @@ assistant.endSession();
 // Document filing: three files land in the watched inbox. The policy names
 // them from their text (a Word invoice, a plain-text contract) or, for a PDF
 // that is not read, from the file name plus the blanks the person answers.
-print("\nDocument filing");
+print("\n" + NAMES.filing.name + ": " + NAMES.filing.covers);
 const { zipArchive } = require("../core/extract.js");
 const docx = (text) => zipArchive({ "word/document.xml": "<w:document><w:body><w:p><w:r><w:t>" + text + "</w:t></w:r></w:p></w:body></w:document>" });
 fs.writeFileSync(path.join(inbox, "Scan_0412.docx"), docx("INVOICE INV-20481 Acme Logistics GmbH, amount due 1,250.00 EUR, 21.10.2026"));
@@ -155,7 +156,7 @@ print(`  index holds ${assistant.filingInfo().indexed} document(s); document tex
 // The suite's apps each walk through their own scenario headlessly.
 for (const app of assistant.apps) {
   if (typeof app.simulate !== "function") continue;
-  print("\n" + app.title + " (app)");
+  print("\n" + app.title + (NAMES[app.id] ? ": " + NAMES[app.id].covers : "") + " (app)");
   try {
     app.simulate({ print, assistant, focus, type, tick, now, brief, docsDir, describe });
   } catch (error) {

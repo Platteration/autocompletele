@@ -1,4 +1,4 @@
-// actle Reply: reads the message a person is answering and
+// mactle: reads the message a person is answering and
 // offers the prewritten replies from the organisation library that fit, with
 // their [[blanks]] filled from that message (sender name, order and ticket
 // references, the first date, an amount). Local rules only: keywords pick the

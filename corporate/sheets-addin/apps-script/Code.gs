@@ -1,4 +1,4 @@
-// actle Sheets for Google Sheets: the server side of the sidebar. Reads the
+// extle for Google Sheets: the server side of the sidebar. Reads the
 // active cell's displayed text, its column's header from row 1 and the
 // column's displayed values; writes completions as text so a date or a code
 // is not reinterpreted. The configuration lives in the document's properties.
@@ -10,11 +10,11 @@ var CHUNK_BYTES = 8192;   // a document property holds at most 9 KB, measured in
 var MAX_ROWS_CAP = 20000; // the sidebar asks for 5000; an odd client cannot ask for the whole sheet
 
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu("actle Sheets").addItem("Open sidebar", "showSidebar").addToUi();
+  SpreadsheetApp.getUi().createMenu("extle").addItem("Open sidebar", "showSidebar").addToUi();
 }
 
 function showSidebar() {
-  var page = HtmlService.createTemplateFromFile("Sidebar").evaluate().setTitle("actle Sheets");
+  var page = HtmlService.createTemplateFromFile("Sidebar").evaluate().setTitle("extle");
   SpreadsheetApp.getUi().showSidebar(page);
 }
 

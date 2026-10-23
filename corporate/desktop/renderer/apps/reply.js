@@ -1,4 +1,4 @@
-// actle Reply: dashboard tab. The organisation's replies with their counts,
+// mactle: dashboard tab. The organisation's replies with their counts,
 // the extractors, library warnings, and a "Try it" box that ranks a pasted
 // message the way the tray entry and the palette do (without counting it).
 "use strict";
@@ -41,9 +41,10 @@
       const info = await api.invoke("reply:info");
       section.textContent = "";
       if (!info || info.ok === false) {
-        section.append(el("p", { class: "hint", text: "Reply is not available: " + ((info && info.error) || "no answer from the app.") }));
+        section.append(el("p", { class: "hint", text: "mactle is not available: " + ((info && info.error) || "no answer from the app.") }));
         return;
       }
+      section.append(el("h2", { text: "mactle: replies to mail" }));
       section.append(el("p", { class: "hint", text: "Copy the message you are answering, then choose \"" + info.trayLabel + "\" in the tray menu or \"" + info.paletteLabel + "\" in the search palette. The replies whose keywords appear in the message are listed, best fit first, with their blanks filled from it (" + info.builtin.join(", ") + " and the extractors below). Blanks the message does not answer are asked before the text is pasted; a reply is never inserted with a blank still open. Quoted history below \"wrote:\", \"Original Message\" or a From:/Sent:/To:/Subject: header is ignored." }));
       if (info.paused) section.append(el("div", { class: "banner" }, [el("div", { text: "Paused by your organisation: no replies are offered." })]));
       if (info.warnings.length) section.append(el("div", { class: "banner" }, info.warnings.map((warning) => el("div", { text: warning }))));

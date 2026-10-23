@@ -66,7 +66,8 @@ grant/consumeEdit input-trust model. Fixed areas:
 
 ## Corporate edition (added 2026-10-20; see docs/handoff-2026-10-21.md for the suite)
 
-The six-app suite (Filer, Reply, Sheets, Forms, Guard, Notes) and the
+The six-app suite (factle, mactle, extle, cactle, gactle, dactle: filing,
+replies, Excel and Google Sheets, forms, compliance warnings, notes) and the
 security review of 21 October 2026 are written up in
 `docs/handoff-2026-10-21.md`; start there. The notes below predate it.
 

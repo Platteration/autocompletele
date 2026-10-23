@@ -1,12 +1,13 @@
-// The suite's apps (Reply, Sheets, Forms, Guard, Notes) plug into the desktop
-// assistant through this registry. Each app lives in its own folder,
-// desktop/apps/<id>/app.js, and exports createApp(host) returning the shape
-// below. Plain Node: the assistant, the tests and the simulator load apps the
-// same way; main.js adds the Electron pieces (popovers, tray items, IPC).
+// The suite's apps (mactle, extle, cactle, gactle, dactle; ids reply, sheets,
+// forms, guard, notes) plug into the desktop assistant through this registry.
+// Each app lives in its own folder, desktop/apps/<id>/app.js, and exports
+// createApp(host) returning the shape below. Plain Node: the assistant, the
+// tests and the simulator load apps the same way; main.js adds the Electron
+// pieces (popovers, tray items, IPC).
 //
 //   {
 //     id: "guard",                       // required, matches the folder and the policy section
-//     title: "Guard",                    // dashboard tab title; omit `tab: false` to show a tab
+//     title: "gactle",                   // dashboard tab title, the app's name from NAMES; omit `tab: false` to show a tab
 //     tab: true,
 //     ipc: { "guard:summary": (payload) => result },   // channels the dashboard calls through window.actle.invoke
 //     extension: { id, trigger(textBeforeCaret), check(fieldText, context), reset() },  // engine hooks, optional
@@ -37,6 +38,21 @@
 const path = require("node:path");
 
 const APP_IDS = Object.freeze(["reply", "sheets", "forms", "guard", "notes"]);
+
+// The names people see, by id, and what each app covers. Only the names
+// changed: ids, policy sections, channels, metric kinds, audit events, files
+// and storage keys keep the id. Filing is built into the desk rather than
+// loaded through this registry; its name is listed here so the six are in one
+// place. The dashboard pages (renderer/apps/<id>.js, index.html) cannot load
+// this file and repeat the names; test/apps-registry.test.js holds them to it.
+const NAMES = Object.freeze({
+  reply: Object.freeze({ name: "mactle", covers: "replies to mail" }),
+  sheets: Object.freeze({ name: "extle", covers: "Excel and Google Sheets" }),
+  forms: Object.freeze({ name: "cactle", covers: "CRM and ticket forms" }),
+  guard: Object.freeze({ name: "gactle", covers: "compliance warnings" }),
+  notes: Object.freeze({ name: "dactle", covers: "minutes, handovers and logs in Word, Docs or any editor" }),
+  filing: Object.freeze({ name: "factle", covers: "document filing" }),
+});
 
 function validate(app, id) {
   if (!app || typeof app !== "object") throw new Error("app " + id + " did not return an object");
@@ -85,4 +101,4 @@ function loadApps(host, options) {
   return apps;
 }
 
-module.exports = { APP_IDS, loadApps, validate };
+module.exports = { APP_IDS, NAMES, loadApps, validate };

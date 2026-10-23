@@ -1,4 +1,4 @@
-// actle Reply through the desktop assistant (plain Node): the tray entry and
+// mactle through the desktop assistant (plain Node): the tray entry and
 // the palette item read the clipboard, the pick popover's submit fills and
 // pastes a reply through a fake shell, and what reaches the metrics, the
 // audit file, the app data and the dashboard channels.
@@ -53,7 +53,7 @@ test("the sample section parses with no warnings and the app loads through the r
   assert.equal(parsed.reply.replies.length, 4);
   const [app] = loadApps({ policy: () => parsed, engine: { library: [] }, appData: () => ({ load: () => ({}), save: () => {} }), now: () => NOW, log: () => {} }, { ids: ["reply"] });
   assert.equal(app.id, "reply");
-  assert.equal(app.title, "Reply");
+  assert.equal(app.title, "mactle");
   assert.deepEqual(Object.keys(app.ipc), ["reply:info", "reply:rank", "reply:stats", "reply:resetStats"]);
   assert.equal(app.popovers.pick.file, "apps/reply-pick");
   assert.equal(typeof app.popovers.pick.submit, "function");
@@ -87,7 +87,7 @@ test("the tray entry ranks the copied message, counts the offers and opens the p
 
   const empty = asyncShell("   ");
   assert.equal(app.trayItems(empty)[0].click(empty), null);
-  assert.deepEqual(empty.calls.notified, ["Copy the message you are answering first, then choose Reply again."]);
+  assert.deepEqual(empty.calls.notified, ["Copy the message you are answering first, then choose mactle again."]);
   assert.deepEqual(empty.calls.actions, []);
   const nofit = asyncShell("Hello, what are your opening hours?\nBest, Al");
   assert.equal(app.trayItems(nofit)[0].click(nofit), null);
@@ -447,7 +447,7 @@ test("the dashboard page shows replies, counts, extractors and warnings, tries a
   assert.match(again.textContent, /Returns and refunds \(returns\)/, "so does the last result");
   assert.equal(again.querySelectorAll("tr")[1].querySelectorAll("td")[4].textContent, "0", "counts were reset");
   await window.actleApps.reply.render(again, { ...helpers, api: { invoke: async () => ({ ok: false, error: "unknown channel reply:info" }) } }, {});
-  assert.match(again.textContent, /Reply is not available: unknown channel reply:info/);
+  assert.match(again.textContent, /mactle is not available: unknown channel reply:info/);
 });
 
 test("the dashboard page says when the policy is paused or has no replies, and when nothing fits a tried message", async () => {

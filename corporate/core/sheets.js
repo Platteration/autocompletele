@@ -1,4 +1,4 @@
-// actle Sheets core: column-aware completion for spreadsheet cells. A
+// extle core: column-aware completion for spreadsheet cells. A
 // column bound to a controlled vocabulary (customers,
 // cost centres, product codes) completes to the organisation's one spelling;
 // other columns complete from their own values, notes columns from recurring

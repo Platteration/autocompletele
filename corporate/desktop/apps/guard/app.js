@@ -1,4 +1,4 @@
-// actle Guard: the desktop side of core/guard.js. The engine hands the text
+// gactle: the desktop side of core/guard.js. The engine hands the text
 // typed in the current field to the core at every word end; a rule that fires
 // opens the "warning" popover with its message, masked findings and, where
 // the rule has one, a Fix button. Recipients cannot be read from a compose
@@ -12,6 +12,7 @@ const { baseName } = require("../../../core/capture-policy.js");
 const { DEFAULTS } = require("../../../core/engine.js");
 const { template } = require("../../../core/personal.js");
 const { simulate } = require("./simulate.js");
+const { NAMES } = require("../index.js");
 
 const ID = "guard";
 // Popover: heading and error line, then one block per warning (label, a message of up to two lines, findings, button). Arithmetic only: not seen in Electron.
@@ -253,7 +254,7 @@ function createApp(host) {
 
   const app = {
     id: ID,
-    title: "Guard",
+    title: NAMES[ID].name,
     tab: true,
     ipc: {
       "guard:info": () => info(),

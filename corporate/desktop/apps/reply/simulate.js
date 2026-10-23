@@ -1,4 +1,4 @@
-// Headless walk-through of actle Reply for desktop/simulate.js: a late-order
+// Headless walk-through of mactle for desktop/simulate.js: a late-order
 // message is "copied", the fitting replies are ranked, one is inserted
 // through a stand-in shell, and the counts are printed. Synchronous on
 // purpose, so its lines land before the simulator's metrics section. Throws

@@ -1,4 +1,4 @@
-// actle Forms: the desktop side of core/forms.js. A record's trigger typed in
+// cactle: the desktop side of core/forms.js. A record's trigger typed in
 // a form (or the record picked in the search palette) opens the "plan"
 // popover: the form matched to the focused window, a reference that fills
 // the customer fields from a lookup list, the planned values and the blanks
@@ -22,6 +22,7 @@ const metrics = require("../../../core/metrics.js");
 const data = require("./records.js");
 const layout = require("./plan.js");
 const { simulate } = require("./simulate.js");
+const { NAMES } = require("../index.js");
 
 const ID = "forms";
 const NO_FORM_NOTE = "No form matched this window: fields are filled in record order with Tab between them.";
@@ -346,7 +347,7 @@ function createApp(host) {
   /** A learned proposal becomes one of the person's own records, under a trigger they choose. */
   function acceptProposal(payload) {
     const proposal = proposals().find((p) => p.digest === (payload && payload.digest));
-    if (!proposal) return { ok: false, error: "This proposal has changed. Look at the Forms tab again." };
+    if (!proposal) return { ok: false, error: "This proposal has changed. Look at the " + NAMES[ID].name + " tab again." };
     const checked = data.checkTrigger(payload.trigger, takenTriggers());
     if (!checked.ok) return checked;
     const stored = loadData();
@@ -420,7 +421,7 @@ function createApp(host) {
 
   const app = {
     id: ID,
-    title: "Forms",
+    title: NAMES[ID].name,
     tab: true,
     ipc: {
       "forms:info": () => info(),

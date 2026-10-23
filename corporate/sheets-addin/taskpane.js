@@ -1,4 +1,4 @@
-// actle Sheets for Excel: the Office.js bridge behind pane.js. Reads the
+// extle for Excel: the Office.js bridge behind pane.js. Reads the
 // active cell's displayed text, its column's header from row 1 and the
 // column's displayed values from the used range; writes completions as text
 // (number format "@") so a date or a code is not reinterpreted by the cell.
@@ -96,7 +96,7 @@
   function start(info) {
     const pane = document.getElementById("pane");
     if (!info || info.host !== Office.HostType.Excel) {
-      pane.textContent = "actle Sheets runs in Excel. Open this pane from an Excel workbook.";
+      pane.textContent = "extle runs in Excel. Open this pane from an Excel workbook.";
       return null;
     }
     let storage = null;
@@ -112,7 +112,7 @@
       storage,
       bridge: { readContext, writeValue, writeRows, writeFormula, loadConfig, saveConfig, onSelectionChanged },
     });
-    created.start().catch((error) => { pane.textContent = "actle Sheets could not start: " + ((error && error.message) || error); });
+    created.start().catch((error) => { pane.textContent = "extle could not start: " + ((error && error.message) || error); });
     return created;
   }
 

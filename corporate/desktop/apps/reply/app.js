@@ -1,4 +1,4 @@
-// actle Reply: the desktop side of core/reply.js. The compose window cannot
+// mactle: the desktop side of core/reply.js. The compose window cannot
 // be read, so the message a person is answering comes in through the
 // clipboard: a tray entry or a palette item reads it, the core ranks the
 // organisation's replies against it, and the "pick" popover lists the fits
@@ -10,10 +10,12 @@ const core = require("../../../core/reply.js");
 const metrics = require("../../../core/metrics.js");
 const { template } = require("../../../core/personal.js");
 const { simulate } = require("./simulate.js");
+const { NAMES } = require("../index.js");
 
 const ID = "reply";
-const TRAY_LABEL = "Reply to the copied message…";
-const PALETTE_LABEL = "Reply to copied message";
+const NAME = NAMES[ID].name;
+const TRAY_LABEL = NAME + ": Reply to the copied message…";
+const PALETTE_LABEL = NAME + ": Reply to copied message";
 const PAUSED = "Paused by your organisation.";
 const DATA_VERSION = 1;
 // Popover: heading and hint, one block per candidate, one input row per open blank, the error line and the buttons.
@@ -118,7 +120,7 @@ function createApp(host) {
   /** The second half of offer(), once the copied text is in hand. */
   function rankCopied(from, text, extra) {
     if (!text.trim()) {
-      from.notify("Copy the message you are answering first, then choose Reply again.");
+      from.notify("Copy the message you are answering first, then choose " + NAME + " again.");
       return null;
     }
     const ranked = candidatesFor(text);
@@ -234,7 +236,7 @@ function createApp(host) {
 
   const app = {
     id: ID,
-    title: "Reply",
+    title: NAME,
     tab: true,
     ipc: {
       "reply:info": () => info(),

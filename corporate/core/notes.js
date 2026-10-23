@@ -1,4 +1,4 @@
-// actle Notes: minutes, handovers, shift logs, incident logs, care notes and
+// dactle: minutes, handovers, shift logs, incident logs, care notes and
 // inspection reports in the organisation's house style. A typed trigger such as
 // /mins drops in the structure (headings, attendee list, action items) with the
 // date, weekday and the person's name filled; action items written anywhere in
