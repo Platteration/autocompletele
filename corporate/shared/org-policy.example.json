@@ -161,7 +161,8 @@
         "match": {
           "header": "^cost cent"
         },
-        "vocabulary": "costCentres"
+        "vocabulary": "costCentres",
+        "strict": true
       },
       {
         "match": {

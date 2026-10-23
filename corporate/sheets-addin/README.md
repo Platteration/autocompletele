@@ -9,7 +9,10 @@ the column itself.
 Clicking a completion writes it into the cell **as text**, so a code such as
 `CC-100` or a value that looks like a date is not reinterpreted. A `/` trigger
 typed into the pane's input inserts the policy's block of rows or formula at
-the selected cell.
+the selected cell. In a strict column (a column rule with `strict: true`) only
+the list's values are offered, and the pane can check the column against the
+list, replace aliases with the list's spelling and turn the spreadsheet's own
+list validation on or off (see "A strict column" below).
 
 Both hosts run the same logic: `core/sheets.js` bundled into one browser
 script, and `pane.js`, the shared pane, which talks to the host only through a
@@ -24,7 +27,7 @@ sheets-addin/
   taskpane.html, .js       Excel task pane (Office.js from Microsoft's CDN is the only external script)
   manifest.xml             Office add-in manifest with placeholders (see below)
   apps-script/
-    Code.gs                Google Sheets server side: menu, sidebar, read the selection, write a cell
+    Code.gs                Google Sheets server side: menu, sidebar, read the selection, write a cell, replace aliases, list validation
     Sidebar.html           the sidebar page; includes the two generated files
     sheets-core.html       generated: the bundle in a <script> tag
     pane.html              generated: pane.css and pane.js in <style> and <script> tags
@@ -48,8 +51,8 @@ The build reads `../core/sheets.js`, follows its relative `require` calls
 `expander.js`, `template.js` and `palette.js`), wraps each module in a tiny
 CommonJS shim and writes one script that sets `window.ActleSheets` to the
 core's exports (`normalizeSheets`, `columnFor`, `createColumnProfile`,
-`complete`, `blockFor`, `importCsv`, `formulaLike`, `suggest`, `exportConfig`,
-`parseConfig`, `organizationItems`). The script starts with a two-line
+`complete`, `blockFor`, `importCsv`, `formulaLike`, `suggest`, `checkColumn`,
+`exportConfig`, `parseConfig`, `organizationItems`). The script starts with a two-line
 `Object.hasOwn` polyfill, the one ES2022 call the core makes, so an older
 Office webview (WebKit before Safari 15.4) can run it; everything else the
 bundle uses is ES2020 or older. It touches no network and is deterministic:
@@ -134,6 +137,88 @@ configuration replace the organisation's without asking:
 The pane treats an Excel workbook's settings and a Google spreadsheet's
 document properties the same way.
 
+### A strict column
+
+A column rule with `strict: true` (`corporate/shared/ORG-POLICY.md`) makes a
+vocabulary column take only the list's values. The pane says so under the
+cell text ("Only values from the "costCentres" list.") and:
+
+- Completes only to the list's values, for the whole cell. A typed alias
+  leads to its value; the column's own values are never offered.
+- **Check this column** compares the column's values the pane already read
+  (the first 5,000 rows, header excluded, plus the selected cell's own text)
+  with the list, ignoring case and extra spaces. It lists, with their cell
+  addresses, the cells that hold an alias or a list value in other capitals
+  or spacing, with the list's spelling beside each, and the cells whose value
+  is not in the list; ten of each are listed and the rest counted. Blank
+  cells are skipped. A check writes nothing. Its result stays while the
+  selection is in the same column of the same sheet; another column or
+  another configuration drops it.
+- **Replace N aliases with the list's spelling** writes the list's value into
+  exactly the listed cells, and only after a confirmation that names how many
+  cells change: the status line says nothing was written yet, the focus moves
+  to **Cancel**, and a button left from a dropped question writes nothing.
+  Each cell is read again just before writing; a cell whose text is no longer
+  what the check read is skipped and named in the result ("Skipped 1 cell
+  that changed since the check: C5 (now "CC-300 Warehouse")"). An edit made
+  between that read and the write is not caught. Values not in the list are
+  never changed. The cells get the text format (`@`) before the value, like a
+  completion.
+- **Turn on list validation for this column** writes the spreadsheet's own
+  list rule on the column from row 2 down, after a confirmation that says
+  any data validation those cells have now is replaced. The spreadsheet then
+  refuses any other value, also when the pane is closed. The rule holds the
+  list's values only, not its aliases.
+  - Excel: `range.dataValidation.clear()`, then a `list` rule with
+    `inCellDropDown: true` and the values joined by commas as `source`, and an
+    `errorAlert` with `showAlert: true` and `style: "Stop"` (titled extle,
+    "Only values from the "costCentres" list."), on rows 2 to 1,048,576.
+  - Google: `SpreadsheetApp.newDataValidation().requireValueInList(values,
+    true).setAllowInvalid(false)` set with `setDataValidation` on rows 2 to the
+    sheet's last row (`getMaxRows()`); rows added later are not covered. A
+    sheet with no row below the header is refused.
+- **Remove list validation** clears every data validation rule on the same
+  range, not only one set here, after a confirmation that says so.
+- When the configuration in use is the document's own, the questions for a
+  replacement and for list validation start with "This list comes from this
+  document's configuration, not your organisation's." Nothing from a strict
+  column is ever written without its confirmation, whichever configuration
+  is in use.
+
+Limits, and where they come from:
+
+- Excel's `Range.dataValidation` needs the ExcelApi 1.8 requirement set
+  ([DataValidation](https://learn.microsoft.com/en-us/javascript/api/excel/excel.datavalidation)).
+  The manifest still asks for ExcelApi 1.7; the task pane checks
+  `Office.context.requirements.isSetSupported("ExcelApi", "1.8")`
+  ([runtime checks](https://learn.microsoft.com/en-us/office/dev/add-ins/develop/specify-api-requirements-runtime))
+  and, where it is missing, offers no list validation and says why. The
+  check and the replacement need ExcelApi 1.1 only.
+- An Excel list written into the rule is "a string that contains a
+  comma-separated number, Boolean, or date"
+  ([ListDataValidation](https://learn.microsoft.com/en-us/javascript/api/excel/excel.listdatavalidation)),
+  so a value with a comma in it cannot be in it: the pane says so and offers
+  no list validation for that list. The Office.js reference gives no length
+  limit. Excel's own Source box takes 255 characters, and an over-long list
+  is reported to be removed when the workbook is reopened (reports on
+  Microsoft Q&A and the limit enforced by .xlsx libraries such as EPPlus and
+  DevExpress, not a Microsoft reference); the task pane refuses a list longer
+  than 255 characters with its commas, with the length in the message.
+- `dataValidation.clear()` also clears validation a person added by hand
+  ([data validation in Excel add-ins](https://learn.microsoft.com/en-us/office/dev/add-ins/excel/excel-add-ins-data-validation)),
+  and only the `stop` alert style prevents an invalid entry (same page).
+- A worksheet has 1,048,576 rows
+  ([Excel specifications and limits](https://support.microsoft.com/en-us/office/excel-specifications-and-limits-1672b34d-7043-467e-8e27-269d656771c3)).
+- Google documents no limit on the number of values in a list rule: the
+  Sheets API says a `ONE_OF_LIST` condition "supports an arbitrary number of
+  values" ([BooleanCondition](https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/other#BooleanCondition)).
+  The sidebar refuses nothing for size; a rule the spreadsheet refuses comes
+  back as "Could not turn on list validation for column C: ..." with
+  Google's message. Builder and range calls:
+  [DataValidationBuilder](https://developers.google.com/apps-script/reference/spreadsheet/data-validation-builder),
+  [Range](https://developers.google.com/apps-script/reference/spreadsheet/range),
+  [Sheet.getMaxRows](https://developers.google.com/apps-script/reference/spreadsheet/sheet#getMaxRows()).
+
 No data leaves the spreadsheet: the bundle makes no network request, and
 nothing typed in the pane or read from cells is sent anywhere. The Excel page
 loads Office.js from Microsoft's CDN; nothing else is fetched.
@@ -144,7 +229,10 @@ loads Office.js from Microsoft's CDN; nothing else is fetched.
   being typed; the text before it stays. The cell gets the text number format
   (`@`) before the value, in both hosts.
 - Values a cell would evaluate as a formula (`=`, `+`, `-`, `@`, tab, CR, unless
-  a plain signed number) never come from a vocabulary or a column. The typed
+  a plain signed number; and the full-width `＝`, `＋`, `－`, `＠`, with no number
+  exception) never come from a vocabulary or a column. Whether either host
+  evaluates the full-width forms is unconfirmed; they are kept out all the
+  same. A leading space or other character is not checked. The typed
   start of a notes cell is not filtered by the core, so the pane checks the
   final text: when it would start like a formula (`+49 reached. Promised a
   call back.`), nothing is written and the pane says to change the first
@@ -163,6 +251,10 @@ loads Office.js from Microsoft's CDN; nothing else is fetched.
   selected cell as a formula. A formula or rows from a document's own
   configuration wait for the confirmation described above; the
   organisation's are written on **Insert**.
+- In a strict column, the list's spelling replaces an alias as text (`@`),
+  cell by cell, only in the cells the confirmed check listed and only where
+  the text is still what the check read; list validation is a rule on the
+  column's cells, not a value. Both wait for a confirmation.
 
 ## Excel: sideload and deploy
 
@@ -229,7 +321,11 @@ quoted and cut, formula blocks first, the list capped, the order of values
 and aliases ignored), used only on request, its formulas and rows confirmed
 (including a trigger the organisation also defines, the range rows replace,
 the status line and the focus), never copied into the browser, never erased
-by an empty Save.
+by an empty Save; a strict column (completions from the list only, the
+check's lists, the replacement with its confirmation, focus, a stale button
+and a cell that changed, list validation on and off, a list the host cannot
+take, a host without the API, a host error, a document's strict rule) and the
+full-width formula guard.
 `hosts.test.js` evaluates `taskpane.js` against a fake Excel workbook behind
 the Office.js objects it touches (used range at row 1 and lower, header-only
 and empty sheets, the 5,000-row clip, the order of number format and value,
@@ -239,7 +335,10 @@ pieces, a shrink that deletes stale pieces, a write that fails halfway, a
 missing piece) and the inline script of
 `Sidebar.html` against a deferred `google.script.run` (the spreadsheet's
 configuration reaching the pane as an offer, the poll guard, a failure
-handler becoming an error). `corporate/test/sheets-app.test.js`
+handler becoming an error), and both bridges' replacement (a cell that
+changed is skipped), list rule, clearing, the Excel limits (255 characters,
+a comma in a value), the missing ExcelApi 1.8, and a Google sheet with no row
+below the header. `corporate/test/sheets-app.test.js`
 covers the build, the bundle in a sandbox with and without `Object.hasOwn`,
 the desktop channels and the dashboard tab.
 
@@ -261,6 +360,21 @@ Google account or a browser:
   refused by the pane with the message above; a workbook saved with another
   configuration in its settings shows the offer and leaves the
   organisation's copy in use.
+- Strict columns were run against the fakes only. Not checked in a real host:
+  that Excel accepts `dataValidation.clear()` and a new `rule` in one batch,
+  that the inline list shows as a dropdown and the stop alert refuses other
+  values, how a list over 255 characters behaves when set from Office.js,
+  whether a locale whose list separator is `;` reads the comma-separated
+  `source` the same way, that `isSetSupported("ExcelApi", "1.8")` answers
+  as documented on each platform; in Google, that `requireValueInList` with
+  `setAllowInvalid(false)` refuses other values, how large a list Google
+  accepts, and that `clearDataValidations` leaves the cells' values. The
+  fakes' Apps Script `DataValidation` getters follow the reference's names;
+  what `getCriteriaValues()` returns for a list was not read from Google's
+  page.
+- Whether Excel or Google Sheets evaluates a value that starts with a
+  full-width `＝`, `＋`, `－` or `＠`, or with a space before `=`, was not
+  checked; the first four are refused anyway, the space is not.
 - Whether a host's webview keeps `localStorage` from one document to the
   next (Excel on each platform; the Apps Script sidebar's sandbox) was not
   checked. Where it does not, the organisation's copy does not carry over
@@ -268,14 +382,16 @@ Google account or a browser:
 - `manifest.xml` has not been validated by Office or sideloaded; the icons it
   references are not shipped.
 - The pane's layout (`pane.css`), including the document configuration's
-  offer, the formula and rows confirmation and the rows list, was not seen
+  offer, the formula and rows confirmation, the rows list and the strict
+  column's panel, was not seen
   in any browser, theme or webview; which Office hosts still lack
   `Object.hasOwn` was not checked.
 - The confirmation's focus and announcements were checked against a fake
   document only (which element `focus()` was called on, the status line's
   text, the `aria-describedby` ids), not with a screen reader or in a
   webview. The sidebar redraws the pane on every 2-second poll; focus on
-  **Insert**, **Write the formula** or **Write the rows** and **Cancel** is
-  carried over to the redrawn button, focus on a completion button is not.
+  **Insert**, **Write the formula** or **Write the rows**, **Cancel** and the
+  strict column's buttons is carried over to the redrawn button, focus on a
+  completion button is not.
 - The 5,000-row read limit's effect on large real sheets and the 2-second
   polling of the sidebar were not measured.

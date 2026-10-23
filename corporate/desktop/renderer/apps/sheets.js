@@ -31,7 +31,7 @@
       return;
     }
     const rule = result.column
-      ? (result.column.vocabulary ? "vocabulary " + result.column.vocabulary : "a " + result.column.kind + " column")
+      ? (result.column.vocabulary ? "vocabulary " + result.column.vocabulary + (result.column.strict ? ", strict, so only its values are offered" : "") : "a " + result.column.kind + " column")
       : "no column rule matches, so only the column's own values are offered";
     const profile = result.profile;
     results.append(el("p", { class: "hint", text: "Column rule: " + rule + ". Learned from the values: " + profile.kind + " column, " + profile.total + " values, " + profile.distinct + " distinct" + (profile.sentences ? ", " + profile.sentences + " recurring sentences" : "") + "." }));
@@ -109,14 +109,14 @@
         return;
       }
       section.append(el("h2", { text: "extle: Excel and Google Sheets" }));
-      section.append(el("p", { class: "hint", text: "Vocabularies, column rules and blocks come from the organisation policy (section sheets)" + (info.organization ? " of " + info.organization : "") + ". The desktop assistant cannot see spreadsheet cells, so completing happens in the Excel task pane or the Google Sheets sidebar of the add-in below; a vocabulary column completes to the organisation's one spelling, other columns to their own values, and a / trigger inserts rows or a formula." }));
+      section.append(el("p", { class: "hint", text: "Vocabularies, column rules and blocks come from the organisation policy (section sheets)" + (info.organization ? " of " + info.organization : "") + ". The desktop assistant cannot see spreadsheet cells, so completing happens in the Excel task pane or the Google Sheets sidebar of the add-in below; a vocabulary column completes to the organisation's one spelling, a strict one to nothing else, other columns to their own values, and a / trigger inserts rows or a formula." }));
       section.append(el("h2", { text: "Vocabularies" }));
       section.append(table(el, ["Name", { text: "Values" }, { text: "Aliases" }, "Examples"], info.vocabularies.map((v) => el("tr", {}, [
         el("td", { class: "mono", text: v.name }), el("td", { class: "num", text: String(v.values) }), el("td", { class: "num", text: String(v.aliases) }), el("td", { text: v.examples.join(", ") }),
       ])), "The policy has no vocabularies."));
       section.append(el("h2", { class: "mt", text: "Column rules" }));
       section.append(table(el, ["Header pattern", "Sheet pattern", "Completes from"], info.columns.map((c) => el("tr", {}, [
-        el("td", { class: "mono", text: c.header || "(any)" }), el("td", { class: "mono", text: c.sheet || "(any)" }), el("td", { text: c.vocabulary ? "vocabulary " + c.vocabulary : c.kind + " column" }),
+        el("td", { class: "mono", text: c.header || "(any)" }), el("td", { class: "mono", text: c.sheet || "(any)" }), el("td", { text: c.vocabulary ? "vocabulary " + c.vocabulary + (c.strict ? " (strict: only its values)" : "") : c.kind + " column" }),
       ])), "No column rules: every column completes from its own values."));
       section.append(el("h2", { class: "mt", text: "Blocks and formulas" }));
       section.append(table(el, ["Trigger", "Label", "Inserts"], info.blocks.map((b) => el("tr", {}, [

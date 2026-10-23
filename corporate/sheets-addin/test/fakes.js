@@ -78,6 +78,23 @@ function parseA1(ref) {
   return { row: Number(match[2]) - 1, col: col - 1 };
 }
 
+/** "B4" or "B3:C7" -> 0-based { row, col, rows, cols }. */
+function parseRange(ref) {
+  const [first, last] = String(ref).split(":");
+  const a = parseA1(first);
+  const b = last == null ? a : parseA1(last);
+  if (b.row < a.row || b.col < a.col) throw new Error("not a range: " + ref);
+  return { row: a.row, col: a.col, rows: b.row - a.row + 1, cols: b.col - a.col + 1 };
+}
+
+/** "1.10" > "1.9": requirement set versions compare part by part. */
+function versionAtLeast(have, want) {
+  const a = String(have).split(".").map(Number);
+  const b = String(want).split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  return true;
+}
+
 function cellText(grid, row, col) {
   return grid[row] && grid[row][col] != null ? String(grid[row][col]) : "";
 }
@@ -94,7 +111,9 @@ function usedBox(grid) {
 
 /**
  * An Excel workbook behind the Office.js objects taskpane.js touches.
- * spec: { sheets: { name: [[display text]] }, active: { sheet, address }, settings: {}, failSave: "reason" }
+ * spec: { sheets: { name: [[display text]] }, active: { sheet, address }, settings: {}, failSave: "reason",
+ *         apiSets: { ExcelApi: "1.17" } (what isSetSupported answers; ExcelApi 1.17 when not given) }
+ * validations: address -> { rule, errorAlert } as Range.dataValidation was last set; clear() deletes the address.
  */
 function fakeExcel(spec) {
   const calls = [];
@@ -104,6 +123,8 @@ function fakeExcel(spec) {
   let active = Object.assign({}, spec.active);
   const handlers = [];
   const state = { syncs: 0, loads: [] };
+  const validations = {};
+  const apiSets = spec.apiSets || { ExcelApi: "1.17" };
 
   function range(sheet, grid, r, c, rows, cols) {
     const quoted = /\s/.test(sheet.name) ? "'" + sheet.name + "'" : sheet.name;
@@ -119,6 +140,15 @@ function fakeExcel(spec) {
         if (prop !== "numberFormat") value.forEach((row, i) => row.forEach((cell, j) => { (grid[r + i] = grid[r + i] || [])[c + j] = cell; }));
       } });
     }
+    // Range.dataValidation (ExcelApi 1.8): clear(), and the rule and errorAlert set as plain objects.
+    const validation = { clear: () => { calls.push(["dataValidation.clear", address]); delete validations[address]; } };
+    for (const prop of ["rule", "errorAlert"]) {
+      Object.defineProperty(validation, prop, { set(value) {
+        calls.push(["dataValidation." + prop, address, plain(value)]);
+        validations[address] = Object.assign({}, validations[address], { [prop]: plain(value) });
+      } });
+    }
+    obj.dataValidation = validation;
     return obj;
   }
 
@@ -127,7 +157,7 @@ function fakeExcel(spec) {
     if (!grid) throw new Error("worksheet " + name + " not found");
     const sheet = { name, load: (props) => state.loads.push(["sheet " + name, props]) };
     sheet.getRangeByIndexes = (r, c, rows, cols) => range(sheet, grid, r, c, rows, cols);
-    sheet.getRange = (ref) => { const at = parseA1(ref); return range(sheet, grid, at.row, at.col, 1, 1); };
+    sheet.getRange = (ref) => { const at = parseRange(ref); return range(sheet, grid, at.row, at.col, at.rows, at.cols); };
     sheet.getUsedRangeOrNullObject = () => {
       const box = usedBox(grid);
       return box ? range(sheet, grid, box.top, box.left, box.bottom - box.top + 1, box.right - box.left + 1) : { isNullObject: true, load() {} };
@@ -149,7 +179,7 @@ function fakeExcel(spec) {
     HostType: { Excel: "Excel", Word: "Word" },
     EventType: { DocumentSelectionChanged: "documentSelectionChanged" },
     AsyncResultStatus: { Succeeded: "succeeded", Failed: "failed" },
-    context: { document: {
+    context: { requirements: { isSetSupported: (name, version) => Object.hasOwn(apiSets, name) && versionAtLeast(apiSets[name], version == null ? "1.1" : version) }, document: {
       settings: {
         get: (key) => (settings.has(key) ? settings.get(key) : null),
         set: (key, value) => { settings.set(key, value); },
@@ -158,12 +188,14 @@ function fakeExcel(spec) {
       addHandlerAsync: (type, handler) => { handlers.push([type, handler]); },
     } },
   };
-  return { Excel, Office, calls, settings, state, grids, handlers, select: (sheet, address) => { active = { sheet, address }; return Promise.all(handlers.map(([, h]) => h())); } };
+  return { Excel, Office, calls, settings, state, grids, handlers, validations, select: (sheet, address) => { active = { sheet, address }; return Promise.all(handlers.map(([, h]) => h())); } };
 }
 
 /**
  * A Google spreadsheet behind the Apps Script services Code.gs touches.
- * spec: { sheets: { name: [[display text]] }, active: { sheet, row, col } (1-based), properties: {}, limit: bytes per property, failAt: nth setProperty throws }
+ * spec: { sheets: { name: [[display text]] }, active: { sheet, row, col } (1-based), properties: {}, limit: bytes per property, failAt: nth setProperty throws,
+ *         maxRows: { name: rows } (Sheet.getMaxRows; 1000 or the grid's length when not given), refuseRule: "message" (setDataValidation throws) }
+ * validations: name -> { A1: DataValidation } as Range.setDataValidation left them; clearDataValidations() deletes the A1 key.
  */
 function fakeAppsScript(spec) {
   const calls = [];
@@ -173,6 +205,7 @@ function fakeAppsScript(spec) {
   const props = new Map(Object.entries(spec.properties || {}));
   const limit = spec.limit || 9216;
   const ui = { menus: [], sidebars: [] };
+  const validations = {};
   let sets = 0;
 
   function rangeOf(name, row, col, rows, cols) {
@@ -189,6 +222,13 @@ function fakeAppsScript(spec) {
       setValue: (value) => { calls.push(["setValue", a1, value]); write([[value]]); return self; },
       setValues: (values) => { calls.push(["setValues", a1, plain(values)]); write(values); return self; },
       setFormula: (formula) => { calls.push(["setFormula", a1, formula]); return self; },
+      setDataValidation: (rule) => {
+        if (spec.refuseRule) throw new Error(spec.refuseRule);
+        calls.push(["setDataValidation", a1, rule.describe()]);
+        (validations[name] = validations[name] || {})[a1] = rule;
+        return self;
+      },
+      clearDataValidations: () => { calls.push(["clearDataValidations", a1]); if (validations[name]) delete validations[name][a1]; return self; },
     };
     return self;
   }
@@ -199,15 +239,33 @@ function fakeAppsScript(spec) {
     return {
       getName: () => name,
       getLastRow: () => { const box = usedBox(grid); return box ? box.bottom + 1 : 0; },
+      getMaxRows: () => (spec.maxRows && spec.maxRows[name] != null ? spec.maxRows[name] : Math.max(1000, grid.length)),
       getActiveCell: () => rangeOf(name, active.row, active.col, 1, 1),
       getRange: (a, b, c, d) => {
-        if (typeof a === "string") { const at = parseA1(a); return rangeOf(name, at.row + 1, at.col + 1, 1, 1); }
+        if (typeof a === "string") { const at = parseRange(a); return rangeOf(name, at.row + 1, at.col + 1, at.rows, at.cols); }
         return rangeOf(name, a, b, c || 1, d || 1);
       },
     };
   }
 
+  // SpreadsheetApp.newDataValidation(): the builder calls Code.gs makes, and a DataValidation with the documented getters.
+  const VALUE_IN_LIST = "VALUE_IN_LIST";
+  function newDataValidation() {
+    const made = { criteria: null, values: [], allowInvalid: true };
+    const builder = {
+      requireValueInList: (values, showDropdown) => { Object.assign(made, { criteria: VALUE_IN_LIST, values: [values.slice(), showDropdown !== false] }); return builder; },
+      setAllowInvalid: (allow) => { made.allowInvalid = !!allow; return builder; },
+      build: () => {
+        const rule = { getCriteriaType: () => made.criteria, getCriteriaValues: () => made.values.slice(), getAllowInvalid: () => made.allowInvalid };
+        rule.describe = () => plain({ criteria: made.criteria, values: made.values, allowInvalid: made.allowInvalid });
+        return rule;
+      },
+    };
+    return builder;
+  }
   const SpreadsheetApp = {
+    DataValidationCriteria: { VALUE_IN_LIST },
+    newDataValidation,
     getActiveSheet: () => sheetOf(active.sheet),
     getActiveSpreadsheet: () => ({ getSheetByName: sheetOf }),
     getUi: () => ({
@@ -231,7 +289,7 @@ function fakeAppsScript(spec) {
     deleteProperty: (key) => { props.delete(key); calls.push(["deleteProperty", key]); },
   };
   const PropertiesService = { getDocumentProperties: () => properties };
-  return { globals: { SpreadsheetApp, HtmlService, PropertiesService }, calls, props, ui, grids, select: (sheet, row, col) => { active = { sheet, row, col }; } };
+  return { globals: { SpreadsheetApp, HtmlService, PropertiesService }, calls, props, ui, grids, validations, select: (sheet, row, col) => { active = { sheet, row, col }; } };
 }
 
 /**
@@ -257,4 +315,4 @@ function fakeGoogleRun(server, options) {
   return { run: runner(() => {}, () => {}), calls, pending, flush: (count) => { pending.splice(0, count == null ? pending.length : count).forEach((job) => job()); } };
 }
 
-module.exports = { Node, fakeDocument, document, el, sandboxed, plain, storageOf, colName, parseA1, fakeExcel, fakeAppsScript, fakeGoogleRun };
+module.exports = { Node, fakeDocument, document, el, sandboxed, plain, storageOf, colName, parseA1, parseRange, fakeExcel, fakeAppsScript, fakeGoogleRun };

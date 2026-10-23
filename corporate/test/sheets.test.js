@@ -302,3 +302,108 @@ test("organizationItems names the block and formula triggers for usage reports",
   assert.deepEqual(sheets.organizationItems(undefined), []);
   assert.deepEqual(sheets.organizationItems({}), []);
 });
+
+test("formulaLike also stops the full-width ＝ ＋ － ＠ at the start, with no number exception, and allows them inside a value", () => {
+  for (const value of ["＝1", "＝SUM(A1)", "＋49 30 1234", "＋5", "－5", "－A1", "＠SUM(A1)", "＠"]) assert.equal(sheets.formulaLike(value), true, value);
+  for (const value of ["a＝b", "CC＋100", "Tel－5", "x＠example", "Ｃ＝1", " ＝1"]) assert.equal(sheets.formulaLike(value), false, value);
+  // The half-width rule is unchanged.
+  for (const value of ["=1", "+A1", "-A1", "@SUM(A1)", "\tx", "\rx", "+49 30 1234"]) assert.equal(sheets.formulaLike(value), true, value);
+  for (const value of ["-5", "+3.5", "Acme", "a=b", "CC-100"]) assert.equal(sheets.formulaLike(value), false, value);
+});
+
+test("the full-width guard reaches vocabularies, CSV imports, column values and block rows", () => {
+  const out = sheets.normalizeSheets({
+    vocabularies: { customers: ["Acme Logistics GmbH", "＝HYPERLINK(\"x\")", "Birch ＋ Co"] },
+    blocks: [{ trigger: "/sig", rows: [["Name", "＠SUM(A1:A2)"]] }, { trigger: "/ok", rows: [["Tel－5", "a＝b"]] }],
+  });
+  assert.deepEqual(out.vocabularies.customers.values, ["Acme Logistics GmbH", "Birch ＋ Co"]);
+  assert.deepEqual(out.blocks.map((b) => b.trigger), ["/ok"]);
+  assert.deepEqual(out.warnings, [
+    "sheets vocabulary customers: value \"＝HYPERLINK(\\\"x\\\")\" ignored: a cell would read it as a formula",
+    "sheets block /sig ignored: the cell in row 1, column 2 starts with \"＠\", which a cell would read as a formula",
+  ]);
+  assert.deepEqual(sheets.importCsv("Acme\n－5\n").values, ["Acme"], "a full-width minus has no number exception");
+  const profile = sheets.createColumnProfile(["＋x", "＝1", "Acme"]);
+  assert.deepEqual(profile.distinct, [{ value: "Acme", count: 1 }]);
+});
+
+const STRICT = {
+  vocabularies: { customers: { values: ["Acme Logistics GmbH", "Birch & Co", "Northern Acme Ltd"], aliases: { ACME: "Acme Logistics GmbH", NAL: "Northern Acme Ltd" } } },
+  columns: [
+    { match: { header: "^customer" }, vocabulary: "customers", strict: true },
+    { match: { header: "^client" }, vocabulary: "customers", strict: false },
+    { match: { header: "^buyer" }, vocabulary: "customers", strict: "yes" },
+    { match: { header: "notes" }, kind: "notes", strict: true },
+    { match: { header: "^payer" }, vocabulary: "customers" },
+  ],
+};
+
+test("strict: kept only as true on a vocabulary column; a non-boolean or a strict kind rule is a warning and the rule stays", () => {
+  const out = sheets.normalizeSheets(STRICT);
+  assert.deepEqual(out.columns, [
+    { match: { header: "^customer" }, vocabulary: "customers", strict: true },
+    { match: { header: "^client" }, vocabulary: "customers" },
+    { match: { header: "^buyer" }, vocabulary: "customers" },
+    { match: { header: "notes" }, kind: "notes" },
+    { match: { header: "^payer" }, vocabulary: "customers" },
+  ]);
+  assert.deepEqual(out.warnings, ["sheets column 2: strict ignored: give true or false", "sheets column 3: strict ignored: only a vocabulary column can be strict"]);
+  for (const value of [1, "true", null, [], {}]) {
+    const warnings = sheets.normalizeSheets({ vocabularies: STRICT.vocabularies, columns: [{ match: { header: "x" }, vocabulary: "customers", strict: value }] }).warnings;
+    assert.deepEqual(warnings, value === null ? [] : ["sheets column 0: strict ignored: give true or false"], JSON.stringify(value));
+  }
+  const exported = sheets.exportConfig(STRICT);
+  assert.equal(exported.columns[0].strict, true, "the export carries it");
+  assert.deepEqual(sheets.normalizeSheets(exported).warnings, [], "and reads back clean");
+  assert.deepEqual(sheets.parseConfig(JSON.stringify({ version: 1, sheets: exported })).config.columns, out.columns, "the add-in reads it from a pasted policy");
+  assert.deepEqual(require("../core/org-policy.js").parse({ sheets: STRICT }).sheets.columns[0], { match: { header: "^customer" }, vocabulary: "customers", strict: true });
+});
+
+test("complete in a strict column: only the vocabulary's values, an alias leads to its value, the whole cell is completed", () => {
+  const config = sheets.normalizeSheets(STRICT);
+  const profile = sheets.createColumnProfile(["Acme Zebra Freight", "Acme Zebra Freight", "ACME", "acme logistics gmbh"]);
+  const loose = sheets.complete("acm", { vocabulary: "customers", profile, config });
+  assert.deepEqual(loose.map((r) => [r.value, r.source]), [["Acme Logistics GmbH", "vocabulary"], ["Northern Acme Ltd", "vocabulary"], ["Acme Zebra Freight", "column"]], "without strict the column's own value comes after");
+  const strict = sheets.complete("acm", { vocabulary: "customers", profile, config, strict: true });
+  assert.deepEqual(strict.map((r) => [r.value, r.source]), [["Acme Logistics GmbH", "vocabulary"], ["Northern Acme Ltd", "vocabulary"]]);
+  assert.equal(strict[0].count, 2, "the column's alias and other spelling still count towards the value");
+  assert.deepEqual(sheets.complete("nal", { vocabulary: "customers", profile, config, strict: true }).map((r) => [r.value, r.alias]), [["Northern Acme Ltd", "NAL"]]);
+  assert.deepEqual(sheets.complete("zeb", { vocabulary: "customers", profile, config, strict: true }), [], "nothing outside the list");
+  const notes = sheets.createColumnProfile(["Customer called about the late delivery. Promised a call back.", "Parcel left at the side entrance as agreed. Promised a call back."]);
+  assert.deepEqual(sheets.complete("Acme. Bir", { vocabulary: "customers", profile: notes, config }).map((r) => [r.value, r.start]), [["Birch & Co", 6]], "a vocabulary column with long values completes the last sentence");
+  assert.deepEqual(sheets.complete("bir", { vocabulary: "customers", profile: notes, config, strict: true }).map((r) => [r.value, r.start]), [["Birch & Co", 0]], "a strict one replaces the whole cell");
+  assert.deepEqual(sheets.complete("Acme. Bir", { vocabulary: "customers", profile: notes, config, strict: true }), [], "and never completes a sentence inside it");
+  const suggested = sheets.suggest({ header: "Customer", text: "acm", values: ["Acme Zebra Freight", "Acme Zebra Freight"] }, config);
+  assert.deepEqual(suggested.column, { match: { header: "^customer" }, vocabulary: "customers", strict: true });
+  assert.deepEqual(suggested.completions.map((c) => c.value), ["Acme Logistics GmbH", "Northern Acme Ltd"]);
+  assert.deepEqual(sheets.suggest({ header: "Payer", text: "acm", values: ["Acme Zebra Freight"] }, config).completions.map((c) => c.value), ["Acme Logistics GmbH", "Northern Acme Ltd", "Acme Zebra Freight"], "the same vocabulary without strict");
+});
+
+test("checkColumn sorts a column's cells into canonical, fixable (other spellings and aliases) and unknown; blanks are skipped", () => {
+  const config = sheets.normalizeSheets(STRICT);
+  const cells = [
+    { row: 2, text: "Acme Logistics GmbH" },
+    { row: 3, text: "acme logistics gmbh" },
+    { row: 4, text: "ACME" },
+    { row: 5, text: "" },
+    { row: 6, text: "Zed Transport" },
+    { row: 7, text: " Birch  & Co " },
+    { row: 8, text: "nal" },
+    { row: 9, text: "   " },
+    { row: 10, text: "100" },
+  ];
+  assert.deepEqual(sheets.checkColumn(cells, config.vocabularies.customers), {
+    checked: 7,
+    canonical: 1,
+    fixes: [
+      { row: 3, text: "acme logistics gmbh", value: "Acme Logistics GmbH", alias: false },
+      { row: 4, text: "ACME", value: "Acme Logistics GmbH", alias: true },
+      { row: 7, text: " Birch  & Co ", value: "Birch & Co", alias: false },
+      { row: 8, text: "nal", value: "Northern Acme Ltd", alias: true },
+    ],
+    unknown: [{ row: 6, text: "Zed Transport" }, { row: 10, text: "100" }],
+  });
+  assert.deepEqual(sheets.checkColumn([], config.vocabularies.customers), { checked: 0, canonical: 0, fixes: [], unknown: [] });
+  assert.deepEqual(sheets.checkColumn(undefined, undefined), { checked: 0, canonical: 0, fixes: [], unknown: [] });
+  assert.deepEqual(sheets.checkColumn([{ row: 2, text: "x" }], { values: ["Y"], aliases: { x: "Gone" } }).unknown, [{ row: 2, text: "x" }], "an alias whose value is not in the list maps to nothing");
+});

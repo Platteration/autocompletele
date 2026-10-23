@@ -29,3 +29,6 @@ summary { cursor: pointer; color: var(--accent); }
 .formula, ul.preview { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
 .formula { margin: 0; }
 ul.preview { list-style: none; margin: 8px 0 0; padding: 0; color: var(--muted); }
+.strict:not(:empty) { margin: 8px 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.strict p { margin: 0 0 8px; }
+.strict .actions { margin: 0 0 8px; justify-content: flex-start; flex-wrap: wrap; }

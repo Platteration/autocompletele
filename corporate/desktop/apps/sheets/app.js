@@ -57,7 +57,7 @@ function createApp(host) {
       vocabularies: Object.entries(config.vocabularies).map(([name, vocabulary]) => ({
         name, values: vocabulary.values.length, aliases: Object.keys(vocabulary.aliases).length, examples: vocabulary.values.slice(0, 3),
       })),
-      columns: config.columns.map((column) => ({ header: column.match.header || "", sheet: column.match.sheet || "", vocabulary: column.vocabulary || "", kind: column.kind || "" })),
+      columns: config.columns.map((column) => ({ header: column.match.header || "", sheet: column.match.sheet || "", vocabulary: column.vocabulary || "", kind: column.kind || "", strict: column.strict === true })),
       blocks: config.blocks.map(describeBlock),
       warnings: (Array.isArray(policy.warnings) ? policy.warnings : []).filter((warning) => /^sheets /.test(String(warning))),
       lastExport: last ? Object.assign({}, last, { path: file, present: fs.existsSync(file) }) : null,
@@ -113,7 +113,7 @@ function createApp(host) {
       sim.print(`  vocabulary ${name}: ${vocabulary.values.length} values, ${Object.keys(vocabulary.aliases).length} aliases, e.g. ${vocabulary.values.slice(0, 2).join(", ")}`);
     }
     for (const column of config.columns) {
-      sim.print(`  column rule ${column.match.header ? "header /" + column.match.header + "/" : ""}${column.match.sheet ? " sheet /" + column.match.sheet + "/" : ""} -> ${column.vocabulary ? "vocabulary " + column.vocabulary : column.kind + " column"}`);
+      sim.print(`  column rule ${column.match.header ? "header /" + column.match.header + "/" : ""}${column.match.sheet ? " sheet /" + column.match.sheet + "/" : ""} -> ${column.vocabulary ? "vocabulary " + column.vocabulary + (column.strict ? " (strict)" : "") : column.kind + " column"}`);
     }
     for (const block of config.blocks) {
       const d = describeBlock(block);
@@ -132,6 +132,15 @@ function createApp(host) {
     const sentence = sheets.suggest({ header: "Delivery notes", text: "Driver was late. Prom", values: notes }, config);
     assert.deepEqual(sentence.completions.map((c) => c.value), ["Promised a call back."]);
     sim.print(`    notes column, typed "Driver was late. Prom" -> ${sentence.completions.map((c) => c.value).join("; ")} (replaces from character ${sentence.completions[0].start})`);
+    // A strict column: only the list's values are offered, and a check sorts the column's cells.
+    const costs = ["CC-100 Logistics", "sales", "cc-300 warehouse", "CC-999 Old", "CC-999 Old"];
+    const strict = sheets.suggest({ header: "Cost centre", text: "cc", values: costs }, config);
+    assert.ok(strict.column && strict.column.strict, "the cost centre column is strict");
+    assert.deepEqual(strict.completions.map((c) => c.value), ["CC-100 Logistics", "CC-200 Sales", "CC-300 Warehouse"], "only the list's values");
+    sim.print(`    strict column "Cost centre" holds ${costs.join(" | ")}; typed "cc" -> ${strict.completions.map((c) => c.value).join("; ")} (CC-999 Old is not offered)`);
+    const checked = sheets.checkColumn(costs.map((text, i) => ({ row: i + 2, text })), config.vocabularies.costCentres);
+    assert.deepEqual([checked.canonical, checked.fixes.length, checked.unknown.length], [1, 2, 2]);
+    sim.print(`    "Check this column": ${checked.canonical} match, list's spelling for ${checked.fixes.map((f) => "C" + f.row + " " + f.text + " -> " + f.value).join(", ")}; not in the list: ${checked.unknown.map((u) => "C" + u.row + " " + u.text).join(", ")}`);
     const block = sheets.suggest({ header: "Amount", text: "/vat", values: ["100", "250"] }, config);
     assert.equal(block.block && block.block.formula, "=ROUND(B2*0.19, 2)");
     sim.print(`    typed "/vat" -> insert ${block.block.label}: ${block.block.formula}`);

@@ -54,9 +54,9 @@ test("sheets:info describes the policy section, the section's own warnings and t
     { name: "costCentres", values: 3, aliases: 1, examples: ["CC-100 Logistics", "CC-200 Sales", "CC-300 Warehouse"] },
   ]);
   assert.deepEqual(info.columns, [
-    { header: "^(customer|client)", sheet: "^Orders", vocabulary: "customers", kind: "" },
-    { header: "^cost cent", sheet: "", vocabulary: "costCentres", kind: "" },
-    { header: "notes?$", sheet: "", vocabulary: "", kind: "notes" },
+    { header: "^(customer|client)", sheet: "^Orders", vocabulary: "customers", kind: "", strict: false },
+    { header: "^cost cent", sheet: "", vocabulary: "costCentres", kind: "", strict: true },
+    { header: "notes?$", sheet: "", vocabulary: "", kind: "notes", strict: false },
   ]);
   assert.deepEqual(info.blocks, [
     { trigger: "/exp", label: "Expense rows", kind: "rows", formula: "", rows: 2, columns: 3 },
@@ -66,11 +66,13 @@ test("sheets:info describes the policy section, the section's own warnings and t
   assert.equal(info.lastExport, null);
   assert.equal(info.addin.folder, ADDIN);
   assert.equal(info.addin.present, true);
-  const lossy = desk({ sheets: { vocabularies: { v: 7 }, blocks: [{ trigger: "nope" }] }, keywordRules: [{ id: "k" }] });
+  const lossy = desk({ sheets: { vocabularies: { v: 7 }, columns: [{ match: { header: "x" }, kind: "label", strict: true }], blocks: [{ trigger: "nope" }] }, keywordRules: [{ id: "k" }] });
   assert.deepEqual(lossy.assistant.invoke("sheets:info").warnings, [
     "sheets vocabulary v ignored: needs a values list",
+    "sheets column 0: strict ignored: only a vocabulary column can be strict",
     "sheets block nope ignored: trigger must start with / and contain no spaces",
   ], "only the sheets warnings, not the keyword rule's");
+  assert.deepEqual(lossy.assistant.invoke("sheets:info").columns, [{ header: "x", sheet: "", vocabulary: "", kind: "label", strict: false }], "the rule stays, without strict");
   const none = desk({});
   assert.deepEqual(none.assistant.invoke("sheets:info").vocabularies, []);
   for (const dir of [dataDir, lossy.dataDir, none.dataDir]) fs.rmSync(dir, { recursive: true, force: true });
@@ -87,6 +89,9 @@ test("sheets:complete answers like the core for pasted values and never throws o
   assert.deepEqual(block.block, { trigger: "/exp", label: "Expense rows", kind: "rows", formula: "", rows: 2, columns: 3, start: 6 }, "the block is described, its rows stay on the desk");
   assert.deepEqual(assistant.invoke("sheets:complete", undefined), { ok: true, column: null, profile: { kind: "empty", total: 0, counts: { number: 0, date: 0, label: 0, notes: 0 }, distinct: 0, sentences: 0 }, completions: [], block: null });
   assert.equal(assistant.invoke("sheets:complete", { header: "Customer", sheet: "Orders", text: "acm", limit: 1 }).completions.length, 1);
+  const strict = assistant.invoke("sheets:complete", { header: "Cost centre", text: "cc", values: "CC-999 Old\nCC-999 Old\nsales" });
+  assert.equal(strict.column.strict, true);
+  assert.deepEqual(strict.completions.map((c) => [c.value, c.source]), [["CC-200 Sales", "vocabulary"], ["CC-100 Logistics", "vocabulary"], ["CC-300 Warehouse", "vocabulary"]], "a strict column offers the list's values only, never CC-999 Old");
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -199,6 +204,11 @@ test("the bundle runs in a browser-like sandbox without Node and answers exactly
   assert.deepEqual(plain(bundled.importCsv(csv)), plain(sheets.importCsv(csv)));
   assert.deepEqual(plain(bundled.parseConfig("{bad")), plain(sheets.parseConfig("{bad")));
   assert.equal(bundled.formulaLike("=1"), true);
+  assert.equal(bundled.formulaLike("＝1"), true, "the full-width guard is in the bundle");
+  const strictInput = { header: "Cost centre", text: "cc", values: ["CC-999 Old", "sales"] };
+  assert.deepEqual(plain(bundled.suggest(strictInput, bundled.normalizeSheets(raw()))), plain(sheets.suggest(strictInput, config)), "a strict column completes the same");
+  const cells = [{ row: 2, text: "sales" }, { row: 3, text: "CC-999 Old" }, { row: 4, text: "CC-100 Logistics" }];
+  assert.deepEqual(plain(bundled.checkColumn(cells, bundled.normalizeSheets(raw()).vocabularies.costCentres)), plain(sheets.checkColumn(cells, config.vocabularies.costCentres)));
   assert.equal(bundled.columnFor("Cost centre", "Budget", bundled.normalizeSheets(raw())).vocabulary, "costCentres");
   const modern = vm.createContext({});
   modern.self = modern;
@@ -238,6 +248,8 @@ test("the dashboard tab lists the policy, tries a completion through sheets:comp
   assert.deepEqual(calls, [["sheets:info", undefined]]);
   const shown = section.textContent;
   for (const expected of [/of Org\./, /customers/, /Acme Logistics GmbH, Birch & Co, Northern Acme Ltd/, /\^cost cent/, /notes column/, /Expense rows/, /formula =ROUND\(B2\*0\.19, 2\)/, /Not exported yet\./, /sheets-addin; its README/]) assert.match(shown, expected);
+  const rules = section.all((n) => n.tagName === "td" && /^vocabulary /.test(n.textContent)).map((n) => n.textContent);
+  assert.deepEqual(rules, ["vocabulary customers", "vocabulary costCentres (strict: only its values)"], "the column rules table marks the strict rule");
   assert.equal(section.find((n) => n.tagName === "h2" && n.textContent === "Policy warnings"), null);
   const inputs = section.all((n) => n.tagName === "input");
   assert.deepEqual(inputs.map((n) => n.attrs["aria-label"]), ["Column header", "Sheet name", "Typed text"]);
@@ -250,6 +262,15 @@ test("the dashboard tab lists the policy, tries a completion through sheets:comp
   assert.deepEqual(plain(calls.pop()), ["sheets:complete", { header: "Customer", sheet: "Orders 2026", text: "acm", values: "ACME\nZed Transport" }]);
   assert.match(section.textContent, /Column rule: vocabulary customers\. Learned from the values: label column, 2 values, 2 distinct\./);
   assert.match(section.textContent, /Acme Logistics GmbH.*vocabulary.*prefix.*1/s);
+  inputs[0].value = "Cost centre";
+  inputs[1].value = "";
+  inputs[2].value = "cc";
+  await section.button("Complete").click();
+  assert.match(section.textContent, /Column rule: vocabulary costCentres, strict, so only its values are offered\./);
+  inputs[0].value = "Customer";
+  inputs[1].value = "Orders 2026";
+  inputs[2].value = "acm";
+  await section.button("Complete").click();
   await tab.render(section, helpers, { metrics: true });
   assert.equal(section.all((n) => n.tagName === "input")[0].value, "Customer", "a rebuild keeps the inputs");
   assert.match(section.textContent, /Acme Logistics GmbH.*vocabulary/s, "and the result");
@@ -307,7 +328,10 @@ test("simulate walks through the sample section, exports the live policy and bui
   const log = lines.join("\n");
   for (const expected of [
     /vocabulary customers: 4 values, 3 aliases, e\.g\. Acme Logistics GmbH, Birch & Co/,
-    /column rule header \/\^\(customer\|client\)\/ sheet \/\^Orders\/ -> vocabulary customers/,
+    /column rule header \/\^\(customer\|client\)\/ sheet \/\^Orders\/ -> vocabulary customers\n/,
+    /column rule header \/\^cost cent\/ -> vocabulary costCentres \(strict\)/,
+    /strict column "Cost centre" holds .*; typed "cc" -> CC-100 Logistics; CC-200 Sales; CC-300 Warehouse \(CC-999 Old is not offered\)/,
+    /"Check this column": 1 match, list's spelling for C3 sales -> CC-200 Sales, C4 cc-300 warehouse -> CC-300 Warehouse; not in the list: C5 CC-999 Old, C6 CC-999 Old/,
     /block \/exp \(Expense rows\): 2 rows x 3 columns/,
     /typed "acm" -> Acme Logistics GmbH \[vocabulary\]; Northern Acme Ltd \[vocabulary\]\n/,
     /typed "ACME" -> Acme Logistics GmbH \[vocabulary\]; Northern Acme Ltd \[vocabulary\]/,

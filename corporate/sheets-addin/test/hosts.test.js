@@ -36,23 +36,25 @@ function excelPane(spec) {
 
 test("the Excel bridge reads the active cell's text, its header and the column's displayed values without the cell itself", async () => {
   const { host, bridge } = excelPane({ sheets: { "Orders 2026": ORDERS }, active: { sheet: "Orders 2026", address: "B4" } });
-  assert.deepEqual(plain(await bridge.readContext()), { sheet: "Orders 2026", address: "B4", text: "acm", header: "Customer", values: ["ACME", "Zed Transport", "Zed Transport", "Birch & Co"], clipped: false });
+  assert.deepEqual(plain(await bridge.readContext()), { sheet: "Orders 2026", address: "B4", text: "acm", header: "Customer", values: ["ACME", "Zed Transport", "Zed Transport", "Birch & Co"], rows: [2, 3, 5, 6], clipped: false });
   assert.equal(host.state.syncs, 2, "two round trips: the selection, then the header and the column");
   await host.select("Orders 2026", "D2");
   assert.deepEqual(plain(await bridge.readContext()).values, ["", "Driver was late. Prom", "Customer called about the late delivery. Promised a call back.", "Parcel left at the side entrance. Promised a call back."], "rows after the cell are kept, the cell's own row is left out");
+  assert.deepEqual(plain(await bridge.readContext()).rows, [3, 4, 5, 6], "each value's row, for a column check");
   const lower = [[], [], [], [], ["Code", "x"], ["CC-100", "y"], ["CC-200", "z"]];
   const used = excelPane({ sheets: { Codes: lower }, active: { sheet: "Codes", address: "A6" } });
-  assert.deepEqual(plain(await used.bridge.readContext()), { sheet: "Codes", address: "A6", text: "CC-100", header: "", values: ["Code", "CC-200"], clipped: false }, "a used range that starts below row 1 is read from its first row; row 1 is still the header");
+  assert.deepEqual(plain(await used.bridge.readContext()), { sheet: "Codes", address: "A6", text: "CC-100", header: "", values: ["Code", "CC-200"], rows: [5, 7], clipped: false }, "a used range that starts below row 1 is read from its first row; row 1 is still the header");
   const headerOnly = excelPane({ sheets: { Empty: [["Customer", "Amount"]] }, active: { sheet: "Empty", address: "A2" } });
-  assert.deepEqual(plain(await headerOnly.bridge.readContext()), { sheet: "Empty", address: "A2", text: "", header: "Customer", values: [], clipped: false });
+  assert.deepEqual(plain(await headerOnly.bridge.readContext()), { sheet: "Empty", address: "A2", text: "", header: "Customer", values: [], rows: [], clipped: false });
   const blank = excelPane({ sheets: { Blank: [[]] }, active: { sheet: "Blank", address: "C3" } });
-  assert.deepEqual(plain(await blank.bridge.readContext()), { sheet: "Blank", address: "C3", text: "", header: "", values: [], clipped: false });
+  assert.deepEqual(plain(await blank.bridge.readContext()), { sheet: "Blank", address: "C3", text: "", header: "", values: [], rows: [], clipped: false });
   const long = [["Customer"]].concat(Array.from({ length: bridge.MAX_ROWS + 2 }, (_, i) => ["Row " + (i + 2)]));
   const big = excelPane({ sheets: { Big: long }, active: { sheet: "Big", address: "A2" } });
   const clipped = plain(await big.bridge.readContext());
   assert.equal(clipped.clipped, true);
   assert.equal(clipped.values.length, bridge.MAX_ROWS - 1, "the first MAX_ROWS rows, minus the selected one");
   assert.equal(clipped.values[0], "Row 3");
+  assert.deepEqual([clipped.rows.length, clipped.rows[0], clipped.rows[clipped.rows.length - 1]], [bridge.MAX_ROWS - 1, 3, bridge.MAX_ROWS + 1]);
 });
 
 test("the Excel bridge writes a completion as text, a block as a rectangle with text cells as text, and a formula as a formula", async () => {
@@ -169,14 +171,15 @@ function appsScript(spec) {
 
 test("Code.gs reads the selection as displayed text without the cell itself, within the row limit", () => {
   const { fake, gs } = appsScript({ sheets: { "Orders 2026": ORDERS }, active: { sheet: "Orders 2026", row: 4, col: 2 } });
-  assert.deepEqual(plain(gs.getActiveCellContext(5000)), { sheet: "Orders 2026", address: "B4", text: "acm", header: "Customer", values: ["ACME", "Zed Transport", "Zed Transport", "Birch & Co"], clipped: false });
-  assert.deepEqual(plain(gs.getActiveCellContext(2)), { sheet: "Orders 2026", address: "B4", text: "acm", header: "Customer", values: ["ACME", "Zed Transport"], clipped: true }, "the first rows only, marked clipped");
+  assert.deepEqual(plain(gs.getActiveCellContext(5000)), { sheet: "Orders 2026", address: "B4", text: "acm", header: "Customer", values: ["ACME", "Zed Transport", "Zed Transport", "Birch & Co"], rows: [2, 3, 5, 6], clipped: false });
+  assert.deepEqual(plain(gs.getActiveCellContext(2)), { sheet: "Orders 2026", address: "B4", text: "acm", header: "Customer", values: ["ACME", "Zed Transport"], rows: [2, 3], clipped: true }, "the first rows only, marked clipped");
   assert.deepEqual(plain(gs.getActiveCellContext(3)).values, ["ACME", "Zed Transport"], "the selected row inside the limit is still left out");
+  assert.deepEqual(plain(gs.getActiveCellContext(3)).rows, [2, 3]);
   fake.select("Orders 2026", 2, 4);
   assert.deepEqual(plain(gs.getActiveCellContext("nope")).values, ["", "Driver was late. Prom", "Customer called about the late delivery. Promised a call back.", "Parcel left at the side entrance. Promised a call back."], "an odd limit means the default");
   assert.deepEqual(plain(gs.getActiveCellContext(1e9)).values.length, 4, "capped, not the whole sheet");
   const { gs: empty } = appsScript({ sheets: { Empty: [["Customer"]] }, active: { sheet: "Empty", row: 2, col: 1 } });
-  assert.deepEqual(plain(empty.getActiveCellContext(5000)), { sheet: "Empty", address: "A2", text: "", header: "Customer", values: [], clipped: false });
+  assert.deepEqual(plain(empty.getActiveCellContext(5000)), { sheet: "Empty", address: "A2", text: "", header: "Customer", values: [], rows: [], clipped: false });
 });
 
 test("Code.gs writes a completion as text, a block as a rectangle and a formula, and names a sheet that is gone", () => {
@@ -363,4 +366,149 @@ test("the manifest and the task pane page name the add-in extle; the Description
   assert.ok(strings("LongStrings").every((text) => text.length <= 250));
   const page = fs.readFileSync(path.join(ADDIN, "taskpane.html"), "utf8");
   assert.ok(page.includes("<title>" + NAME + "</title>"));
+});
+
+// A budget sheet whose cost centre column (C) is strict in the sample section; C4 holds what is being typed.
+const BUDGET = [
+  ["Date", "Amount", "Cost centre"],
+  ["2026-10-01", "100", "CC-100 Logistics"],
+  ["2026-10-02", "250", "sales"],
+  ["2026-10-03", "80", "cc"],
+  ["2026-10-04", "40", "cc-300  warehouse"],
+  ["2026-10-05", "12", "CC-999 Old"],
+];
+const strictPanel = (root) => root.find((n) => n.className === "strict");
+
+test("the Excel bridge replaces only cells that still hold what the check read, as text, and reports the others", async () => {
+  const { host, bridge } = excelPane({ sheets: { Budget: BUDGET }, active: { sheet: "Budget", address: "C4" } });
+  host.grids.Budget[4][2] = "CC-300 Warehouse"; // corrected by hand after the check
+  const result = plain(await bridge.replaceValues({ sheet: "Budget", column: "C" }, [{ row: 3, from: "sales", to: "CC-200 Sales" }, { row: 5, from: "cc-300  warehouse", to: "CC-300 Warehouse" }]));
+  assert.deepEqual(result, { written: [3], skipped: [{ row: 5, text: "CC-300 Warehouse" }] });
+  assert.deepEqual(host.state.loads.pop(), ["Budget!C3:C5", "text"], "one read of the rows involved, just before writing");
+  assert.deepEqual(host.calls, [["numberFormat", "Budget!C3", [["@"]]], ["values", "Budget!C3", [["CC-200 Sales"]]]], "the text format first, then the list's spelling, in that cell only");
+  assert.equal(host.grids.Budget[2][2], "CC-200 Sales");
+});
+
+test("the Excel bridge sets Excel's list validation from row 2 down with a stop alert, clears it, and refuses a list Excel cannot hold", async () => {
+  const { host, bridge } = excelPane({ sheets: { "Orders 2026": ORDERS }, active: { sheet: "Orders 2026", address: "B4" } });
+  assert.equal(bridge.SHEET_ROWS, 1048576);
+  assert.deepEqual(plain(await bridge.setListValidation({ sheet: "Orders 2026", column: "B" }, ["Acme Logistics GmbH", "Birch & Co"], "Only values from the \"customers\" list.")), { range: "B2:B1048576" });
+  const address = "'Orders 2026'!B2:B1048576";
+  assert.deepEqual(host.calls.splice(0), [
+    ["dataValidation.clear", address],
+    ["dataValidation.rule", address, { list: { inCellDropDown: true, source: "Acme Logistics GmbH,Birch & Co" } }],
+    ["dataValidation.errorAlert", address, { showAlert: true, style: "Stop", title: NAME, message: "Only values from the \"customers\" list." }],
+  ], "what was there is cleared, then the list with a dropdown and an alert that stops the entry");
+  assert.deepEqual(Object.keys(host.validations), [address]);
+  assert.deepEqual(plain(await bridge.clearListValidation({ sheet: "Orders 2026", column: "B" })), { range: "B2:B1048576" });
+  assert.deepEqual(host.calls.splice(0), [["dataValidation.clear", address]]);
+  assert.deepEqual(host.validations, {});
+  assert.equal(bridge.LIST_SOURCE_MAX, 255);
+  assert.equal(bridge.listRefusal(["Acme", "Birch & Co"]), null);
+  assert.equal(bridge.listRefusal(["x".repeat(127), "y".repeat(127)]), null, "255 characters with the comma fit");
+  assert.equal(bridge.listRefusal(["x".repeat(128), "y".repeat(127)]), "it is 256 characters long with its commas, and Excel takes at most 255 in a validation rule");
+  assert.equal(bridge.listRefusal(["Acme", "Birch, Co"]), "the value \"Birch, Co\" holds a comma, and Excel reads the list in a validation rule as values separated by commas");
+});
+
+test("in Excel the pane checks a strict column, replaces its aliases after a confirmation and turns list validation on and off through Office.js", async () => {
+  const { host, root, bridge, sandbox } = excelPane({ sheets: { Budget: BUDGET }, active: { sheet: "Budget", address: "C4" } });
+  sandbox.localStorage.setItem("actleSheetsConfig", CONFIG);
+  const pane = bridge.start({ host: host.Office.HostType.Excel });
+  await new Promise((resolve) => setImmediate(resolve));
+  const panel = strictPanel(root);
+  assert.equal(panel.children[0].textContent, 'Only values from the "costCentres" list.');
+  await panel.button("Check this column").click();
+  assert.equal(pane.ui.message.textContent, "Column C: 5 cells with text checked; 1 match the list, 2 can take the list's spelling, 2 are not in the list.");
+  host.grids.Budget[4][2] = "CC-300 Warehouse";
+  await panel.button("Replace 2 aliases with the list's spelling").click();
+  assert.deepEqual(host.calls, [], "nothing before the confirmation");
+  await panel.button("Replace 2 cells").click();
+  assert.deepEqual(host.calls.splice(0), [["numberFormat", "Budget!C3", [["@"]]], ["values", "Budget!C3", [["CC-200 Sales"]]]]);
+  assert.equal(pane.ui.message.textContent, 'Wrote the list\'s spelling into 1 cell of column C. Skipped 1 cell that changed since the check: C5 (now "CC-300 Warehouse").');
+  await panel.button("Turn on list validation for this column").click();
+  await panel.button("Turn it on").click();
+  assert.deepEqual(host.validations["Budget!C2:C1048576"].rule, { list: { inCellDropDown: true, source: "CC-100 Logistics,CC-200 Sales,CC-300 Warehouse" } });
+  assert.equal(pane.ui.message.textContent, 'List validation is on for C2:C1048576 on "Budget": the spreadsheet now refuses values that are not in the "costCentres" list.');
+  await panel.button("Remove list validation").click();
+  await panel.button("Remove it").click();
+  assert.deepEqual(host.validations, {});
+  assert.equal(pane.ui.message.textContent, 'Removed the data validation from C2:C1048576 on "Budget".');
+});
+
+test("an Excel without ExcelApi 1.8 offers no list validation, and a list longer than Excel takes is refused with the reason", async () => {
+  const old = excelPane({ sheets: { Budget: BUDGET }, active: { sheet: "Budget", address: "C4" }, apiSets: { ExcelApi: "1.7" } });
+  old.sandbox.localStorage.setItem("actleSheetsConfig", CONFIG);
+  old.bridge.start({ host: old.host.Office.HostType.Excel });
+  await new Promise((resolve) => setImmediate(resolve));
+  const panel = strictPanel(old.root);
+  assert.equal(panel.find((n) => n.className === "hint").textContent, "List validation is not offered: this Excel does not have ExcelApi 1.8.");
+  assert.equal(panel.button("Turn on list validation for this column"), null);
+  assert.equal(panel.button("Remove list validation"), null);
+  assert.ok(panel.button("Check this column"), "the check and the replacement need ExcelApi 1.1 only");
+  const newer = excelPane({ sheets: { Budget: BUDGET }, active: { sheet: "Budget", address: "C4" }, apiSets: { ExcelApi: "1.10" } });
+  newer.sandbox.localStorage.setItem("actleSheetsConfig", CONFIG);
+  newer.bridge.start({ host: newer.host.Office.HostType.Excel });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(strictPanel(newer.root).button("Turn on list validation for this column"), "1.10 is later than 1.8");
+  const long = JSON.stringify({ vocabularies: { codes: Array.from({ length: 30 }, (_, i) => "Code " + String(i).padStart(5, "0")) }, columns: [{ match: { header: "^code" }, vocabulary: "codes", strict: true }] });
+  const big = excelPane({ sheets: { Codes: [["Code"], ["Code 00001"]] }, active: { sheet: "Codes", address: "A2" } });
+  big.sandbox.localStorage.setItem("actleSheetsConfig", long);
+  big.bridge.start({ host: big.host.Office.HostType.Excel });
+  await new Promise((resolve) => setImmediate(resolve));
+  const refused = strictPanel(big.root);
+  assert.equal(refused.find((n) => n.className === "hint").textContent, "List validation is not available for this list: it is 329 characters long with its commas, and Excel takes at most 255 in a validation rule.");
+  assert.equal(refused.button("Turn on list validation for this column"), null);
+  assert.ok(refused.button("Remove list validation"));
+});
+
+test("Code.gs replaces only cells that still hold what the check read, sets the list rule with the documented builder, clears it, and needs a row below the header", () => {
+  const spec = { sheets: { Budget: BUDGET }, active: { sheet: "Budget", row: 4, col: 3 } };
+  const { fake, gs } = appsScript(spec);
+  fake.grids.Budget[4][2] = "CC-300 Warehouse";
+  assert.deepEqual(plain(gs.replaceValues({ sheet: "Budget", column: "C" }, [{ row: 3, from: "sales", to: "CC-200 Sales" }, { row: 5, from: "cc-300  warehouse", to: "CC-300 Warehouse" }])), { written: [3], skipped: [{ row: 5, text: "CC-300 Warehouse" }] });
+  assert.deepEqual(fake.calls.splice(0), [["setNumberFormat", "C3", "@"], ["setValue", "C3", "CC-200 Sales"]]);
+  assert.deepEqual(plain(gs.setListValidation({ sheet: "Budget", column: "C" }, ["CC-100 Logistics", "CC-200 Sales"])), { range: "C2:C1000" }, "to the sheet's last row");
+  assert.deepEqual(fake.calls.splice(0), [["setDataValidation", "C2:C1000", { criteria: "VALUE_IN_LIST", values: [["CC-100 Logistics", "CC-200 Sales"], true], allowInvalid: false }]], "a dropdown, and other values refused");
+  assert.equal(fake.validations.Budget["C2:C1000"].getAllowInvalid(), false);
+  assert.deepEqual(plain(gs.clearListValidation({ sheet: "Budget", column: "C" })), { range: "C2:C1000" });
+  assert.deepEqual(fake.calls.splice(0), [["clearDataValidations", "C2:C1000"]]);
+  assert.deepEqual(fake.validations.Budget, {});
+  const short = appsScript({ sheets: { One: [["Code"]] }, active: { sheet: "One", row: 1, col: 1 }, maxRows: { One: 1 } });
+  assert.throws(() => short.gs.setListValidation({ sheet: "One", column: "A" }, ["x"]), /the sheet has no rows below the header/);
+  assert.throws(() => gs.setListValidation({ sheet: "Gone", column: "A" }, ["x"]), /sheet Gone is gone/);
+});
+
+test("the sidebar checks a strict column and replaces and validates through google.script.run; a rule the spreadsheet refuses is reported", async () => {
+  const spec = { sheets: { Budget: BUDGET }, active: { sheet: "Budget", row: 4, col: 3 } };
+  const { fake, gs } = appsScript(spec);
+  const server = fakeGoogleRun({ getActiveCellContext: gs.getActiveCellContext, replaceValues: gs.replaceValues, setListValidation: gs.setListValidation, clearListValidation: gs.clearListValidation, loadConfig: gs.loadConfig, saveConfig: gs.saveConfig });
+  const root = new Node("div");
+  const globals = { google: { script: { run: server.run } }, document: fakeDocument({ pane: root }), localStorage: storageOf({ actleSheetsConfig: CONFIG }), ActleSheets: sheets, setInterval: () => {} };
+  const sandbox = sandboxed(path.join(ADDIN, "pane.js"), globals);
+  const html = fs.readFileSync(path.join(ADDIN, "apps-script", "Sidebar.html"), "utf8");
+  vm.runInContext(/<script>([\s\S]*?)<\/script>/.exec(html)[1], sandbox, { filename: "Sidebar.html" });
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  await settle();
+  const panel = strictPanel(root);
+  const message = () => root.find((n) => n.className === "message").textContent;
+  await panel.button("Check this column").click();
+  assert.equal(message(), "Column C: 5 cells with text checked; 1 match the list, 2 can take the list's spelling, 2 are not in the list.");
+  await panel.button("Replace 2 aliases with the list's spelling").click();
+  await panel.button("Replace 2 cells").click();
+  await settle();
+  assert.deepEqual(server.calls.filter(([name]) => name === "replaceValues"), [["replaceValues", { sheet: "Budget", column: "C" }, [{ row: 3, from: "sales", to: "CC-200 Sales" }, { row: 5, from: "cc-300  warehouse", to: "CC-300 Warehouse" }]]]);
+  assert.deepEqual([fake.grids.Budget[2][2], fake.grids.Budget[4][2]], ["CC-200 Sales", "CC-300 Warehouse"]);
+  assert.equal(message(), "Wrote the list's spelling into 2 cells of column C.");
+  await panel.button("Turn on list validation for this column").click();
+  await panel.button("Turn it on").click();
+  assert.deepEqual(server.calls.filter(([name]) => name === "setListValidation"), [["setListValidation", { sheet: "Budget", column: "C" }, ["CC-100 Logistics", "CC-200 Sales", "CC-300 Warehouse"]]]);
+  assert.equal(message(), 'List validation is on for C2:C1000 on "Budget": the spreadsheet now refuses values that are not in the "costCentres" list.');
+  await panel.button("Remove list validation").click();
+  await panel.button("Remove it").click();
+  assert.deepEqual(server.calls.filter(([name]) => name === "clearListValidation"), [["clearListValidation", { sheet: "Budget", column: "C" }]]);
+  spec.refuseRule = "The data validation rule is not valid.";
+  await panel.button("Turn on list validation for this column").click();
+  await panel.button("Turn it on").click();
+  assert.equal(message(), "Could not turn on list validation for column C: The data validation rule is not valid.");
+  assert.deepEqual(fake.validations.Budget, {});
 });

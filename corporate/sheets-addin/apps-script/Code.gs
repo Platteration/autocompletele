@@ -2,6 +2,8 @@
 // active cell's displayed text, its column's header from row 1 and the
 // column's displayed values; writes completions as text so a date or a code
 // is not reinterpreted. The configuration lives in the document's properties.
+// In a strict column it replaces aliases cell by cell and turns the
+// spreadsheet's own list validation on or off.
 // Driven with fake services in corporate/sheets-addin/test/hosts.test.js;
 // not run against Google here (no account in the build environment), see README.md.
 
@@ -33,11 +35,14 @@ function getActiveCellContext(maxRows) {
   var lastRow = sheet.getLastRow();
   var available = Math.max(0, lastRow - 1);
   var values = [];
+  var rows = []; // the row of each value, for a column check
   if (available > 0) {
     var texts = sheet.getRange(2, column, Math.min(available, limit), 1).getDisplayValues();
     for (var i = 0; i < texts.length; i++) {
       // The selected cell's own text is what is being completed, not a value to learn from.
-      if (i + 2 !== row) values.push(texts[i][0]);
+      if (i + 2 === row) continue;
+      values.push(texts[i][0]);
+      rows.push(i + 2);
     }
   }
   return {
@@ -46,14 +51,19 @@ function getActiveCellContext(maxRows) {
     text: cell.getDisplayValue(),
     header: sheet.getRange(1, column).getDisplayValue(),
     values: values,
+    rows: rows,
     clipped: available > limit,
   };
 }
 
-function rangeOf(target) {
+function sheetFor(target) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(String(target.sheet));
   if (!sheet) throw new Error("sheet " + target.sheet + " is gone");
-  return sheet.getRange(String(target.address));
+  return sheet;
+}
+
+function rangeOf(target) {
+  return sheetFor(target).getRange(String(target.address));
 }
 
 function writeValue(target, value) {
@@ -73,6 +83,59 @@ function writeRows(target, rows) {
 
 function writeFormula(target, formula) {
   rangeOf(target).setFormula(String(formula));
+}
+
+/**
+ * Write the list's spelling into cells of one column, as text. Each cell is
+ * read again first; one whose displayed text is no longer what the check read
+ * is skipped and returned with its text now. changes: [{ row, from, to }].
+ */
+function replaceValues(target, changes) {
+  var sheet = sheetFor(target);
+  var column = String(target.column);
+  var rows = changes.map(function (change) { return Number(change.row); });
+  var top = Math.min.apply(null, rows);
+  var bottom = Math.max.apply(null, rows);
+  var now = sheet.getRange(column + top + ":" + column + bottom).getDisplayValues();
+  var written = [];
+  var skipped = [];
+  for (var i = 0; i < changes.length; i++) {
+    var change = changes[i];
+    var text = now[change.row - top][0];
+    if (text !== change.from) {
+      skipped.push({ row: change.row, text: text });
+      continue;
+    }
+    var cell = sheet.getRange(column + change.row);
+    cell.setNumberFormat("@");
+    cell.setValue(String(change.to));
+    written.push(change.row);
+  }
+  return { written: written, skipped: skipped };
+}
+
+/** The column from row 2 to the sheet's last row, as A1 notation; rows added later are not included. */
+function belowHeader(sheet, column) {
+  var last = sheet.getMaxRows();
+  if (last < 2) throw new Error("the sheet has no rows below the header");
+  return String(column) + "2:" + String(column) + last;
+}
+
+/** The spreadsheet's own list validation: a dropdown, and any other value refused. Replaces what was there. */
+function setListValidation(target, values) {
+  var sheet = sheetFor(target);
+  var a1 = belowHeader(sheet, target.column);
+  var rule = SpreadsheetApp.newDataValidation().requireValueInList(values.map(String), true).setAllowInvalid(false).build();
+  sheet.getRange(a1).setDataValidation(rule);
+  return { range: a1 };
+}
+
+/** Clears every data validation rule on the column from row 2 down, not only one set here. */
+function clearListValidation(target) {
+  var sheet = sheetFor(target);
+  var a1 = belowHeader(sheet, target.column);
+  sheet.getRange(a1).clearDataValidations();
+  return { range: a1 };
 }
 
 /**

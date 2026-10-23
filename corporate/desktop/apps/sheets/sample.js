@@ -16,7 +16,8 @@ const SAMPLE_SECTION = Object.freeze({
   },
   columns: [
     { match: { header: "^(customer|client)", sheet: "^Orders" }, vocabulary: "customers" },
-    { match: { header: "^cost cent" }, vocabulary: "costCentres" },
+    // Strict: a cost centre column takes only the list's values (the add-in can check it and turn on list validation).
+    { match: { header: "^cost cent" }, vocabulary: "costCentres", strict: true },
     { match: { header: "notes?$" }, kind: "notes" },
   ],
   blocks: [

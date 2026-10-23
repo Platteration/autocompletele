@@ -1,6 +1,7 @@
 // extle core: column-aware completion for spreadsheet cells. A
 // column bound to a controlled vocabulary (customers,
-// cost centres, product codes) completes to the organisation's one spelling;
+// cost centres, product codes) completes to the organisation's one spelling,
+// and a strict one to nothing else (checkColumn lists the cells that differ);
 // other columns complete from their own values, notes columns from recurring
 // sentences; a `/` trigger inserts an approved formula or block of rows. Pure:
 // reading cells and writing them back is the Excel / Google Sheets add-in's job.
@@ -45,10 +46,14 @@ function fold(value) {
  * A value that Excel and Google Sheets would evaluate as a formula when the
  * add-in writes it into a cell (= + - @, tab, carriage return), unless it is
  * a plain signed number. Stops a vocabulary or column value from injecting a
- * formula into every sheet it is completed into.
+ * formula into every sheet it is completed into. The full-width forms
+ * ＝ ＋ － ＠ (U+FF1D, U+FF0B, U+FF0D, U+FF20) count too, with no number
+ * exception: whether a host evaluates them is unconfirmed, so they are kept
+ * out of cells the same way.
  */
 function formulaLike(value) {
   const text = String(value);
+  if (/^[\uFF1D\uFF0B\uFF0D\uFF20]/.test(text)) return true;
   return /^[=+\-@\t\r]/.test(text) && !/^[-+]?\d+(?:[.,]\d+)?$/.test(text);
 }
 
@@ -132,7 +137,13 @@ function normalizeColumn(raw, index, vocabularies, warnings) {
   if (!!vocabulary === !!kind) return warnings.push(where + " ignored: give a vocabulary or a kind, not " + (vocabulary ? "both" : "neither")), null;
   if (vocabulary && !Object.hasOwn(vocabularies, vocabulary)) return warnings.push(where + " ignored: unknown vocabulary " + vocabulary), null;
   if (kind && !KINDS.includes(kind)) return warnings.push(where + " ignored: kind must be one of " + KINDS.join(", ")), null;
-  return vocabulary ? { match, vocabulary } : { match, kind };
+  // strict: the column takes only the vocabulary's values. The flag is dropped, not the rule, when it cannot apply.
+  let strict = false;
+  if (raw.strict != null && typeof raw.strict !== "boolean") warnings.push(where + ": strict ignored: give true or false");
+  else if (raw.strict === true && !vocabulary) warnings.push(where + ": strict ignored: only a vocabulary column can be strict");
+  else strict = raw.strict === true;
+  if (!vocabulary) return { match, kind };
+  return strict ? { match, vocabulary, strict } : { match, vocabulary };
 }
 
 function normalizeBlock(raw, index, seen, warnings) {
@@ -281,15 +292,18 @@ function matchType(candidate, query) {
  * values by frequency; within each, prefix matches before substring matches.
  * In a notes column only the sentence being typed is completed, from
  * sentences that recur; number and date columns complete from the vocabulary
- * only. `start` is where the completion replaces the typed text.
- * context: { vocabulary: name|{values,aliases}, profile, config, kind, limit }
+ * only. `start` is where the completion replaces the typed text. With
+ * `strict` (a strict vocabulary column) only the vocabulary's values are
+ * offered, for the whole cell; the column's own values only count towards them.
+ * context: { vocabulary: name|{values,aliases}, profile, config, kind, strict, limit }
  */
 function complete(prefix, context) {
   const ctx = context || {};
   const typed = String(prefix == null ? "" : prefix);
+  const strict = ctx.strict === true;
   const kind = KINDS.includes(ctx.kind) ? ctx.kind : ctx.profile && ctx.profile.kind;
   let start = 0;
-  if (kind === "notes") {
+  if (kind === "notes" && !strict) {
     const ends = [...typed.matchAll(/[.!?]+["'”’)]*\s+/g)];
     if (ends.length) start = ends[ends.length - 1].index + ends[ends.length - 1][0].length;
   }
@@ -328,7 +342,7 @@ function complete(prefix, context) {
       if (match) offer(canonical.get(value.toLowerCase()), "vocabulary", match, alias);
     }
   }
-  for (const entry of learned) {
+  for (const entry of strict ? [] : learned) {
     const match = covered.has(entry.value.toLowerCase()) ? null : matchType(entry.value, query);
     if (match) offer(entry.value, "column", match);
   }
@@ -412,7 +426,7 @@ function suggest(input, config) {
   const column = columnFor(given.header, given.sheet, config);
   const profile = createColumnProfile(values);
   const text = String(given.text == null ? "" : given.text);
-  const context = { profile, config, limit: given.limit };
+  const context = { profile, config, limit: given.limit, strict: !!(column && column.strict) };
   if (column) context[column.vocabulary ? "vocabulary" : "kind"] = column.vocabulary || column.kind;
   const hit = blockFor(text, config);
   return {
@@ -421,6 +435,35 @@ function suggest(input, config) {
     completions: complete(text, context),
     block: hit ? Object.assign({ start: hit.start }, hit.block) : null,
   };
+}
+
+/**
+ * Compare a column's cells with a vocabulary, for a strict column. A cell is
+ * canonical when its text is exactly a vocabulary value. A cell that is a
+ * value in other capitals or spacing, or an alias, is a fix: `value` is the
+ * vocabulary's spelling. Anything else is unknown. Blank cells are skipped.
+ * cells: [{ row, text }] in row order; vocabulary: { values, aliases }.
+ * @returns {{checked:number, canonical:number, fixes:{row:number,text:string,value:string,alias:boolean}[], unknown:{row:number,text:string}[]}}
+ */
+function checkColumn(cells, vocabulary) {
+  const values = vocabulary && Array.isArray(vocabulary.values) ? vocabulary.values : [];
+  const canonical = new Map(values.map((value) => [value.toLowerCase(), value]));
+  const aliases = new Map();
+  for (const [alias, value] of Object.entries(vocabulary && isObject(vocabulary.aliases) ? vocabulary.aliases : {})) {
+    if (canonical.has(String(value).toLowerCase())) aliases.set(fold(alias), canonical.get(String(value).toLowerCase()));
+  }
+  const out = { checked: 0, canonical: 0, fixes: [], unknown: [] };
+  for (const cell of Array.isArray(cells) ? cells : []) {
+    const text = String(cell && cell.text != null ? cell.text : "");
+    const key = fold(text);
+    if (!key) continue;
+    out.checked++;
+    if (canonical.get(key) === text) out.canonical++;
+    else if (canonical.has(key)) out.fixes.push({ row: cell.row, text, value: canonical.get(key), alias: false });
+    else if (aliases.has(key)) out.fixes.push({ row: cell.row, text, value: aliases.get(key), alias: true });
+    else out.unknown.push({ row: cell.row, text });
+  }
+  return out;
 }
 
 /** The section as the add-in takes it: the three lists and nothing else. A parsed section comes back unchanged. */
@@ -457,4 +500,4 @@ function organizationItems(section) {
   return (section && Array.isArray(section.blocks) ? section.blocks : []).map((block) => ({ trigger: block.trigger, kind: "block" }));
 }
 
-module.exports = { KINDS, DEFAULTS, normalizeSheets, columnFor, createColumnProfile, complete, blockFor, importCsv, formulaLike, suggest, exportConfig, parseConfig, organizationItems };
+module.exports = { KINDS, DEFAULTS, normalizeSheets, columnFor, createColumnProfile, complete, blockFor, importCsv, formulaLike, suggest, checkColumn, exportConfig, parseConfig, organizationItems };

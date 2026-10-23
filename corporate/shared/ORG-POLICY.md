@@ -52,14 +52,15 @@ below.
 | `reply.max` | How many replies the popover lists (default 3, 1 to 10). |
 | `reply.dateOrder` | `dmy` (default) or `mdy`: how `3/4/2026`-style dates in the message are read. |
 | `sheets.vocabularies` | Object of name → `{ values: [...], aliases: { alias: value } }`, or a plain list of values. A vocabulary without a usable values list, or with no usable value, is skipped with a warning. |
-| `sheets.vocabularies.<name>.values` | The organisation's one spelling of each value. Compared case-insensitively: the first spelling is kept and a different one is warned about; empty values and values a cell would read as a formula (leading `=`, `+`, `-`, `@`, tab or CR, unless a plain signed number) are skipped. |
+| `sheets.vocabularies.<name>.values` | The organisation's one spelling of each value. Compared case-insensitively: the first spelling is kept and a different one is warned about; empty values and values a cell would read as a formula (leading `=`, `+`, `-`, `@`, tab or CR, unless a plain signed number; or leading full-width `＝`, `＋`, `－`, `＠`, with no number exception) are skipped. |
 | `sheets.vocabularies.<name>.aliases` | alias → value. The value must be in the vocabulary; an alias that is itself another value, or already means another value, is skipped. Typing an alias completes to the value. |
 | `sheets.columns` | List of rules tried in policy order; the first whose patterns hold decides how a column completes. Each needs a `match` object and exactly one of `vocabulary` or `kind`. |
 | `sheets.columns[].match.header`, `.sheet` | Case-insensitive regular expressions tested against the column header (row 1) and the sheet name; at least one is required, an omitted one matches anything; an invalid pattern skips the rule. |
 | `sheets.columns[].vocabulary` | Name of a vocabulary above (unknown names skip the rule). The column offers the vocabulary's values first, then its own values; column spellings and aliases of a vocabulary value count towards it and are not offered themselves. A vocabulary column whose values look like numbers or dates still completes from the vocabulary. |
+| `sheets.columns[].strict` | Optional, `true` or `false` (the default). `true` makes a vocabulary column strict: it completes only to the vocabulary's values (an alias completes to its value), always for the whole cell, never to the column's own values. In the add-in a strict column also offers "Check this column" (the cells that hold an alias, or a value in other capitals or spacing, and the cells whose value is not in the list, with their rows), "Replace N aliases with the list's spelling" (unknown values are never changed) and the spreadsheet's own list validation on and off; each write waits for a confirmation. Any value other than `true`, `false` or `null`, or `strict: true` on a rule with a `kind`, is ignored with a warning and the rule is kept. |
 | `sheets.columns[].kind` | `label`, `notes`, `number` or `date`. `label` or `notes` override what the column's values suggest (`notes` completes only the sentence being typed, from sentences that recur in at least 2 cells); `number` or `date` switch completion off for the column, since a rule with a kind has no vocabulary. |
 | `sheets.blocks` | List of `{ trigger, label, rows }` or `{ trigger, label, formula }`. The trigger starts with `/`, has no spaces and is unique; it fires only when it ends at the caret after a word boundary. `label` defaults to the trigger. |
-| `sheets.blocks[].rows` | Rows of text, numbers or booleans written as a rectangle from the selected cell (ragged rows are padded with `""`; text cells get the text format, numbers and booleans the general one); at most 10,000 cells. A text cell that a cell would read as a formula (leading `=`, `+`, `-`, `@`, tab or CR, unless a plain signed number) skips the whole block with a warning naming its row and column; use `formula` to write a formula. The add-in lists the rows under the Insert button before writing them; rows from a configuration a document carries are written only after a confirmation naming the range they replace. |
+| `sheets.blocks[].rows` | Rows of text, numbers or booleans written as a rectangle from the selected cell (ragged rows are padded with `""`; text cells get the text format, numbers and booleans the general one); at most 10,000 cells. A text cell that a cell would read as a formula (leading `=`, `+`, `-`, `@`, tab or CR, unless a plain signed number; or leading full-width `＝`, `＋`, `－`, `＠`) skips the whole block with a warning naming its row and column; use `formula` to write a formula. The add-in lists the rows under the Insert button before writing them; rows from a configuration a document carries are written only after a confirmation naming the range they replace. |
 | `sheets.blocks[].formula` | Starts with `=`; written into the selected cell as a formula. A block with both `rows` and `formula` is skipped. |
 | `forms.records[]` | Named field sets. `id` (a repeated id is renamed with `-dup` and warned), `label` (default: the id), `trigger` (optional; typed to open the record; a trigger another record already has is dropped with a warning and the record stays palette-only; at typing time a library shortcut or document set with the same trigger wins), `fields` (field name → text; numbers and booleans are written as text, other values are dropped with a warning; a record without fields is dropped). Values may hold `[[blank]]` templates, filled from a lookup row or the person's answers. |
 | `forms.lookups[]` | Local lists that fill fields from a key. `id`, `key` (required: the column that holds the key), `keyPattern` (optional regular expression; a key is also found inside longer text, such as a copied subject line, where it stands as a whole word; an invalid pattern is dropped with a warning and exact matching stays), `rows[]` (objects; a row without the key column, or repeating a key case-insensitively, is dropped with a warning; non-text values are dropped). A lookup without usable rows is dropped. The row's columns fill form fields and record blanks of the same name. |
@@ -133,8 +134,24 @@ vocabulary values come first (an alias or another spelling completes to the
 organisation's one spelling), then the column's own values by frequency, prefix
 before substring matches, 8 at most, never the text typed. A completion is written
 as text (number format `@`); a notes cell whose typed start looks like a formula
-(`=`, `+`, `-`, `@`) is left alone with a message. A `/` trigger typed in the pane
-inserts the block's rows or formula at the selected cell.
+(`=`, `+`, `-`, `@`, or their full-width forms `＝`, `＋`, `－`, `＠`) is left alone with
+a message. A `/` trigger typed in the pane inserts the block's rows or formula at the
+selected cell.
+
+A strict column (`strict: true`) completes only to its vocabulary's values. The pane
+says so ("Only values from the "costCentres" list.") and offers three tools, each of
+which writes only after a confirmation that names what changes: "Check this column"
+compares the values already read (header excluded, the selected cell included) with
+the list, case-insensitively, and lists aliases and other spellings, and values not
+in the list, with their rows (ten of each, the rest counted); "Replace N aliases with
+the list's spelling" reads those cells again and writes the list's value as text
+into each one that still holds what the check read, reporting the others; "Turn on
+list validation for this column" writes the host's own list rule on the column from
+row 2 down, so the spreadsheet refuses other values (Excel with ExcelApi 1.8 and a
+list of at most 255 characters with its commas and no comma inside a value; Google
+with no documented limit), and "Remove list validation" clears every rule on those
+cells. A list rule stays in the file like any other cell setting. On the desk, the
+extle tab marks the strict rules and its "Try it" box completes them the same way.
 
 Stored: the configuration pasted into the add-in's Settings, in the browser's
 localStorage (the copy that applies in every document) and in the workbook's

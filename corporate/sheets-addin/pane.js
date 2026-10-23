@@ -9,8 +9,17 @@
 // chose it; it is only offered, with where it comes from and what it would
 // change, and never copied into the browser.
 //
-// bridge: { readContext() -> Promise<{sheet, address, text, header, values, clipped}|null>,
+// In a strict column (a vocabulary column rule with strict: true) the pane
+// also checks the column against the list, replaces aliases with the list's
+// spelling and turns the host's list validation on or off; each write waits
+// for a confirmation.
+//
+// bridge: { readContext() -> Promise<{sheet, address, text, header, values, rows, clipped}|null>,
 //           writeValue(target, text), writeRows(target, rows), writeFormula(target, formula),
+//           replaceValues({sheet, column}, [{row, from, to}]) -> Promise<{written: [row], skipped: [{row, text}]}>,
+//           listValidation: null | { refusal?(values) -> reason|null, apply({sheet, column}, values, message) -> Promise<{range}>,
+//                                    remove({sheet, column}) -> Promise<{range}> },
+//           listValidationMissing: why there is no listValidation (shown as a hint),
 //           loadConfig() -> Promise<string>, saveConfig(text), onSelectionChanged(handler) }
 (function (root) {
   "use strict";
@@ -20,6 +29,7 @@
   const PREVIEW_CHARS = 200; // characters of one listed row
   const NAME_CHARS = 40;     // characters of a vocabulary name or trigger quoted in the offer
   const OFFER_ITEMS = 10;    // changes listed in the offer, formula blocks first; the rest are counted
+  const CHECK_ITEMS = 10;    // cells listed under each heading of a column check; the rest are counted
 
   function el(document, tag, attrs, children) {
     const node = document.createElement(tag);
@@ -131,6 +141,21 @@
     return height === 1 && width === 1 ? first : first + ":" + name + (Number(match[2]) + height - 1);
   }
 
+  /** "B4" -> { letters: "B", row: 4 }; null for an address this cannot read. */
+  function cellAt(address) {
+    const match = /^\$?([A-Za-z]{1,3})\$?([1-9]\d*)$/.exec(String(address));
+    return match ? { letters: match[1].toUpperCase(), row: Number(match[2]) } : null;
+  }
+
+  /** At most `max` lines, then "… and N more". */
+  function capped(lines, max) {
+    return lines.length > max ? lines.slice(0, max).concat("… and " + (lines.length - max) + " more") : lines;
+  }
+
+  function cells(n) {
+    return n === 1 ? "1 cell" : n + " cells";
+  }
+
   function reason(error) {
     return String((error && error.message) || error || "unknown error");
   }
@@ -154,9 +179,11 @@
     const make = (tag, attrs, children) => el(document, tag, attrs, children);
     // organization: the parsed browser copy (or what was saved this session); documentText: what the document carries;
     // fromDocument: the document's configuration is in use; offer: the document's, not yet used; pending: a block from it awaiting confirmation.
-    const state = { config: core.parseConfig("").config, warnings: [], context: null, text: "", lastKey: "", message: "", reads: 0, organization: core.parseConfig(""), organizationText: "", documentText: "", fromDocument: false, offer: null, pending: null };
+    // strict: the strict column the cell is in; check: the last column check there; strictPending: a strict-column write awaiting confirmation.
+    const state = { config: core.parseConfig("").config, warnings: [], context: null, text: "", lastKey: "", message: "", reads: 0, organization: core.parseConfig(""), organizationText: "", documentText: "", fromDocument: false, offer: null, pending: null, strict: null, check: null, strictPending: null };
     // The block buttons now shown, so focus can follow a button that a re-render (a selection event or the sidebar's poll) replaces.
-    const live = { insert: null, confirm: null };
+    // strict: the strict column's buttons by name ("check", "replace", "validate", "unvalidate", "confirm", "cancel").
+    const live = { insert: null, confirm: null, strict: new Map() };
     const ui = {
       context: make("p", { class: "context", text: "Select a cell." }),
       refresh: make("button", { class: "plain", type: "button", text: "Refresh" }),
@@ -164,6 +191,7 @@
       input: make("input", { type: "text", class: "text", placeholder: "Cell text, or a / trigger", "aria-label": "Cell text" }),
       completions: make("ul", { class: "completions" }),
       block: make("div", { class: "block" }),
+      strict: make("div", { class: "strict" }),
       message: make("p", { class: "message", role: "status" }),
       configText: make("textarea", { class: "config", placeholder: "Paste the exported configuration (JSON) here", "aria-label": "Configuration" }),
       save: make("button", { class: "primary", type: "button", text: "Save configuration" }),
@@ -175,6 +203,7 @@
       make("label", {}, ["Cell text", ui.input]),
       ui.completions,
       ui.block,
+      ui.strict,
       ui.message,
       make("details", {}, [
         make("summary", { text: "Settings" }),
@@ -252,6 +281,7 @@
       // Read before the buttons are removed: a removed element takes the focus with it.
       const active = document.activeElement;
       const refocus = !active ? null : live.confirm && active === live.confirm.write ? "write" : live.confirm && active === live.confirm.cancel ? "cancel" : active === live.insert ? "insert" : null;
+      const strictFocus = active ? [...live.strict].filter(([, button]) => button === active).map(([name]) => name)[0] || null : null;
       live.insert = null;
       live.confirm = null;
       ui.completions.textContent = "";
@@ -259,6 +289,7 @@
       if (!c) {
         ui.context.textContent = "Select a cell.";
         drop(pending);
+        renderStrict(null, null);
         return null;
       }
       const suggestion = core.suggest({ header: c.header, sheet: c.sheet, text: state.text, values: c.values }, state.config);
@@ -288,7 +319,208 @@
           if (refocus === "insert") focus(button);
         }
       }
+      renderStrict(strictColumn(suggestion), strictFocus);
       return suggestion;
+    }
+
+    /** The strict column rule that applies to the selected cell, with what the column tools need; null outside one. */
+    function strictColumn(suggestion) {
+      const c = state.context;
+      const column = suggestion.column;
+      if (!column || !column.strict) return null;
+      const at = cellAt(c.address);
+      return { name: column.vocabulary, vocabulary: state.config.vocabularies[column.vocabulary], sheet: c.sheet, at, key: at ? c.sheet + "\u0000" + at.letters + "\u0000" + column.vocabulary : "" };
+    }
+
+    function dropStrictPending() {
+      const pending = state.strictPending;
+      state.strictPending = null;
+      if (pending && state.message === pending.notice) say("");
+    }
+
+    /** "This list comes from this document's configuration ..." while the document's configuration is in use. */
+    function listOrigin() {
+      return state.fromDocument ? "This list comes from this document's configuration, not your organisation's. " : "";
+    }
+
+    /**
+     * The strict column's line and tools: "Check this column" with what the
+     * last check found, the replacement of aliases, and list validation on
+     * and off. A check or a question belongs to one column of one sheet; it is
+     * dropped when the cell moves to another column or the column stops
+     * being strict.
+     */
+    function renderStrict(strict, refocus) {
+      live.strict = new Map();
+      ui.strict.textContent = "";
+      state.strict = strict;
+      if (state.check && (!strict || state.check.key !== strict.key)) state.check = null;
+      if (state.strictPending && (!strict || state.strictPending.key !== strict.key)) dropStrictPending();
+      if (!strict) return;
+      ui.strict.append(make("p", { class: "strict-rule", text: "Only values from the " + quoted(strict.name) + " list." }));
+      // An address the pane cannot read names no column, so there is nothing to check or validate.
+      if (!strict.at) return;
+      const button = (name, cls, text, handler) => {
+        const node = make("button", { type: "button", class: cls, text });
+        node.addEventListener("click", handler);
+        live.strict.set(name, node);
+        return node;
+      };
+      const pending = state.strictPending;
+      if (!pending) ui.strict.append(make("div", { class: "actions" }, [button("check", "plain", "Check this column", () => checkThisColumn(strict.key))]));
+      const check = state.check;
+      if (check) {
+        const result = check.result;
+        ui.strict.append(make("p", { class: "check-summary", text: checkSummary(check) }));
+        if (result.fixes.length) {
+          ui.strict.append(
+            make("p", { text: "Aliases and other spellings, with the list's spelling:" }),
+            make("ul", { class: "preview", id: "actle-strict-fixes", "aria-label": "Cells that can take the list's spelling" }, capped(result.fixes.map((fix) => check.letters + fix.row + ": " + quoted(fix.text) + " → " + quoted(fix.value)), CHECK_ITEMS).map((line) => make("li", { text: line }))),
+          );
+        }
+        if (result.unknown.length) {
+          ui.strict.append(
+            make("p", { text: "Not in the list, left as they are:" }),
+            make("ul", { class: "preview", "aria-label": "Cells not in the list" }, capped(result.unknown.map((cell) => check.letters + cell.row + ": " + quoted(cell.text)), CHECK_ITEMS).map((line) => make("li", { text: line }))),
+          );
+        }
+        const n = result.fixes.length;
+        if (n && !pending) ui.strict.append(make("div", { class: "actions" }, [button("replace", "primary", "Replace " + n + (n === 1 ? " alias" : " aliases") + " with the list's spelling", () => askReplace(check))]));
+      }
+      if (pending) {
+        const described = { type: "button", "aria-describedby": "actle-strict-question" + (pending.kind === "replace" ? " actle-strict-fixes" : "") };
+        const yes = make("button", Object.assign({ class: "primary", text: pending.confirmText }, described));
+        yes.addEventListener("click", () => confirmStrict(pending));
+        const no = make("button", Object.assign({ class: "plain", text: "Cancel" }, described));
+        no.addEventListener("click", () => cancelStrict(pending));
+        live.strict.set("confirm", yes);
+        live.strict.set("cancel", no);
+        ui.strict.append(make("p", { class: "confirm", id: "actle-strict-question", text: pending.question }), make("div", { class: "actions" }, [yes, no]));
+      } else if (bridge.listValidation) {
+        const validation = bridge.listValidation;
+        const refused = typeof validation.refusal === "function" ? validation.refusal(strict.vocabulary.values) : null;
+        if (refused) ui.strict.append(make("p", { class: "hint", text: "List validation is not available for this list: " + refused + "." }));
+        const tools = refused ? [] : [button("validate", "plain", "Turn on list validation for this column", () => askValidation(strict.key))];
+        tools.push(button("unvalidate", "plain", "Remove list validation", () => askRemoval(strict.key)));
+        ui.strict.append(make("div", { class: "actions" }, tools));
+      } else if (bridge.listValidationMissing) {
+        ui.strict.append(make("p", { class: "hint", text: String(bridge.listValidationMissing) }));
+      }
+      if (refocus && live.strict.has(refocus)) focus(live.strict.get(refocus));
+    }
+
+    function checkSummary(check) {
+      const result = check.result;
+      return "Column " + check.letters + ": " + cells(result.checked) + " with text checked" + (check.clipped ? " (first rows only)" : "")
+        + "; " + result.canonical + " match the list, " + result.fixes.length + " can take the list's spelling, " + result.unknown.length + " are not in the list.";
+    }
+
+    /**
+     * Compare the column's values the pane read (header excluded; the
+     * selected cell included) with the strict column's list. Nothing is
+     * written; the result is listed until the cell moves to another column.
+     */
+    function checkThisColumn(key) {
+      const strict = state.strict;
+      // A button left from another column checks nothing.
+      if (!strict || strict.key !== key) return;
+      const c = state.context;
+      // Row numbers come with the values from this add-in's own bridges; a Code.gs older than this pane sends none.
+      if (!Array.isArray(c.rows) || c.rows.length !== c.values.length) {
+        say("Cannot check column " + strict.at.letters + ": the spreadsheet side of the add-in sent no row numbers. Update its files.");
+        return;
+      }
+      const list = c.values.map((text, i) => ({ row: c.rows[i], text }));
+      if (strict.at.row >= 2) list.push({ row: strict.at.row, text: c.text });
+      list.sort((a, b) => a.row - b.row);
+      state.check = { key, letters: strict.at.letters, sheet: strict.sheet, clipped: !!c.clipped, result: core.checkColumn(list, strict.vocabulary) };
+      say(checkSummary(state.check));
+      render();
+    }
+
+    /** Open a strict-column question: the status line says nothing was written yet, and the focus goes to Cancel. */
+    function ask(pending) {
+      state.strictPending = pending;
+      say(pending.notice);
+      render();
+      focus(live.strict.get("cancel"));
+    }
+
+    function askReplace(check) {
+      // A button from a check that is gone (another column, another configuration) asks nothing.
+      if (state.check !== check) return;
+      const n = check.result.fixes.length;
+      ask({
+        kind: "replace", key: check.key, from: "replace", sheet: check.sheet, letters: check.letters, fixes: check.result.fixes,
+        notice: "Nothing written yet: confirm the list's spelling for " + cells(n) + " in column " + check.letters + ", or cancel.",
+        question: listOrigin() + "Write the list's spelling into " + cells(n) + " of column " + check.letters + " on " + quoted(check.sheet) + ", as listed above? Each cell is read again first; one that changed since the check is skipped.",
+        confirmText: "Replace " + cells(n),
+      });
+    }
+
+    function askValidation(key) {
+      const strict = state.strict;
+      if (!strict || strict.key !== key) return;
+      const values = strict.vocabulary.values.slice();
+      ask({
+        kind: "validate", key, from: "validate", sheet: strict.sheet, letters: strict.at.letters, name: strict.name, values,
+        notice: "Nothing written yet: confirm list validation for column " + strict.at.letters + ", or cancel.",
+        question: listOrigin() + "Turn on list validation for column " + strict.at.letters + " on " + quoted(strict.sheet) + ", from row 2 down? The spreadsheet will then refuse any value that is not one of the " + values.length + " values of the " + quoted(strict.name) + " list, and data validation those cells have now is replaced.",
+        confirmText: "Turn it on",
+      });
+    }
+
+    function askRemoval(key) {
+      const strict = state.strict;
+      if (!strict || strict.key !== key) return;
+      ask({
+        kind: "unvalidate", key, from: "unvalidate", sheet: strict.sheet, letters: strict.at.letters,
+        notice: "Nothing changed yet: confirm removing the data validation from column " + strict.at.letters + ", or cancel.",
+        question: "Remove the data validation from column " + strict.at.letters + " on " + quoted(strict.sheet) + ", from row 2 down? This clears any data validation those cells have, not only a list turned on here.",
+        confirmText: "Remove it",
+      });
+    }
+
+    function cancelStrict(pending) {
+      if (state.strictPending !== pending) return;
+      state.strictPending = null;
+      say("Nothing changed in column " + pending.letters + ".");
+      render();
+      focus(live.strict.get(pending.from));
+    }
+
+    function replaced(pending, result) {
+      const skipped = result.skipped || [];
+      let text = "Wrote the list's spelling into " + cells(result.written.length) + " of column " + pending.letters + ".";
+      if (skipped.length) text += " Skipped " + cells(skipped.length) + " that changed since the check: " + capped(skipped.map((cell) => pending.letters + cell.row + " (now " + quoted(cell.text) + ")"), CHECK_ITEMS).join(", ") + ".";
+      return text;
+    }
+
+    /** The confirmed write. A button from a question that is gone writes nothing. */
+    async function confirmStrict(pending) {
+      if (state.strictPending !== pending) return;
+      state.strictPending = null;
+      const target = { sheet: pending.sheet, column: pending.letters };
+      try {
+        if (pending.kind === "replace") {
+          const result = await bridge.replaceValues(target, pending.fixes.map((fix) => ({ row: fix.row, from: fix.text, to: fix.value })));
+          state.check = null;
+          say(replaced(pending, result));
+        } else if (pending.kind === "validate") {
+          const result = await bridge.listValidation.apply(target, pending.values, "Only values from the " + quoted(pending.name) + " list.");
+          say("List validation is on for " + result.range + " on " + quoted(pending.sheet) + ": the spreadsheet now refuses values that are not in the " + quoted(pending.name) + " list.");
+        } else {
+          const result = await bridge.listValidation.remove(target);
+          say("Removed the data validation from " + result.range + " on " + quoted(pending.sheet) + ".");
+        }
+      } catch (error) {
+        const what = pending.kind === "replace" ? "write the list's spelling into" : pending.kind === "validate" ? "turn on list validation for" : "remove the data validation from";
+        say("Could not " + what + " column " + pending.letters + ": " + reason(error));
+      }
+      // The cells changed under the pane: read the selection again so the column's values are current.
+      if (pending.kind === "replace") await refresh();
+      else render();
+      focus(live.strict.get(pending.from) || live.strict.get("check"));
     }
 
     /** Where the configuration in use came from, or the document's own configuration on offer. */
@@ -417,6 +649,9 @@
       state.config = parsed.config;
       state.warnings = parsed.warnings;
       state.fromDocument = fromDocument;
+      // A check or a question was made against the configuration that was in use; another one starts afresh.
+      state.check = null;
+      dropStrictPending();
       ui.summary.textContent = (fromDocument ? "This document's configuration, in use instead of the text above: " : "") + summarize(parsed);
       renderOrigin();
       render();
