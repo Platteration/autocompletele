@@ -1,0 +1,74 @@
+{
+  "assumeExternal": false,
+  "internalDomains": ["example.com"],
+  "internalCodes": ["\\bPRJ-[A-Z]{3,8}\\b"],
+  "packs": [
+    {
+      "id": "pci",
+      "label": "Card data (PCI DSS)",
+      "rules": [
+        {
+          "id": "card-number",
+          "label": "Card number in a message",
+          "detect": ["card-number"],
+          "severity": "block",
+          "message": "A payment card number is in this message. Card data may only be entered in the payment system.",
+          "fix": { "kind": "remove", "with": "[card number removed]" }
+        }
+      ]
+    },
+    {
+      "id": "gdpr",
+      "label": "Personal data (GDPR)",
+      "rules": [
+        {
+          "id": "national-id",
+          "label": "National ID number to an outside recipient",
+          "detect": ["national-id"],
+          "countries": ["GB", "ES", "FR"],
+          "recipients": "external",
+          "message": "A national identification number is going to someone outside the organisation.",
+          "fix": { "kind": "remove" }
+        },
+        {
+          "id": "secrets",
+          "label": "Password or token in a message",
+          "detect": ["secret"],
+          "severity": "block",
+          "message": "Never send passwords or tokens in a message. Use the password manager's sharing feature."
+        }
+      ]
+    },
+    {
+      "id": "legal",
+      "label": "Legal",
+      "rules": [
+        {
+          "id": "contract-disclaimer",
+          "label": "Contract without the confidentiality notice",
+          "keywords": ["contract", "agreement"],
+          "unless": ["This message is confidential"],
+          "message": "You are writing about a contract without the confidentiality notice.",
+          "fix": { "kind": "text", "text": "This message is confidential and intended for the addressee only." }
+        },
+        {
+          "id": "no-guarantees",
+          "label": "Forbidden promise",
+          "detect": ["forbidden-phrase"],
+          "phrases": ["guaranteed", "100% safe", "risk-free"],
+          "severity": "info",
+          "message": "Do not promise guarantees; the terms of service say what we commit to.",
+          "fix": { "kind": "remove" }
+        },
+        {
+          "id": "project-codes",
+          "label": "Internal project code to an outside recipient",
+          "detect": ["internal-code"],
+          "recipients": "external",
+          "message": "An internal project code is going outside the organisation.",
+          "fix": { "kind": "remove", "with": "[project]" }
+        }
+      ]
+    }
+  ]
+}

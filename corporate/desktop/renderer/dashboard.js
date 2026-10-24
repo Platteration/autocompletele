@@ -36,8 +36,47 @@
     text($("status"), message);
   }
 
+  // The suite's apps: one tab each, rendered by renderer/apps/<id>.js through
+  // window.actleApps[id].render(section, helpers, change). Tabs are inserted
+  // before Policy; an app without a renderer gets a placeholder.
+  const appRenderers = window.actleApps || {};
+  let appList = [];
+  function addAppTabs(list) {
+    const nav = document.querySelector("nav");
+    const policyTab = nav.querySelector('[data-tab="policy"]');
+    const policySection = $("tab-policy");
+    for (const app of list) {
+      if (!app.tab || $("tab-" + app.id)) continue;
+      const button = el("button", { role: "tab", "data-tab": app.id, "aria-selected": "false", text: app.title });
+      nav.insertBefore(button, policyTab);
+      const section = el("section", { id: "tab-" + app.id, role: "tabpanel" });
+      section.hidden = true;
+      policySection.parentNode.insertBefore(section, policySection);
+    }
+  }
+  const helpers = { api, el, text, announce, seconds, preview: (value) => String(value || "").replace(/\s+/g, " ").slice(0, 140) };
+  async function renderSuiteTabs(change) {
+    for (const app of appList) {
+      if (!app.tab) continue;
+      const section = $("tab-" + app.id);
+      const renderer = appRenderers[app.id];
+      if (!section) continue;
+      if (!renderer || typeof renderer.render !== "function") {
+        section.textContent = "";
+        section.append(el("p", { class: "hint", text: app.title + " has no dashboard page yet." }));
+        continue;
+      }
+      try {
+        await renderer.render(section, helpers, change || {});
+      } catch (error) {
+        section.textContent = "";
+        section.append(el("p", { class: "hint", text: app.title + " could not be shown: " + (error && error.message || error) }));
+      }
+    }
+  }
+
   // Tabs
-  const tabs = Array.from(document.querySelectorAll("nav [role=tab]"));
+  let tabs = Array.from(document.querySelectorAll("nav [role=tab]"));
   function select(name) {
     for (const tab of tabs) {
       const on = tab.dataset.tab === name;
@@ -46,7 +85,7 @@
     }
     try { localStorage.setItem("tab", name); } catch (error) { /* optional */ }
   }
-  tabs.forEach((tab) => tab.addEventListener("click", () => select(tab.dataset.tab)));
+  tabs.forEach((tab) => { tab.dataset.wired = "1"; tab.addEventListener("click", () => select(tab.dataset.tab)); });
   document.querySelector("nav").addEventListener("keydown", (event) => {
     const index = tabs.indexOf(document.activeElement);
     if (index < 0) return;
@@ -184,7 +223,7 @@
   }
 
   $("corpus-clear").addEventListener("click", async () => {
-    if (!window.confirm("Delete all learned text on this computer, including suggestions not yet exported? Proposals based on it disappear. Your shortcuts and statistics are not affected.")) return;
+    if (!window.confirm("Delete all learned text on this computer, including suggestions not yet exported and the fills cactle stored for learning? Proposals based on it disappear. Your shortcuts and statistics are not affected.")) return;
     await api.clearLearning();
     announce("Learned text deleted");
   });
@@ -352,6 +391,96 @@
     if (!policy.documents.length) docs.append(el("p", { class: "hint", text: "No document shortcuts in the policy." }));
   }
 
+  // factle (filing)
+  async function renderFiling() {
+    const info = await api.getFilingInfo();
+    const status = info.status || {};
+    text($("filing-status"), !info.enabled ? "The organisation policy has no filing rules, so nothing is proposed."
+      : status.watching ? "Watching " + status.watching + " folder" + (status.watching === 1 ? "" : "s") + ". Each filing is credited " + info.secondsPerFiling + " s in the statistics."
+        : "No folder is being watched. Add one below or turn a policy folder on.");
+    const folders = $("filing-folders");
+    folders.textContent = "";
+    for (const folder of info.folders.policy.concat(info.folders.own)) {
+      const actions = el("td", {});
+      if (folder.source === "organization") {
+        const toggle = el("button", { class: "plain", text: folder.ignored ? "Turn on" : "Turn off" });
+        toggle.addEventListener("click", () => api.ignoreFilingFolder({ path: folder.raw, ignore: !folder.ignored }));
+        actions.append(toggle);
+      } else {
+        const remove = el("button", { class: "plain danger", text: "Remove" });
+        remove.addEventListener("click", () => api.removeFilingFolder(folder.raw));
+        actions.append(remove);
+      }
+      if (!folder.ignored && info.enabled) {
+        const rescan = el("button", { class: "plain", text: "File existing documents…" });
+        rescan.addEventListener("click", async () => {
+          if (!confirm("Propose a name and folder for every document already in " + folder.path + "? Each one is shown for you to confirm or skip.")) return;
+          const r = await api.rescanFilingFolder(folder.path);
+          announce(r.ok ? r.queued + " document(s) queued" : r.error);
+        });
+        actions.append(" ", rescan);
+      }
+      folders.append(el("tr", {}, [
+        el("td", { class: "mono", text: folder.path + (folder.recursive ? " (and subfolders)" : "") }),
+        el("td", { text: folder.source === "organization" ? "organisation" + (folder.label && folder.label !== folder.raw ? ": " + folder.label : "") : "you" }),
+        el("td", { text: folder.ignored ? "turned off" : (status.folders || []).includes(folder.path) ? "watching" : "not watching (missing folder?)" }),
+        actions,
+      ]));
+    }
+    if (!info.folders.policy.length && !info.folders.own.length) folders.append(el("tr", {}, [el("td", { colspan: "4", text: "No folders are watched." })]));
+    const rules = $("filing-rules");
+    rules.textContent = "";
+    for (const rule of info.rules) {
+      const when = rule.keywords.join(rule.match === "all" ? " + " : ", ") + (rule.extensions.length ? " (" + rule.extensions.join(", ") + ")" : "");
+      rules.append(el("tr", {}, [el("td", { text: rule.label }), el("td", { text: when }), el("td", { class: "mono", text: rule.name }), el("td", { class: "mono", text: rule.folder || "(same folder)" })]));
+    }
+    if (info.fallback) rules.append(el("tr", {}, [el("td", { text: info.fallback.label }), el("td", { text: "anything else" }), el("td", { class: "mono", text: info.fallback.name }), el("td", { class: "mono", text: info.fallback.folder || "(same folder)" })]));
+    if (!info.rules.length && !info.fallback) rules.append(el("tr", {}, [el("td", { colspan: "4", text: "No filing rules in the policy." })]));
+    await renderFiled();
+  }
+
+  async function renderFiled() {
+    const query = $("filing-query").value.trim();
+    const rows = query ? await api.searchFiling(query) : await api.getFilingRecent(50);
+    const info = await api.getFilingInfo();
+    text($("filing-count"), info.indexed + " filed document" + (info.indexed === 1 ? "" : "s") + (query ? ", " + rows.length + " matching" : ""));
+    $("filing-clear").disabled = !info.indexed;
+    const body = $("filing-recent");
+    body.textContent = "";
+    for (const entry of rows) {
+      const undo = el("button", { class: "plain", text: "Undo" });
+      undo.addEventListener("click", async () => {
+        const r = await api.undoFiling(entry.id);
+        announce(r.ok ? "Moved back to " + r.to : r.error);
+        if (!r.ok) alert(r.error);
+      });
+      const reveal = el("button", { class: "plain", text: "Reveal" });
+      // By index entry id: main.js reveals only what the filing index holds.
+      reveal.addEventListener("click", async () => {
+        const r = await api.revealFiled(entry.id);
+        if (r && r.ok === false) announce(r.error);
+      });
+      body.append(el("tr", {}, [
+        el("td", { text: entry.filedAt ? new Date(entry.filedAt).toLocaleString() : "" }),
+        el("td", { class: "mono", text: entry.originalName }),
+        el("td", { class: "mono", text: entry.path }),
+        el("td", { text: entry.ruleLabel || entry.rule }),
+        el("td", {}, [undo, " ", reveal]),
+      ]));
+    }
+    if (!rows.length) body.append(el("tr", {}, [el("td", { colspan: "5", text: query ? "Nothing matches." : "Nothing filed yet." })]));
+  }
+  $("filing-query").addEventListener("input", () => { renderFiled().catch(console.error); });
+  $("filing-add-folder").addEventListener("click", async () => {
+    const r = await api.addFilingFolder();
+    if (r && r.ok) announce("Folder added");
+  });
+  $("filing-clear").addEventListener("click", async () => {
+    if (!confirm("Forget every filed document in the index? The files themselves are not touched, but Undo and the palette search will no longer find them.")) return;
+    const r = await api.clearFiling();
+    announce("Index cleared (" + r.removed + " entries)");
+  });
+
   // Usage report preview and export
   async function openReport() {
     const report = await api.previewReport();
@@ -392,6 +521,9 @@
     "corpus-key-replaced": "Learning key replaced",
     "corpus-encrypted": "Learned text encrypted",
     "corpus-deleted": "Learned text deleted",
+    "document-filed": "Document filed",
+    "document-unfiled": "Filing undone",
+    "filing-index-cleared": "Filing index cleared",
   };
 
   function auditDetail(entry) {
@@ -414,6 +546,11 @@
         return entry.source + " is reachable again";
       case "capture-rules-changed":
         return (entry.rules || []).map((r) => (r.label || JSON.stringify(r.match)) + " = " + r.mode).join(", ") || "all own rules removed";
+      case "document-filed":
+      case "document-unfiled":
+        return (entry.rule ? entry.rule + ": " : "") + entry.from + " \u2192 " + entry.to;
+      case "filing-index-cleared":
+        return entry.entries + " entries";
       default:
         return "";
     }
@@ -478,7 +615,7 @@
   }
 
   async function renderAll(change) {
-    const what = change || { metrics: true, library: true, learning: true, settings: true, status: true, context: true, policy: true };
+    const what = change || { metrics: true, library: true, learning: true, settings: true, status: true, context: true, policy: true, filing: true };
     if (what.status || what.context) await renderStatus();
     if (what.settings || what.library || what.learning) await renderPolicyTabs();
     if (what.metrics || what.settings) await renderOverview();
@@ -486,11 +623,23 @@
     if (what.learning || what.library) await renderLearning();
     if (what.settings) await renderApps();
     if (what.settings || what.policy) await renderPolicy();
+    if (what.settings || what.policy || what.filing) await renderFiling();
+    await renderSuiteTabs(what);
   }
 
   api.onChange((change) => { renderAll(change).catch(console.error); });
-  let initial = "overview";
-  try { initial = localStorage.getItem("tab") || initial; } catch (error) { /* optional */ }
-  select(tabs.some((t) => t.dataset.tab === initial) ? initial : "overview");
-  renderAll().catch(console.error);
+  (async function init() {
+    try {
+      appList = await api.listApps();
+    } catch (error) {
+      appList = [];
+    }
+    addAppTabs(appList);
+    tabs = Array.from(document.querySelectorAll("nav [role=tab]"));
+    tabs.forEach((tab) => { if (!tab.dataset.wired) { tab.dataset.wired = "1"; tab.addEventListener("click", () => select(tab.dataset.tab)); } });
+    let initial = "overview";
+    try { initial = localStorage.getItem("tab") || initial; } catch (error) { /* optional */ }
+    select(tabs.some((t) => t.dataset.tab === initial) ? initial : "overview");
+    await renderAll();
+  })().catch(console.error);
 })();

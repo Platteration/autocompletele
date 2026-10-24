@@ -1,6 +1,7 @@
 // Electron main process: tray icon, the dashboard window, popovers for
-// templates, documents and keyword offers, and the wiring between the input
-// listener, the headless assistant and the text sender.
+// templates, documents, keyword offers and document filing, and the wiring
+// between the input listener, the folder watcher, the headless assistant and
+// the text sender.
 "use strict";
 
 const path = require("node:path");
@@ -8,9 +9,15 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, shell, nativeImage, 
 const { createAssistant } = require("./assistant.js");
 const { createInputListener } = require("./adapters/input.js");
 const { createSender } = require("./adapters/sender.js");
+const { createFolderWatcher } = require("./filer.js");
+const guards = require("./shell-guards.js");
+const { NAMES } = require("./apps/index.js");
 const { personal } = require("../core/index.js");
 
 const SINGLE = app.requestSingleInstanceLock();
+// Every window keeps the page it loaded: no navigation, no window.open.
+app.on("web-contents-created", (event, contents) => guards.guardNavigation(contents));
+
 if (!SINGLE) {
   app.quit();
 } else {
@@ -25,11 +32,17 @@ let tray = null;
 let dashboard = null;
 let popover = null;
 let popoverState = null;
+// Popover windows main.js has put on screen; popover:get reports it as `shown`.
+const shownPopovers = new WeakSet();
 let listenerStatus = { available: false, error: "starting" };
 let dashboardFocused = false;
 let lastContext = {};
 let paletteWindow = null;
 let paletteStatus = { accelerator: "", registered: false, error: null };
+let folderWatcher = null;
+// Documents waiting for their filing popover: one at a time, in arrival order.
+const filingQueue = [];
+let filingStatus = { watching: 0, folders: [] };
 
 function notify(body) {
   if (Notification.isSupported()) new Notification({ title: "actle", body }).show();
@@ -87,9 +100,25 @@ function updateTray() {
     { label: "Open dashboard", click: openDashboard },
     { label: "Search shortcuts…" + (paletteStatus.registered ? " (" + paletteStatus.accelerator.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl") + ")" : ""), click: openPalette },
     { label: "Enabled", type: "checkbox", checked: enabled, click: (item) => { assistant.setEnabled(item.checked); updateTray(); broadcast({ settings: true }); } },
+    ...appTrayItems(),
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ]));
+}
+
+function appTrayItems() {
+  const items = [];
+  for (const appItem of assistant.apps) {
+    if (typeof appItem.trayItems !== "function") continue;
+    try {
+      for (const entry of appItem.trayItems(shellApi()) || []) {
+        if (entry && entry.label && typeof entry.click === "function") items.push({ label: entry.label, click: () => entry.click(shellApi()) });
+      }
+    } catch (error) {
+      assistant.log("app " + appItem.id + " tray items failed: " + error.message);
+    }
+  }
+  return items.length ? [{ type: "separator" }, ...items] : [];
 }
 
 function trayIcon() {
@@ -114,14 +143,23 @@ function showPopover(name, state, size) {
     frame: false, alwaysOnTop: true, resizable: false, skipTaskbar: true, title: "actle",
   }, size)));
   popover.loadFile(path.join(__dirname, "renderer", name + ".html"));
-  popover.once("ready-to-show", () => popover.show());
+  // A popover that opens on its own (filing) or never takes the keys
+  // (focusable: false) is shown without activating the window or the app;
+  // the person clicks into it (see shell-guards.js). The page is told when
+  // it is on screen: filing.js counts clicks only from a moment later.
+  const win = popover;
+  win.once("ready-to-show", () => {
+    win[guards.popoverShowMethod(state.kind, size)]();
+    shownPopovers.add(win);
+    win.webContents.send("popover:shown");
+  });
   // Values typed into a template form are actle's own input: never expanded
   // or learned (the keyword popover cannot take the focus at all).
   popover.on("focus", () => setOwnWindow(true));
   popover.on("blur", () => { setOwnWindow(false); if (state.kind === "keyword") closePopover(); });
   // A window closed while focused may not emit "blur" first; never leave the
   // engine believing actle's own window has the focus.
-  popover.on("closed", () => { popover = null; popoverState = null; setOwnWindow(!!BrowserWindow.getFocusedWindow()); });
+  popover.on("closed", () => { popover = null; popoverState = null; setOwnWindow(!!BrowserWindow.getFocusedWindow()); setTimeout(nextFiling, 0); });
 }
 
 function closePopover() {
@@ -140,6 +178,10 @@ function handleAction(action) {
       return showPopover("template", Object.assign({ kind: "template" }, action), { width: 420, height: 120 + 72 * (action.fields.length + action.variables.length) });
     case "documents":
       return showPopover("documents", Object.assign({ kind: "documents" }, action), { width: 460, height: 160 + 44 * action.documents.length });
+    case "filing":
+      return showPopover("filing", { kind: "filing", proposal: action.proposal }, { width: 540, height: 280 + 62 * action.proposal.missing.length });
+    case "app":
+      return showAppPopover(action);
     case "keyword":
     case "warning":
       return showPopover("keyword", { kind: "keyword", warning: action.type === "warning", hits: action.hits.map((hit) => ({ rule: hit.rule, matched: hit.matched })) }, { width: 380, height: 90 + 72 * action.hits.length, focusable: false });
@@ -150,6 +192,8 @@ function handleAction(action) {
 
 async function submitPopover(payload) {
   const state = popoverState;
+  if (state && state.kind === "filing") return submitFiling(state, payload);
+  if (state && state.kind === "app") return submitAppPopover(state, payload);
   closePopover();
   if (!state || !payload) return { ok: false };
   if (state.kind === "template") {
@@ -164,7 +208,15 @@ async function submitPopover(payload) {
       for (const doc of chosen) shell.showItemInFolder(doc.path);
     }
     if (chosen.length) {
-      clipboard.writeText(chosen.map((doc) => doc.path).join("\n"));
+      // Electron 44 writes the clipboard asynchronously: nothing is reported as copied until the write landed.
+      const failed = await Promise.resolve()
+        .then(() => clipboard.writeText(chosen.map((doc) => doc.path).join("\n")))
+        .then(() => null, (error) => (error && error.message) || String(error));
+      if (failed) {
+        assistant.log("documents: the clipboard could not be written: " + failed);
+        notify("The file paths could not be copied (" + failed + ").");
+        return { ok: false, error: failed };
+      }
       if (state.backspaces) await sender.replace({ backspaces: state.backspaces, text: "", cursorOffset: 0 });
       assistant.recordInsert({ kind: "document", trigger: state.trigger, count: chosen.length });
       notify(chosen.length + " file path" + (chosen.length === 1 ? "" : "s") + " copied. Paste or drag them into the attachment area.");
@@ -198,6 +250,146 @@ async function submitPopover(payload) {
   return { ok: true };
 }
 
+// The suite's apps: an engine action {type: "app", app, popover, ...} opens
+// the popover the app declared; the app's submit handler gets a small shell
+// API to type text, use the clipboard, notify and open further actions.
+function shellApi() {
+  return {
+    sender,
+    clipboard,
+    notify,
+    broadcast,
+    closePopover,
+    handleAction,
+    showItemInFolder: (p) => shell.showItemInFolder(String(p)),
+    openDashboard,
+    // After a popover closes, give the focus back to the application the
+    // person was writing in before the paste keystroke goes out (the palette
+    // takes the same pause; macOS also needs the app hidden).
+    settle: async () => {
+      if (process.platform === "darwin") app.hide();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    },
+  };
+}
+
+function showAppPopover(action) {
+  const app = assistant.app(action.app);
+  const def = app && app.popovers && app.popovers[action.popover];
+  if (!def || !def.file) {
+    assistant.log("app " + action.app + " has no popover " + action.popover);
+    return null;
+  }
+  const size = typeof def.size === "function" ? def.size(action) : def.size;
+  return showPopover(def.file, Object.assign({ kind: "app" }, action), Object.assign({ width: 440, height: 220 }, size || {}, def.focusable === false ? { focusable: false } : {}));
+}
+
+async function submitAppPopover(state, payload) {
+  const app = assistant.app(state.app);
+  const def = app && app.popovers && app.popovers[state.popover];
+  if (!def || typeof def.submit !== "function") {
+    closePopover();
+    return { ok: false, error: "no handler" };
+  }
+  let result;
+  try {
+    result = await def.submit(state, payload || {}, shellApi());
+  } catch (error) {
+    result = { ok: false, error: String(error && error.message || error) };
+  }
+  // A refused submission keeps the popover open with the reason, as filing does.
+  if (!result || result.ok !== false || result.close) closePopover();
+  broadcast({ metrics: true, apps: true });
+  return result || { ok: true };
+}
+
+// Document filing: new files in watched folders get a popover; the person
+// confirms, edits or skips. A refused filing keeps the popover open with the
+// reason, so a document is never moved under an unfinished name.
+async function submitFiling(state, payload) {
+  if (!payload || payload.action === "skip") {
+    closePopover();
+    return { ok: true };
+  }
+  if (payload.action === "ignoreFolder") {
+    // Every watch still on that proposes this document: its folder, or a
+    // recursive watch above it. Only the document this popover shows, never
+    // a path the page sends.
+    const file = state.proposal.path;
+    const covering = guards.watchesCovering(file, assistant.filingFolders().active);
+    if (!covering.length) return { ok: false, error: "This document's folder is no longer watched, so there is nothing to turn off. Skip it, or change folders on the " + NAMES.filing.name + " tab." };
+    for (const folder of covering) {
+      if (folder.source === "organization") assistant.filingIgnoreFolder(folder.raw, true);
+      else assistant.filingRemoveFolder(folder.raw);
+    }
+    dropUnwatchedFromQueue();
+    closePopover();
+    startWatching();
+    broadcast({ settings: true, filing: true });
+    const message = guards.ignoredFoldersMessage(file, covering);
+    if (message) notify(message);
+    return { ok: true, turnedOff: covering.map((folder) => folder.path) };
+  }
+  const result = assistant.applyFiling({ path: state.proposal.path, name: payload.name, answers: payload.answers });
+  if (!result.ok) return result;
+  closePopover();
+  notify("Filed as " + result.name + (result.folder !== path.dirname(result.from) ? " in " + result.folder : ""));
+  broadcast({ metrics: true, filing: true });
+  return result;
+}
+
+const filingQueued = new Set();
+function enqueueFiling(file) {
+  if (filingQueued.has(file)) return;
+  filingQueued.add(file);
+  filingQueue.push(file);
+  nextFiling();
+}
+
+// Documents queued from a folder that was turned off or removed since are
+// not shown (a rescan can queue thousands).
+function dropUnwatchedFromQueue() {
+  const kept = guards.stillWatched(filingQueue, assistant.filingFolders().active);
+  filingQueue.length = 0;
+  filingQueued.clear();
+  for (const queued of kept) {
+    filingQueue.push(queued);
+    filingQueued.add(queued);
+  }
+}
+
+// One popover at a time. A loop, not a recursion: a rescan of a large folder
+// where most files get no proposal must not grow the stack, and a proposal
+// that throws must not escape the timer that called this.
+function nextFiling() {
+  // A paused desk proposes nothing, and keeps the queue for the resume.
+  if (!assistant || assistant.paused) return;
+  while (!popover && filingQueue.length) {
+    const file = filingQueue.shift();
+    filingQueued.delete(file);
+    let proposal = null;
+    try {
+      proposal = assistant.filingProposal(file);
+    } catch (error) {
+      assistant.log("filing: " + file + ": " + (error && error.message || error));
+    }
+    if (proposal) {
+      handleAction({ type: "filing", proposal });
+      return;
+    }
+  }
+}
+
+function startWatching() {
+  if (!folderWatcher) {
+    folderWatcher = createFolderWatcher({ onFile: enqueueFiling, log: (line) => assistant.log(line) });
+  }
+  const info = assistant.filingInfo();
+  const folders = info.enabled ? info.folders.active : [];
+  const watching = folderWatcher.start(folders);
+  filingStatus = { watching, folders: folders.map((f) => f.path), enabled: info.enabled };
+}
+
 // Signed policy layers are fetched at start and then every refreshMinutes.
 // A failed fetch keeps the last good copy (the assistant warns and audits it).
 let refreshTimer = null;
@@ -213,7 +405,23 @@ async function refreshPolicy() {
   if (assistant.paused !== wasPaused) {
     const message = assistant.policyInfo().paused.message;
     notify(assistant.paused ? "Paused by your organisation" + (message ? ": " + message : ".") : "Your organisation resumed actle.");
+    // Kill-switch consistency (the pause is not a security boundary): a
+    // paused desk offers nothing, so an open popover or palette goes too.
+    // A document whose filing popover closes waits at the head of the queue
+    // and is proposed again on the resume; what was typed into another
+    // popover is discarded.
+    if (assistant.paused) {
+      const waiting = popoverState && popoverState.kind === "filing" ? popoverState.proposal.path : null;
+      closePopover();
+      closePalette();
+      if (waiting && !filingQueued.has(waiting)) {
+        filingQueue.unshift(waiting);
+        filingQueued.add(waiting);
+      }
+    }
   }
+  startWatching();
+  if (wasPaused && !assistant.paused) nextFiling();
   updateTray();
   broadcast({ settings: true, status: true, policy: true });
   return result;
@@ -271,7 +479,8 @@ async function choosePalette(choice) {
   // Give the focus back to the application the person was writing in.
   if (process.platform === "darwin") app.hide();
   await new Promise((resolve) => setTimeout(resolve, 150));
-  const action = assistant.paletteChoose(choice);
+  // An app's choice may wait for the clipboard (Electron 44 reads it asynchronously).
+  const action = await assistant.paletteChoose(choice);
   if (!action) return { ok: false };
   if (action.type === "expand") {
     await sender.replace(action);
@@ -314,7 +523,48 @@ function registerIpc() {
   handle("policy:refresh", () => refreshPolicy());
   handle("policy:audit", () => assistant.audit(100));
   handle("settings:get", () => assistant.settings());
-  handle("settings:save", (next) => { const r = assistant.saveSettings(next || {}); updateTray(); broadcast({ settings: true }); return r; });
+  handle("settings:save", (next) => { const r = assistant.saveSettings(next || {}); updateTray(); startWatching(); broadcast({ settings: true }); return r; });
+  handle("filing:info", () => Object.assign(assistant.filingInfo(), { status: filingStatus }));
+  handle("filing:recent", (limit) => assistant.filingRecent(limit));
+  handle("filing:undo", (id) => { const r = assistant.undoFiling(String(id || "")); broadcast({ filing: true }); return r; });
+  handle("filing:search", (q) => assistant.filingSearch(String(q == null ? "" : q), 50));
+  handle("filing:clear", () => { const r = assistant.filingClear(); broadcast({ filing: true }); return r; });
+  handle("filing:addFolder", async () => {
+    const picked = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+    if (picked.canceled || !picked.filePaths.length) return { ok: false, canceled: true };
+    const r = assistant.filingAddFolder(picked.filePaths[0]);
+    startWatching();
+    broadcast({ settings: true, filing: true });
+    return r;
+  });
+  handle("filing:removeFolder", (raw) => { const r = assistant.filingRemoveFolder(String(raw || "")); dropUnwatchedFromQueue(); startWatching(); broadcast({ settings: true, filing: true }); return r; });
+  handle("filing:ignoreFolder", (q) => { const r = assistant.filingIgnoreFolder(String((q && q.path) || ""), !(q && q.ignore === false)); dropUnwatchedFromQueue(); startWatching(); broadcast({ settings: true, filing: true }); return r; });
+  handle("filing:rescan", (folder) => {
+    const target = String(folder || "");
+    const known = assistant.filingFolders().active.find((f) => f.path === target);
+    if (!known || !folderWatcher) return { ok: false, error: "Not a watched folder." };
+    const files = folderWatcher.listFiles(known.path, known.recursive);
+    for (const file of files) enqueueFiling(file);
+    return { ok: true, queued: files.length };
+  });
+  // An index entry id from the factle tab, or the exact path of the last
+  // extle export; never any other path (shell-guards.js revealTarget).
+  handle("filing:reveal", async (request) => {
+    const sheets = await assistant.invoke("sheets:info");
+    const target = guards.revealTarget(request, {
+      entries: assistant.filingRecent(Math.max(1, assistant.filingInfo().indexed)),
+      exportPaths: sheets && sheets.ok && sheets.lastExport ? [sheets.lastExport.path] : [],
+    });
+    if (!target) return { ok: false, error: "Not a filed document or an export of this desk." };
+    shell.showItemInFolder(target);
+    return { ok: true };
+  });
+  handle("apps:list", () => assistant.appsInfo());
+  handle("app:invoke", async (q) => {
+    const result = await assistant.invoke(q && q.channel, q && q.payload);
+    if (result && result.broadcast) broadcast(result.broadcast);
+    return result;
+  });
   handle("settings:enabled", (value) => { const r = assistant.setEnabled(value !== false); updateTray(); broadcast({ settings: true }); return r; });
   handle("learning:candidates", () => assistant.candidates());
   handle("learning:accept", (c) => { const r = assistant.acceptCandidate(c || {}); broadcast({ library: true, learning: true }); return r; });
@@ -342,10 +592,11 @@ function registerIpc() {
     paused: assistant.paused,
     pausedMessage: assistant.policyInfo().paused.message,
     palette: paletteStatus,
+    filing: filingStatus,
     context: lastContext,
     version: app.getVersion(),
   }));
-  handle("popover:get", () => popoverState);
+  handle("popover:get", () => popoverState && Object.assign({}, popoverState, { shown: !!popover && shownPopovers.has(popover) }));
   handle("popover:submit", (payload) => submitPopover(payload));
   handle("popover:close", () => { closePopover(); return { ok: true }; });
 }
@@ -388,12 +639,32 @@ function start() {
   for (const warning of assistant.warnings()) notify(warning);
   schedulePolicyRefresh();
   registerPaletteShortcut();
+  startWatching();
+  for (const appItem of assistant.apps) {
+    if (typeof appItem.onStart !== "function") continue;
+    try {
+      appItem.onStart(shellApi());
+    } catch (error) {
+      assistant.log("app " + appItem.id + " start failed: " + error.message);
+    }
+  }
   updateTray();
   openDashboard();
 }
 
+// One { metrics: true } for all the entries recorded in one turn of the event
+// loop: an extle usage import records up to 20,000 at once, and each change
+// makes the dashboard query the whole ledger again.
 function ledgerBroadcast() {
-  assistant.ledger.onRecord(() => broadcast({ metrics: true }));
+  let queued = false;
+  assistant.ledger.onRecord(() => {
+    if (queued) return;
+    queued = true;
+    setImmediate(() => {
+      queued = false;
+      broadcast({ metrics: true });
+    });
+  });
 }
 
 app.on("window-all-closed", () => {
@@ -404,6 +675,8 @@ app.on("will-quit", () => globalShortcut.unregisterAll());
 
 app.on("before-quit", () => {
   if (refreshTimer) clearInterval(refreshTimer);
+  if (assistant) for (const appItem of assistant.apps) { if (typeof appItem.onStop === "function") { try { appItem.onStop(); } catch (error) { /* quitting */ } } }
+  if (folderWatcher) folderWatcher.stop();
   if (listener) listener.stop();
   if (assistant) assistant.endSession();
 });

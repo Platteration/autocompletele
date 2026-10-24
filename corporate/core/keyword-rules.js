@@ -153,4 +153,4 @@ function detect(text, rules, state, options) {
   return hits;
 }
 
-module.exports = { DEFAULTS, MATCH, INSERT_KINDS, ACTIONS, DETECTORS, normalizeRules, createState, detect };
+module.exports = { DEFAULTS, MATCH, INSERT_KINDS, ACTIONS, DETECTORS, normalizeRules, createState, detect, keywordPattern };

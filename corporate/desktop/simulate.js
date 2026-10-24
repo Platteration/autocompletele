@@ -9,6 +9,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createAssistant } = require("./assistant.js");
+const { NAMES } = require("./apps/index.js");
 
 const POLICY_FILE = path.join(__dirname, "..", "shared", "org-policy.example.json");
 const FALLBACK_POLICY = {
@@ -37,11 +38,24 @@ const testKeychain = {
 };
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "actle-corporate-sim-"));
+// Document filing needs real folders: the example policy's "S:/Shared/..."
+// targets are redirected under the temp folder for this run.
+const docsDir = fs.mkdtempSync(path.join(os.tmpdir(), "actle-corporate-docs-"));
+const inbox = path.join(docsDir, "inbox");
+fs.mkdirSync(inbox);
+const basePolicy = fs.existsSync(POLICY_FILE) ? JSON.parse(fs.readFileSync(POLICY_FILE, "utf8")) : FALLBACK_POLICY;
+const simPolicy = JSON.parse(JSON.stringify(basePolicy));
+if (simPolicy.filing) {
+  simPolicy.filing.watch = [{ path: inbox, label: "Inbox" }];
+  for (const rule of simPolicy.filing.rules || []) rule.folder = rule.folder ? rule.folder.replace(/^S:\/Shared/, docsDir) : "";
+}
+const simPolicyFile = path.join(dataDir, "simulated-policy.json");
+fs.writeFileSync(simPolicyFile, JSON.stringify(simPolicy));
 const assistant = createAssistant({
   dataDir,
   now,
   keychain: testKeychain,
-  policyFile: fs.existsSync(POLICY_FILE) ? POLICY_FILE : null,
+  policyFile: simPolicyFile,
   policy: FALLBACK_POLICY,
 });
 
@@ -114,6 +128,42 @@ tick(24 * 60 * 60 * 1000);
 focus({ process: "OUTLOOK.EXE", title: "Follow-up - Message" });
 type("Thanks for reaching out to our support team. We will get back to you within one business day.\n\n");
 assistant.endSession();
+
+// Document filing: three files land in the watched inbox. The policy names
+// them from their text (a Word invoice, a plain-text contract) or, for a PDF
+// that is not read, from the file name plus the blanks the person answers.
+print("\n" + NAMES.filing.name + ": " + NAMES.filing.covers);
+const { zipArchive } = require("../core/extract.js");
+const docx = (text) => zipArchive({ "word/document.xml": "<w:document><w:body><w:p><w:r><w:t>" + text + "</w:t></w:r></w:p></w:body></w:document>" });
+fs.writeFileSync(path.join(inbox, "Scan_0412.docx"), docx("INVOICE INV-20481 Acme Logistics GmbH, amount due 1,250.00 EUR, 21.10.2026"));
+fs.writeFileSync(path.join(inbox, "draft (3).txt"), "SERVICE AGREEMENT between Nordwind and Example Logistics Ltd (hereinafter the Provider), signed 1 October 2026.");
+fs.writeFileSync(path.join(inbox, "invoice_scan.pdf"), "%PDF-1.4");
+fs.writeFileSync(path.join(inbox, "holiday.jpg"), "jpeg");
+const filed = [];
+for (const name of fs.readdirSync(inbox).sort()) {
+  const file = path.join(inbox, name);
+  const proposal = assistant.filingProposal(file);
+  print(`  ${name}: ${proposal.rule.label} (${proposal.matched.length ? "found " + proposal.matched.join(", ") : "no rule matched"}${proposal.read.unsupported ? "; name only" : ""}) -> ${proposal.name}${proposal.inPlace ? "" : " in " + path.relative(docsDir, proposal.folder)}${proposal.missing.length ? "; asks for " + proposal.missing.join(", ") : ""}`);
+  const result = assistant.applyFiling({ path: file, answers: proposal.missing.length ? { client: "Birch & Co", ref: "INV-20499" } : null });
+  print(`    -> ${result.ok ? "filed as " + path.relative(docsDir, result.to) : "refused: " + result.error}`);
+  if (result.ok) filed.push(result);
+}
+print("  palette search 'acme': " + assistant.paletteSearch("acme").map((i) => i.kind + " " + i.trigger).join(", "));
+const undone = assistant.undoFiling(filed[filed.length - 1].id);
+print(`  undo last: ${undone.ok ? "back at " + path.relative(docsDir, undone.to) : undone.error}`);
+print(`  index holds ${assistant.filingInfo().indexed} document(s); document text in index: ${fs.readFileSync(path.join(dataDir, "filing-index.json"), "utf8").includes("amount due") ? "YES" : "no"}`);
+
+// The suite's apps each walk through their own scenario headlessly.
+for (const app of assistant.apps) {
+  if (typeof app.simulate !== "function") continue;
+  print("\n" + app.title + (NAMES[app.id] ? ": " + NAMES[app.id].covers : "") + " (app)");
+  try {
+    app.simulate({ print, assistant, focus, type, tick, now, brief, docsDir, describe });
+  } catch (error) {
+    print("  FAILED: " + (error && error.stack || error));
+    process.exitCode = 1;
+  }
+}
 
 print("\nMetrics");
 for (const period of ["day", "week", "month", "all"]) {
@@ -192,7 +242,9 @@ async function managedDesk() {
 managedDesk().then(() => {
   console.log(out.join("\n"));
   fs.rmSync(dataDir, { recursive: true, force: true });
-  process.exit(0);
+  fs.rmSync(docsDir, { recursive: true, force: true });
+  // A walk-through that failed set exitCode above; keep it.
+  process.exit(process.exitCode || 0);
 }, (error) => {
   console.log(out.join("\n"));
   console.error(error);

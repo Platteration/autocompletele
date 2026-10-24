@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- template
+  extle: Office task-pane add-in manifest for Excel, as a template. This file
+  is not a manifest: `node build.js` in package mode (see INSTALL.md) fills each
+  placeholder in double braces with a value from the organisation's
+  configuration (extle.config.json), XML-escaped, and writes the manifest to
+  excel/manifest.xml next to the files it names. This comment is replaced by a
+  note that the file was generated.
+  No AppDomains: Microsoft's AppDomain reference says listing the domain of
+  SourceLocation has no effect, and every page and icon is served from there.
+-->
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+  <Id>{{ID}}</Id>
+  <Version>{{VERSION}}</Version>
+  <ProviderName>{{PROVIDER_NAME}}</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="{{DISPLAY_NAME}}"/>
+  <Description DefaultValue="{{DESCRIPTION}}"/>
+  <IconUrl DefaultValue="{{BASE_URL}}assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="{{BASE_URL}}assets/icon-64.png"/>
+  <SupportUrl DefaultValue="{{SUPPORT_URL}}"/>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="ExcelApi" MinVersion="1.7"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="{{BASE_URL}}taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="actle.Group">
+                <Label resid="actle.Group.Label"/>
+                <Icon>
+                  <bt:Image size="16" resid="actle.Icon.16"/>
+                  <bt:Image size="32" resid="actle.Icon.32"/>
+                  <bt:Image size="80" resid="actle.Icon.80"/>
+                </Icon>
+                <Control xsi:type="Button" id="actle.OpenPane">
+                  <Label resid="actle.OpenPane.Label"/>
+                  <Supertip>
+                    <Title resid="actle.OpenPane.Label"/>
+                    <Description resid="actle.OpenPane.Tip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="actle.Icon.16"/>
+                    <bt:Image size="32" resid="actle.Icon.32"/>
+                    <bt:Image size="80" resid="actle.Icon.80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>actle.Pane</TaskpaneId>
+                    <SourceLocation resid="actle.Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="actle.Icon.16" DefaultValue="{{BASE_URL}}assets/icon-16.png"/>
+        <bt:Image id="actle.Icon.32" DefaultValue="{{BASE_URL}}assets/icon-32.png"/>
+        <bt:Image id="actle.Icon.80" DefaultValue="{{BASE_URL}}assets/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="actle.Taskpane.Url" DefaultValue="{{BASE_URL}}taskpane.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="actle.Group.Label" DefaultValue="{{DISPLAY_NAME}}"/>
+        <bt:String id="actle.OpenPane.Label" DefaultValue="Open {{DISPLAY_NAME}}"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="actle.OpenPane.Tip" DefaultValue="Open the {{DISPLAY_NAME}} pane: complete cells from your organisation's vocabularies and insert blocks or formulas by trigger."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

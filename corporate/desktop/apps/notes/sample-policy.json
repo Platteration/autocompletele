@@ -1,0 +1,41 @@
+{
+  "author": "author",
+  "dateOrder": "dmy",
+  "actions": { "heading": "Action items", "patterns": ["TODO", "ACTION"], "empty": "None" },
+  "documents": [
+    {
+      "id": "minutes",
+      "trigger": "/mins",
+      "label": "Meeting minutes",
+      "title": "Minutes – [[meeting]]",
+      "sections": [
+        { "heading": "Details", "body": ["{weekday} {date}", "Minute taker: [[author]]"] },
+        { "heading": "Attendees", "body": "- [[attendees]]" },
+        { "heading": "Discussion", "body": "{cursor}" },
+        { "heading": "Decisions" }
+      ]
+    },
+    {
+      "id": "handover",
+      "trigger": "/handover",
+      "label": "Shift handover",
+      "title": "Handover – {weekday} {date}",
+      "sections": [
+        { "heading": "Handing over", "body": "[[author]] to [[incoming]]" },
+        { "heading": "Open items", "body": "{cursor}" },
+        { "heading": "For the next shift" }
+      ],
+      "actions": { "heading": "Follow-ups" }
+    },
+    {
+      "id": "shift-log",
+      "trigger": "/shift",
+      "label": "Shift log",
+      "title": "Shift log – {date}",
+      "sections": [
+        { "heading": "Entries", "body": "{time} [[author]]: {cursor}" }
+      ],
+      "actions": false
+    }
+  ]
+}

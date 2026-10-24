@@ -1,0 +1,37 @@
+{
+  "max": 3,
+  "dateOrder": "dmy",
+  "extract": {
+    "customer": { "after": "Customer ID" }
+  },
+  "replies": [
+    {
+      "id": "late-delivery",
+      "label": "Late delivery",
+      "keywords": ["not arrived", "late", "delayed", "still waiting"],
+      "match": "any",
+      "text": "Dear [[firstName]],\n\nThank you for your message. I am sorry that order [[order]] has not reached you yet. I have asked the carrier for an update and will come back to you by [[promise]].\n\n{cursor}\n\nKind regards,\nExample Logistics Ltd"
+    },
+    {
+      "id": "invoice-copy",
+      "label": "Invoice copy",
+      "keywords": ["invoice"],
+      "text": "Dear [[firstName]],\n\nPlease find attached a copy of invoice [[reference]] for order [[order]].\n\nKind regards,\nExample Logistics Ltd"
+    },
+    {
+      "id": "returns",
+      "label": "Returns and refunds",
+      "keywords": ["return", "returns", "refund", "money back"],
+      "shorthand": "ret/"
+    },
+    {
+      "id": "tracking",
+      "label": "Tracking number",
+      "keywords": ["tracking", "track my parcel", "where is my parcel"],
+      "text": "Dear [[firstName]],\n\nYou can follow parcel [[tracking]] at https://track.example.com/[[tracking]] (customer [[customer]]).\n\nKind regards,\nExample Logistics Ltd",
+      "extract": {
+        "tracking": { "pattern": "\\b1Z[A-Z0-9]{16}\\b" }
+      }
+    }
+  ]
+}

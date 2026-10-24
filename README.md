@@ -36,7 +36,7 @@ built on one device can be exported and imported on the others:
 | `windows/`          | Windows  | .NET 8 tray app with a global keyboard hook; works in every program |
 | `android/`          | Android  | Accessibility service; works in other apps' text fields          |
 | `shared/`           | –        | Format specification and an example `shorthands.json`            |
-| `corporate/`        | Windows, macOS, Linux | Business edition: desktop assistant with statistics, learning, keyword offers and document shortcuts (see below) |
+| `corporate/`        | Windows, macOS, Linux | Business edition: desktop assistant with statistics, learning, keyword offers, document shortcuts and document filing (see below) |
 
 ## Business edition
 
@@ -47,8 +47,16 @@ per day, week and month; learning of recurring phrases and paragraphs in the
 applications a person opts in (mail clients, typically), with a diff overlay
 that shows which parts of similar messages change and turns them into
 `[[name]]` fill-in templates; keyword offers that insert predetermined text
-when certain words are written; and document shortcuts such as `/sld` that
-list the files an organisation designates for a job. Everything is driven by
+when certain words are written; document shortcuts such as `/sld` that
+list the files an organisation designates for a job; and factle, the
+document filing app, which names new files in watched folders from the
+organisation's naming rule and moves them where they belong, after the person
+confirms; and five more apps on the same desk: mactle (prewritten replies to
+mail, filled from the copied message), extle (column-aware completion in
+Excel and Google Sheets), cactle (fill a whole CRM or ticket form from a
+record), gactle (compliance warnings with masked findings) and dactle
+(minutes, handovers and logs in a house style, in Word, Docs or any editor).
+The desktop assistant that runs them is still actle. Everything is driven by
 one organisation policy file (`corporate/shared/ORG-POLICY.md`). See
 [corporate/README.md](corporate/README.md) for the assessment, architecture
 and current status. Rules for which edition a change touches are in

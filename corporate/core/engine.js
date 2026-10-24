@@ -19,9 +19,30 @@ const DEFAULTS = Object.freeze({
   minSessionLength: 20,
   // Whether the input adapter swallows the key that completes a trigger (the
   // Windows hook does; uiohook-style listeners cannot, so the character
-  // reaches the field and must be deleted too).
+  // reaches the field and must be deleted too). For the same reason the
+  // Backspace that asks for an undo has already removed one character of the
+  // expansion when the adapter cannot swallow it.
   swallowsTriggerKey: false,
 });
+
+// Keys sent to an application count characters (code points), never UTF-16
+// units: one Backspace removes an emoji, not half of it, so counting units
+// would delete the person's own text in front of an expansion.
+function chars(text) {
+  return Array.from(String(text == null ? "" : text)).length;
+}
+
+// True when every character the person sees is one code point. Applications
+// disagree on how many Backspaces remove a character made of several (a skin
+// tone, a flag, a family, a keycap, an accent typed as a combining mark):
+// Chromium and macOS remove such an emoji with one, other editors one code
+// point at a time. No count is right for every application, so such text is
+// never deleted by count.
+function singleCodePoints(text) {
+  return chars(text) === metrics.graphemes(text);
+}
+
+const ORGANIZATION_KINDS = Object.freeze(["document", "keyword", "filed", "reply", "form", "guard", "notes"]);
 
 function mergeLibraries(personal, organization) {
   const own = expander.sanitizeList(personal);
@@ -50,6 +71,10 @@ function createEngine(options) {
   let personal = expander.sanitizeList(settings.library);
   let library = mergeLibraries(personal, policy.library);
   const keywordState = keywords.createState();
+  // App extensions (the suite): each may offer a trigger source checked after
+  // the library and document shortcuts, and a check run when a word ends on
+  // the current field's text. See setExtensions.
+  let extensions = [];
 
   let buffer = "";
   let fieldText = "";
@@ -96,7 +121,28 @@ function createEngine(options) {
   }
 
   function tracksField() {
-    return policy.keywordRules.length > 0;
+    // Credential prompts, password managers and terminals (capture-policy's
+    // sensitive contexts): no field text is held there, so nothing typed at a
+    // no-echo prompt sits in memory or reaches a check or a clipboard copy.
+    if (decision.sensitive) return false;
+    return policy.keywordRules.length > 0 || extensions.some((ext) => typeof ext.check === "function");
+  }
+
+  function resetExtensions() {
+    for (const ext of extensions) {
+      if (typeof ext.reset === "function") ext.reset();
+    }
+  }
+
+  /**
+   * Register app extensions: [{ id, trigger(textBeforeCaret) -> {trigger, action}|null,
+   * check(fieldText, context) -> action|null, reset() }]. A trigger hit becomes an
+   * action { type: "app", app: id, trigger, backspaces, ...action }; a check hit
+   * becomes { type: "app", app: id, ...action }. Replaces the previous set.
+   */
+  function setExtensions(list) {
+    extensions = (Array.isArray(list) ? list : []).filter((ext) => ext && typeof ext === "object" && typeof ext.id === "string" && ext.id);
+    if (!tracksField()) fieldText = "";
   }
 
   function capField() {
@@ -143,6 +189,7 @@ function createEngine(options) {
     buffer = "";
     fieldText = "";
     keywordState.reset();
+    resetExtensions();
     const ended = flushSession();
     context = nextContext && typeof nextContext === "object" ? Object.assign({}, nextContext) : {};
     decision = decideMode();
@@ -156,6 +203,7 @@ function createEngine(options) {
     buffer = "";
     fieldText = "";
     keywordState.reset();
+    resetExtensions();
     const ended = flushSession();
     if (decision.mode === "learn") startSession();
     return ended;
@@ -163,7 +211,7 @@ function createEngine(options) {
 
   function expandAction(match, keyText) {
     const sh = match.shorthand;
-    const typedInField = settings.swallowsTriggerKey ? sh.trigger.length - keyText.length : sh.trigger.length;
+    const typedInField = settings.swallowsTriggerKey ? chars(sh.trigger) - chars(keyText) : chars(sh.trigger);
     const backspaces = Math.max(0, typedInField);
     buffer = "";
     if (template.requiresInput(sh.expansion)) {
@@ -202,18 +250,25 @@ function createEngine(options) {
     const text = String(k.text == null ? "" : k.text);
     if (decision.mode === "off") return [];
 
-    if (k.isBackspace && undo) {
+    // Undo deletes the expansion by count. When it has a character made of
+    // several code points, the count depends on the application, and a wrong
+    // one deletes the person's own text in front of it: no undo is sent, the
+    // Backspace stays an ordinary deletion (handled below, which also counts
+    // the expansion) and the application's own undo (Ctrl+Z) can remove it.
+    if (k.isBackspace && undo && singleCodePoints(undo.text.slice(0, undo.cursorOffset)) && singleCodePoints(undo.text.slice(undo.cursorOffset))) {
       const reverted = undo;
       undo = null;
       pendingRecord = null;
       buffer = reverted.trigger;
       sessionTail(reverted.learned, reverted.trigger);
       fieldTail(reverted.text.length, reverted.trigger);
+      const before = chars(reverted.text.slice(0, reverted.cursorOffset));
       return [{
         type: "undo",
         trigger: reverted.trigger,
-        charsBeforeCaret: reverted.cursorOffset,
-        charsAfterCaret: reverted.text.length - reverted.cursorOffset,
+        // The person's Backspace reached the field when the adapter cannot swallow it.
+        charsBeforeCaret: settings.swallowsTriggerKey ? before : Math.max(0, before - 1),
+        charsAfterCaret: chars(reverted.text.slice(reverted.cursorOffset)),
       }];
     }
     // A modifier or dead key on its own keeps the undo window open.
@@ -227,9 +282,15 @@ function createEngine(options) {
       return [];
     }
     if (k.resetsBuffer) {
+      // Enter, Tab, a shortcut chord (Ctrl+Enter, Alt+S) or a caret key ends
+      // the word being typed, and is how a message is usually sent: the word
+      // is checked for warnings like one ended by a space (see wordEndChecks
+      // for what differs). The adapter cannot hold the key back, so a warning
+      // raised here arrives as the message goes out.
+      const wordInProgress = !expander.isBoundary(buffer[buffer.length - 1]);
       buffer = "";
       if (text === "\n" || text === "\t") sessionAppend(text);
-      return [];
+      return wordInProgress ? wordEndChecks(true) : [];
     }
     if (context.ownWindow) {
       buffer = "";
@@ -248,7 +309,7 @@ function createEngine(options) {
     }
     const doc = documents.findShortcut(buffer, policy.documents);
     if (doc) {
-      const typedInField = settings.swallowsTriggerKey ? doc.shortcut.trigger.length - text.length : doc.shortcut.trigger.length;
+      const typedInField = settings.swallowsTriggerKey ? chars(doc.shortcut.trigger) - chars(text) : chars(doc.shortcut.trigger);
       buffer = "";
       insertedText(doc.shortcut.trigger.length, "");
       actions.push({
@@ -260,16 +321,62 @@ function createEngine(options) {
       });
       return actions;
     }
+    // App triggers (a notes document, a form record) come after the library
+    // and document shortcuts, so a shortcut with the same trigger wins.
+    for (const ext of extensions) {
+      if (typeof ext.trigger !== "function") continue;
+      const hit = ext.trigger(buffer);
+      if (!hit || typeof hit.trigger !== "string" || !hit.trigger) continue;
+      const typedInField = settings.swallowsTriggerKey ? chars(hit.trigger) - chars(text) : chars(hit.trigger);
+      buffer = "";
+      insertedText(hit.trigger.length, "");
+      actions.push(Object.assign({ type: "app", app: ext.id, trigger: hit.trigger, backspaces: Math.max(0, typedInField) }, hit.action || {}));
+      return actions;
+    }
     // Keywords are checked when a word ends, so "invoices" is not offered on "inv".
-    if (policy.keywordRules.length && !expander.isBoundary(buffer[buffer.length - 2]) && expander.isBoundary(text[text.length - 1])) {
-      const hits = keywords.detect(fieldText, policy.keywordRules, keywordState);
+    const wordEnded = !expander.isBoundary(buffer[buffer.length - 2]) && expander.isBoundary(text[text.length - 1]);
+    return wordEnded ? wordEndChecks() : actions;
+  }
+
+  /**
+   * Keyword rules, then app checks, over the field text; run when a word ends.
+   * `byKey`: the word was ended by Enter, Tab, a shortcut chord or a caret key,
+   * which the engine cannot tell apart, and which may have sent the message,
+   * closed the window or switched to another one (Ctrl+Enter, Alt+S, Alt+Tab,
+   * Ctrl+W). Threat: an insert offered then lands wherever the caret is now:
+   * the next chat message, another window. So only warnings are raised, their
+   * rules without the insert, and offers wait for the next word end in the
+   * field. Every action is marked `leftField`: an app whose action can type
+   * text (gactle's Fix) must not type it for such an action.
+   */
+  function wordEndChecks(byKey) {
+    const actions = [];
+    // Nothing is checked in a sensitive context (see tracksField).
+    if (decision.sensitive) return actions;
+    const rules = byKey ? policy.keywordRules.filter((rule) => rule.action === "warn") : policy.keywordRules;
+    if (rules.length) {
+      const hits = keywords.detect(fieldText, rules, keywordState)
+        .map((hit) => (byKey ? Object.assign({}, hit, { rule: withoutInsert(hit.rule) }) : hit));
       // One action for all hits, warnings first: the shell shows one popover,
       // so a warning is never replaced by an offer that fired on the same word.
       const warnings = hits.filter((hit) => hit.rule.action === "warn");
       const offers = hits.filter((hit) => hit.rule.action !== "warn");
-      if (hits.length) actions.push({ type: warnings.length ? "warning" : "keyword", hits: warnings.concat(offers) });
+      if (hits.length) actions.push(Object.assign({ type: warnings.length ? "warning" : "keyword", hits: warnings.concat(offers) }, byKey ? { leftField: true } : {}));
+    }
+    // App checks (compliance) see the same field text; their action comes
+    // last so the shell's single popover shows it over a keyword offer.
+    for (const ext of extensions) {
+      if (typeof ext.check !== "function") continue;
+      const hit = ext.check(fieldText, Object.assign({}, context));
+      if (hit && typeof hit === "object") actions.push(Object.assign({ type: "app", app: ext.id }, hit, byKey ? { leftField: true } : {}));
     }
     return actions;
+  }
+
+  function withoutInsert(rule) {
+    const copy = Object.assign({}, rule);
+    delete copy.insert;
+    return copy;
   }
 
   /**
@@ -287,9 +394,10 @@ function createEngine(options) {
     if (inserted) insertedText(typed.length, inserted);
     const fixedSeconds = kind === "document"
       ? Math.max(1, Math.floor(Number(data.count) || 1)) * policy.typing.secondsPerAttachment
-      : Number(data.fixedSeconds) || 0;
-    // Keyword rules and document sets only exist in the organisation policy.
-    const source = kind === "document" || kind === "keyword" ? "organization" : data.source;
+      : kind === "filed" ? (policy.typing.secondsPerFiling || 0)
+        : Number(data.fixedSeconds) || 0;
+    // Keyword rules, document sets, filing rules and the suite's policy items only exist in the organisation policy.
+    const source = ORGANIZATION_KINDS.includes(kind) ? "organization" : data.source;
     const keystrokesSaved = Math.max(0, metrics.keystrokesSaved(inserted, typed) - spent);
     return ledger.record({ kind, trigger: data.trigger, source, keystrokesSaved, fixedSeconds, app: appName() });
   }
@@ -324,6 +432,7 @@ function createEngine(options) {
     recordInsert,
     setLibrary,
     setPolicy,
+    setExtensions,
     setEnabled,
     ledger,
     get enabled() { return enabled; },
@@ -334,6 +443,8 @@ function createEngine(options) {
     get buffer() { return buffer; },
     get library() { return library.slice(); },
     get policy() { return policy; },
+    get fieldText() { return fieldText; },
+    get extensions() { return extensions.slice(); },
     get session() { return session ? Object.assign({}, session) : null; },
     get fieldText() { return fieldText; },
   };

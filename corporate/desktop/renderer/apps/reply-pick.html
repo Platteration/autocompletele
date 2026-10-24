@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
+  <title>Reply to the copied message</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="popover">
+  <h1 id="title">Reply to the copied message</h1>
+  <p class="path" id="hint">Pick a reply with ↑ ↓ or a click, fill in what the message did not say, press Enter to paste it where you are writing.</p>
+  <form id="form">
+    <fieldset id="group">
+      <legend class="path">Replies that fit</legend>
+      <ul id="list"></ul>
+    </fieldset>
+    <div id="blanks"></div>
+  </form>
+  <p class="hint" id="error" role="alert"></p>
+  <div class="actions">
+    <button class="plain" type="button" id="cancel">Cancel</button>
+    <button class="primary" type="submit" form="form" id="insert">Insert</button>
+  </div>
+  <script src="reply-pick.js"></script>
+</body>
+</html>

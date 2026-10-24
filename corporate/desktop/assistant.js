@@ -5,10 +5,14 @@
 "use strict";
 
 const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const crypto = require("node:crypto");
 const core = require("../core/index.js");
 const learning = require("./learning.js");
 const { loadCorpusKey } = require("./corpus-key.js");
+const { loadApps } = require("./apps/index.js");
+const { createPatternRunner } = require("./pattern-runner.js");
 
 function readPolicyFile(filePath) {
   try {
@@ -25,6 +29,15 @@ function createAssistant(options) {
   const log = typeof settings.log === "function" ? settings.log : () => {};
 
   let userSettings = store.loadSettings();
+
+  // Policy patterns run with a time budget on the desk: one that backtracks
+  // for too long is stopped, disabled for the session and reported once.
+  core.policyPattern.setRunner(createPatternRunner({ budgetMs: settings.patternBudgetMs }), (source, flags) => {
+    const line = "a policy pattern took too long and was turned off until restart: /" + source + "/" + flags;
+    warnings.push(line);
+    log(line);
+    audit({ event: "policy-pattern-disabled", pattern: source, flags });
+  });
 
   // Learned text is only ever written encrypted. Without a usable keychain
   // key, sessions are not stored and the dashboard says so.
@@ -107,8 +120,53 @@ function createAssistant(options) {
   engine.setEnabled(userSettings.enabled);
   recordPolicyAudit("start");
 
+  // The suite's apps. Each gets the same host; a broken app is logged and
+  // skipped so the assistant always starts.
+  const host = {
+    store,
+    engine,
+    ledger,
+    policy: () => policy,
+    settings: () => Object.assign({}, userSettings),
+    saveSettings: (next) => saveSettings(next),
+    audit: (entry) => audit(entry),
+    now: () => settings.now(),
+    log,
+    recordInsert: (event) => engine.recordInsert(event),
+    dataDir: store.root,
+    appData: (id) => ({ load: (fallback) => store.loadAppData(id, fallback), save: (value) => store.saveAppData(id, value) }),
+  };
+  const apps = loadApps(host, { ids: settings.appIds, factories: settings.apps, log: (line) => { warnings.push(line); log(line); } });
+  engine.setExtensions(apps.map((app) => app.extension).filter(Boolean));
+  const appById = new Map(apps.map((app) => [app.id, app]));
+
+  function notifyApps(hook, value) {
+    for (const app of apps) {
+      if (typeof app[hook] !== "function") continue;
+      try {
+        app[hook](value);
+      } catch (error) {
+        log("app " + app.id + " " + hook + " failed: " + error.message);
+      }
+    }
+  }
+
+  /** Call an app's IPC channel ("guard:summary"). Unknown channels are an error result, never a throw. */
+  function invoke(channel, payload) {
+    const name = String(channel == null ? "" : channel);
+    const app = appById.get(name.split(":")[0]);
+    const fn = app && app.ipc[name];
+    if (!fn) return { ok: false, error: "unknown channel " + name };
+    return fn(payload);
+  }
+
+  function appsInfo() {
+    return apps.map((app) => ({ id: app.id, title: app.title, tab: app.tab !== false }));
+  }
+
   let cachedCandidates = null;
   const listeners = { session: [], candidates: [] };
+  let filingIndex = core.filer.normalizeIndex(store.loadFilingIndex());
 
   function audit(entry) {
     store.appendAudit(Object.assign({ at: settings.now() }, entry));
@@ -163,6 +221,7 @@ function createAssistant(options) {
     applyEngineSettings();
     cachedCandidates = null;
     recordPolicyAudit(origin);
+    notifyApps("onPolicy", policy);
   }
 
   /** Fetch the signed policy layers again (managed desks only). */
@@ -193,6 +252,7 @@ function createAssistant(options) {
   function focusChanged(context) {
     const result = engine.focusChanged(context);
     persistSession(result.session);
+    notifyApps("onFocus", engine.context);
     return result;
   }
 
@@ -234,6 +294,8 @@ function createAssistant(options) {
     store.saveSuggestions([]);
     cachedCandidates = null;
     audit({ event: "corpus-deleted", by: "person", sessions: before.sessions + before.locked });
+    // Apps that keep learned data of their own (cactle's stored sessions) delete it too.
+    notifyApps("onClearLearning");
     emit("candidates", candidates());
     return corpusInfo();
   }
@@ -298,6 +360,8 @@ function createAssistant(options) {
     policy = buildPolicy();
     applyEngineSettings();
     cachedCandidates = null;
+    notifyApps("onSettings", Object.assign({}, userSettings));
+    notifyApps("onPolicy", policy);
     return userSettings;
   }
 
@@ -309,7 +373,12 @@ function createAssistant(options) {
   // remembering its trigger.
   function paletteSearch(query, limit) {
     if (policy.paused.active) return [];
-    const items = core.paletteSearch.items(engine.library, policy.documents);
+    let items = core.paletteSearch.items(engine.library, policy.documents, filingIndex);
+    for (const app of apps) {
+      if (!app.palette || typeof app.palette.items !== "function") continue;
+      const extra = app.palette.items() || [];
+      items = items.concat(extra.map((item) => Object.assign({ source: "organization", needsInput: false, preview: "" }, item, { kind: "app:" + app.id })));
+    }
     return core.paletteSearch.search(items, query, limit).map((item) => ({
       kind: item.kind, trigger: item.trigger, source: item.source, needsInput: item.needsInput, preview: item.preview,
     }));
@@ -322,6 +391,16 @@ function createAssistant(options) {
     if (choice.kind === "documents") {
       const set = policy.documents.shortcuts.find((s) => s.trigger === choice.trigger);
       return set ? { type: "documents", trigger: set.trigger, label: set.label, documents: set.documents.slice(), backspaces: 0, via: "palette" } : null;
+    }
+    if (typeof choice.kind === "string" && choice.kind.startsWith("app:")) {
+      const app = appById.get(choice.kind.slice(4));
+      return app && app.palette && typeof app.palette.choose === "function" ? app.palette.choose(Object.assign({}, choice, { spentKeystrokes })) : null;
+    }
+    if (choice.kind === "file") {
+      // A filed document is offered like a one-file document set, so the
+      // same popover copies or reveals it. It is not an organisation shortcut.
+      const entry = filingIndex.entries.find((e) => e.name === choice.trigger);
+      return entry ? { type: "documents", trigger: "", label: entry.ruleLabel || "Filed document", documents: [{ title: entry.name, path: entry.path, tags: [], description: entry.folder }], backspaces: 0, via: "palette" } : null;
     }
     const sh = engine.library.find((item) => item.trigger === choice.trigger);
     if (!sh) return null;
@@ -395,6 +474,205 @@ function createAssistant(options) {
     });
   }
 
+  // ---- Document filing ---------------------------------------------------
+
+  function expandHome(folder) {
+    return String(folder == null ? "" : folder).replace(/^~(?=$|[\\/])/, os.homedir());
+  }
+
+  function saveFilingIndex() {
+    store.saveFilingIndex(filingIndex);
+  }
+
+  /** Folders watched for new documents: the policy's (unless the person turned one off) and the person's own. */
+  function filingFolders() {
+    const ignored = new Set(userSettings.ignoredFolders);
+    const fromPolicy = policy.filing.watch.map((w) => ({ path: expandHome(w.path), raw: w.path, label: w.label, recursive: w.recursive, source: "organization", ignored: ignored.has(w.path) }));
+    const own = userSettings.watchFolders.map((w) => (w && typeof w === "object" ? w : { path: w })).filter((w) => typeof w.path === "string" && w.path.trim())
+      .map((w) => ({ path: expandHome(w.path.trim()), raw: w.path.trim(), label: w.label || w.path.trim(), recursive: w.recursive === true, source: "personal", ignored: false }));
+    return { policy: fromPolicy, own, active: fromPolicy.filter((f) => !f.ignored).concat(own) };
+  }
+
+  function filingInfo() {
+    return {
+      enabled: !policy.paused.active && (policy.filing.rules.length > 0 || !!policy.filing.fallback),
+      rules: policy.filing.rules.map((r) => ({ id: r.id, label: r.label, keywords: r.when.keywords, match: r.when.match, extensions: r.when.extensions, name: r.name, folder: r.folder })),
+      fallback: policy.filing.fallback ? { id: "fallback", label: policy.filing.fallback.label, name: policy.filing.fallback.name, folder: policy.filing.fallback.folder } : null,
+      indexed: filingIndex.entries.length,
+      secondsPerFiling: policy.typing.secondsPerFiling,
+      folders: filingFolders(),
+    };
+  }
+
+  /**
+   * What the policy would call a file and where it would put it. Null when
+   * nothing applies, the file cannot be read, or it was filed already.
+   */
+  function filingProposal(filePath, answers) {
+    if (policy.paused.active) return null;
+    if (!policy.filing.rules.length && !policy.filing.fallback) return null;
+    const file = path.resolve(String(filePath == null ? "" : filePath));
+    if (filingIndex.entries.some((e) => e.path === file)) return null;
+    let stat;
+    try {
+      // lstat: a symbolic link dropped in a watched folder is never followed,
+      // so its target is neither read nor copied out by a filing.
+      stat = fs.lstatSync(file);
+    } catch (error) {
+      return null;
+    }
+    if (!stat.isFile()) return null;
+    const read = core.extract.extractText(file);
+    const proposal = core.filer.propose({ name: path.basename(file), ext: read.ext, text: read.text, modified: stat.mtimeMs }, policy.filing, answers);
+    if (!proposal) return null;
+    // A relative folder in a rule is relative to where the document is (the admin tool resolves it the same way).
+    const folder = core.filer.resolveFolder(file, proposal);
+    return Object.assign({}, proposal, {
+      path: file,
+      fileName: path.basename(file),
+      ext: read.ext,
+      folder,
+      folderTemplate: proposal.folderTemplate,
+      inPlace: !proposal.folder,
+      read: { kind: read.kind, unsupported: read.unsupported, truncated: read.truncated, error: read.error },
+    });
+  }
+
+  /**
+   * Rename and move a document as proposed. `request` is {path, answers,
+   * name}: answers fill blanks the text did not; an edited name may still
+   * carry blanks, which the answers fill. A name with blanks left is refused
+   * so a file is never called "[[client]]". Never overwrites.
+   */
+  function applyFiling(request) {
+    const data = request && typeof request === "object" ? request : {};
+    const proposal = filingProposal(data.path, data.answers);
+    if (!proposal) return { ok: false, error: "No filing rule applies to this file, or it was filed already." };
+    let name = proposal.name;
+    let missing = proposal.missing.slice();
+    const edited = typeof data.name === "string" ? data.name.trim() : "";
+    if (edited) {
+      const filled = core.filer.fillTemplate(edited, proposal.values);
+      missing = core.filer.blanksOf(filled);
+      name = missing.length ? filled : core.filer.safeName(filled.replace(/\.[^.]*$/, (ext) => (ext.slice(1).toLowerCase() === proposal.ext ? "" : ext)), proposal.ext);
+    }
+    if (missing.length) return { ok: false, error: "Fill in: " + missing.join(", "), missing };
+    const folder = proposal.folder;
+    try {
+      fs.mkdirSync(folder, { recursive: true });
+    } catch (error) {
+      return { ok: false, error: "The folder " + folder + " cannot be created: " + error.message };
+    }
+    // The name is claimed and the file moved in one step, so a document another
+    // desk files under the same name at the same moment is never replaced.
+    let moved;
+    try {
+      moved = core.filer.moveDocument(proposal.path, folder, name);
+    } catch (error) {
+      return { ok: false, error: "Could not move the file: " + error.message };
+    }
+    const target = moved.path;
+    const finalName = moved.name;
+    const entry = {
+      id: crypto.randomUUID(),
+      path: target,
+      name: finalName,
+      folder,
+      originalPath: proposal.path,
+      originalName: proposal.fileName,
+      rule: proposal.rule.id,
+      ruleLabel: proposal.rule.label,
+      values: proposal.values,
+      filedAt: settings.now(),
+      ext: proposal.ext,
+      size: moved.size,
+      mtimeMs: moved.mtimeMs,
+    };
+    filingIndex = core.filer.addEntry(filingIndex, entry);
+    saveFilingIndex();
+    audit({ event: "document-filed", rule: proposal.rule.id, from: proposal.path, to: target });
+    engine.recordInsert({ kind: "filed", trigger: proposal.rule.id });
+    return { ok: true, id: entry.id, from: proposal.path, to: target, name: finalName, folder, rule: proposal.rule };
+  }
+
+  /**
+   * Put a filed document back where it came from, under its old name (or the
+   * next free one). Only the document that was filed moves: anything else now
+   * at the filed path is left where it is, and so is the index entry.
+   */
+  function undoFiling(id) {
+    const entry = filingIndex.entries.find((e) => e.id === id);
+    if (!entry) return { ok: false, error: "This filing is no longer in the index." };
+    let stat;
+    try {
+      stat = fs.lstatSync(entry.path);
+    } catch (error) {
+      filingIndex = core.filer.removeEntry(filingIndex, id);
+      saveFilingIndex();
+      return { ok: false, error: "The file is no longer at " + entry.path + "; it was removed from the index." };
+    }
+    if (!stat.isFile()) return { ok: false, changed: true, error: "The item at " + entry.path + " is not the document that was filed; it was left where it is." };
+    // Entries filed by an earlier version carry no size or time to compare.
+    if ((entry.size != null && stat.size !== entry.size) || (entry.mtimeMs != null && stat.mtimeMs !== entry.mtimeMs)) {
+      return { ok: false, changed: true, error: "The document at " + entry.path + " has changed since it was filed; it was left where it is." };
+    }
+    const originalDir = entry.originalPath ? path.dirname(entry.originalPath) : entry.folder;
+    const originalName = entry.originalName || path.basename(entry.originalPath || entry.name);
+    try {
+      fs.mkdirSync(originalDir, { recursive: true });
+      const target = core.filer.moveDocument(entry.path, originalDir, originalName).path;
+      filingIndex = core.filer.removeEntry(filingIndex, id);
+      saveFilingIndex();
+      audit({ event: "document-unfiled", rule: entry.rule, from: entry.path, to: target });
+      return { ok: true, from: entry.path, to: target };
+    } catch (error) {
+      return { ok: false, error: "Could not move the file back: " + error.message };
+    }
+  }
+
+  function filingRecent(limit) {
+    const count = Math.floor(Number(limit)) || 50;
+    // Newest first; filings made in the same instant keep reverse index order.
+    return filingIndex.entries.map((e, i) => [e, i]).sort((a, b) => b[0].filedAt - a[0].filedAt || b[1] - a[1])
+      .slice(0, count).map(([e]) => Object.assign({}, e, { values: Object.assign({}, e.values) }));
+  }
+
+  function filingSearch(query, limit) {
+    return core.filer.search(query, filingIndex, limit).map((r) => Object.assign({ score: r.score }, r.entry, { values: Object.assign({}, r.entry.values) }));
+  }
+
+  function filingClear() {
+    const count = filingIndex.entries.length;
+    filingIndex = core.filer.normalizeIndex(null);
+    saveFilingIndex();
+    audit({ event: "filing-index-cleared", entries: count });
+    return { ok: true, removed: count };
+  }
+
+  function filingAddFolder(folder) {
+    const value = String(folder == null ? "" : folder).trim();
+    if (!value) return { ok: false, error: "No folder given." };
+    const own = userSettings.watchFolders.filter((w) => (w && typeof w === "object" ? w.path : w) !== value);
+    own.push({ path: value });
+    saveSettings({ watchFolders: own });
+    return { ok: true, folders: filingFolders() };
+  }
+
+  function filingRemoveFolder(folder) {
+    const value = String(folder == null ? "" : folder).trim();
+    saveSettings({ watchFolders: userSettings.watchFolders.filter((w) => (w && typeof w === "object" ? w.path : w) !== value) });
+    return { ok: true, folders: filingFolders() };
+  }
+
+  /** Turn a policy watch folder off on this desk, or on again. */
+  function filingIgnoreFolder(rawPath, ignore) {
+    const value = String(rawPath == null ? "" : rawPath).trim();
+    const list = userSettings.ignoredFolders.filter((p) => p !== value);
+    if (ignore !== false) list.push(value);
+    saveSettings({ ignoredFolders: list });
+    return { ok: true, folders: filingFolders() };
+  }
+
   function policyInfo() {
     return {
       organization: policy.organization,
@@ -452,6 +730,21 @@ function createAssistant(options) {
     paletteSearch,
     paletteChoose,
     paletteInserted,
+    filingInfo,
+    filingFolders,
+    filingProposal,
+    applyFiling,
+    undoFiling,
+    filingRecent,
+    filingSearch,
+    filingClear,
+    filingAddFolder,
+    filingRemoveFolder,
+    filingIgnoreFolder,
+    apps,
+    app: (id) => appById.get(id) || null,
+    appsInfo,
+    invoke,
     suggest,
     unsuggest,
     suggestions: () => store.loadSuggestions(),

@@ -1,0 +1,62 @@
+{
+  "records": [
+    {
+      "id": "refund-case",
+      "label": "Refund case",
+      "trigger": "refund/",
+      "fields": {
+        "category": "Refund",
+        "priority": "P2",
+        "sla": "48",
+        "notes": "Hi [[customer]], the refund for order [[orderRef]] is on its way. [[reason]]"
+      }
+    },
+    {
+      "id": "complaint",
+      "label": "Complaint",
+      "trigger": "cmp/",
+      "fields": {
+        "category": "Complaint",
+        "priority": "P1",
+        "sla": "24",
+        "notes": "Complaint from [[customer]] about order [[orderRef]]: [[summary]]"
+      }
+    },
+    {
+      "id": "address-change",
+      "label": "Address change",
+      "fields": {
+        "category": "Account",
+        "priority": "P3",
+        "notes": "New delivery address for [[customer]]: [[address]]"
+      }
+    }
+  ],
+  "lookups": [
+    {
+      "id": "orders",
+      "key": "orderRef",
+      "keyPattern": "A-\\d{5}",
+      "rows": [
+        { "orderRef": "A-12345", "customer": "Mary Jones", "email": "mary.jones@example.com" },
+        { "orderRef": "A-54321", "customer": "John Smith", "email": "john.smith@example.com" },
+        { "orderRef": "A-10021", "customer": "Priya Nair", "email": "priya.nair@example.com" }
+      ]
+    }
+  ],
+  "forms": [
+    {
+      "id": "ticket",
+      "label": "Support ticket",
+      "match": { "process": ["zendesk", "chrome"], "title": "new ticket" },
+      "fields": [
+        { "name": "category", "label": "Category", "selector": "combobox:Category" },
+        { "name": "priority", "label": "Priority", "selector": "combobox:Priority" },
+        { "name": "customer", "label": "Requester", "selector": "edit:Requester" },
+        { "name": "email", "label": "E-mail", "selector": "edit:Email" },
+        { "name": "sla", "label": "SLA hours", "selector": "edit:SLA" },
+        { "name": "notes", "label": "Internal note", "selector": "document:Internal note" }
+      ]
+    }
+  ]
+}

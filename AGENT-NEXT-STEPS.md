@@ -64,7 +64,12 @@ grant/consumeEdit input-trust model. Fixed areas:
    change starts as a case in `shared/conformance.json`, then is implemented
    per platform (see `shared/SPEC.md`).
 
-## Corporate edition (added 2026-10-20)
+## Corporate edition (added 2026-10-20; see docs/handoff-2026-10-21.md for the suite)
+
+The six-app suite (factle, mactle, extle, cactle, gactle, dactle: filing,
+replies, Excel and Google Sheets, forms, compliance warnings, notes) and the
+security review of 21 October 2026 are written up in
+`docs/handoff-2026-10-21.md`; start there. The notes below predate it.
 
 `corporate/` is the business edition: a dependency-free core (`core/`, 107
 tests green on Linux with Node 22, including the shared conformance suite run

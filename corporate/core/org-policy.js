@@ -11,6 +11,15 @@ const keywords = require("./keyword-rules.js");
 const documents = require("./documents.js");
 const metrics = require("./metrics.js");
 const miner = require("./phrase-miner.js");
+const filer = require("./filer.js");
+// Suite modules: each parses its own policy section.
+const SUITE = Object.freeze({
+  reply: { module: require("./reply.js"), normalize: "normalizeReplies", lists: ["replies"], maps: ["extract"] },
+  sheets: { module: require("./sheets.js"), normalize: "normalizeSheets", lists: ["columns", "blocks"], maps: ["vocabularies"], listKeys: { blocks: "trigger" } },
+  forms: { module: require("./forms.js"), normalize: "normalizeForms", lists: ["records", "lookups", "forms"], maps: [] },
+  guard: { module: require("./guard.js"), normalize: "normalizeGuard", lists: ["packs", "internalDomains", "internalCodes"], maps: [] },
+  notes: { module: require("./notes.js"), normalize: "normalizeNotes", lists: ["documents"], maps: ["actions"] },
+});
 
 const VERSION = 1;
 
@@ -23,10 +32,16 @@ function empty() {
   return {
     version: VERSION,
     organization: "",
-    typing: { charsPerMinute: metrics.DEFAULT_CHARS_PER_MINUTE, secondsPerAttachment: 20 },
+    typing: { charsPerMinute: metrics.DEFAULT_CHARS_PER_MINUTE, secondsPerAttachment: 20, secondsPerFiling: 45 },
     capture: capture.createPolicy({}),
     keywordRules: [],
     documents: { shortcuts: [] },
+    filing: { watch: [], fields: {}, rules: [], fallback: null, dateOrder: "dmy" },
+    reply: null,
+    sheets: null,
+    forms: null,
+    guard: null,
+    notes: null,
     library: [],
     learning: { minCount: miner.DEFAULTS.minCount, minLength: miner.DEFAULTS.minLength, minWords: miner.DEFAULTS.minWords },
     retention: { metricsDays: 365, corpusDays: 90 },
@@ -87,7 +102,70 @@ function merge(layers) {
   const docs = list.map((layer) => isObject(layer.documents) && Array.isArray(layer.documents.shortcuts) ? layer.documents.shortcuts : [])
     .filter((l) => l.length);
   if (docs.length) out.documents = { shortcuts: byKey(docs, "trigger") };
+  // Filing: rules merge by id, watch folders by path, fields by name; a later
+  // layer's fallback and date order win.
+  const filings = list.map((layer) => layer.filing).filter(isObject);
+  if (filings.length) {
+    const filing = {};
+    const rules = filings.map((f) => Array.isArray(f.rules) ? f.rules : []).filter((l) => l.length);
+    if (rules.length) filing.rules = byKey(rules, "id");
+    const watch = filings.map((f) => (Array.isArray(f.watch) ? f.watch : []).map((w) => isObject(w) ? w : { path: w })).filter((l) => l.length);
+    if (watch.length) filing.watch = byKey(watch, "path");
+    const fields = filings.map((f) => f.fields).filter(isObject);
+    if (fields.length) filing.fields = Object.assign({}, ...fields);
+    for (const f of filings) {
+      if (f.fallback !== undefined) filing.fallback = f.fallback;
+      if (f.dateOrder !== undefined) filing.dateOrder = f.dateOrder;
+    }
+    out.filing = filing;
+  }
+  // Suite sections: lists merge by id (blocks by trigger, plain strings by
+  // value), maps by key, scalars from the later layer.
+  for (const [name, spec] of Object.entries(SUITE)) {
+    const sections = list.map((layer) => layer[name]).filter(isObject);
+    if (!sections.length) continue;
+    const merged = {};
+    for (const section of sections) {
+      for (const [key, value] of Object.entries(section)) {
+        if (spec.lists.includes(key) && Array.isArray(value)) {
+          const previous = Array.isArray(merged[key]) ? merged[key] : [];
+          const keyName = (spec.listKeys || {})[key] || "id";
+          merged[key] = value.every((v) => typeof v === "string")
+            ? [...new Set(previous.concat(value))]
+            : byKey([previous, value], keyName);
+        } else if (spec.maps.includes(key) && isObject(value)) {
+          merged[key] = Object.assign({}, isObject(merged[key]) ? merged[key] : {}, value);
+        } else {
+          merged[key] = value;
+        }
+      }
+    }
+    out[name] = merged;
+  }
   return out;
+}
+
+/**
+ * Typed triggers live in one namespace on a desk: the library, document sets,
+ * forms records and notes documents. The engine tries them in that order, so
+ * a shared trigger silently hides the later owner; say so.
+ */
+function triggerClashes(policy) {
+  const owners = new Map();
+  const claim = (trigger, what) => {
+    if (!trigger) return;
+    if (!owners.has(trigger)) owners.set(trigger, []);
+    owners.get(trigger).push(what);
+  };
+  for (const sh of policy.library) claim(sh.trigger, "library shortcut " + sh.trigger);
+  for (const set of policy.documents.shortcuts) claim(set.trigger, "document set " + set.trigger);
+  for (const record of (policy.forms && policy.forms.records) || []) claim(record.trigger, "forms record " + record.id);
+  for (const doc of (policy.notes && policy.notes.documents) || []) claim(doc.trigger, "notes document " + doc.id);
+  const warnings = [];
+  for (const [trigger, list] of owners) {
+    if (list.length > 1) warnings.push("trigger " + trigger + " is claimed by " + list.join(", ") + "; only the first is reachable by typing");
+  }
+  return warnings;
 }
 
 function pausedOf(value) {
@@ -122,6 +200,7 @@ function parse(input) {
   const typing = source.typing && typeof source.typing === "object" ? source.typing : {};
   policy.typing.charsPerMinute = positive(typing.charsPerMinute, policy.typing.charsPerMinute);
   policy.typing.secondsPerAttachment = positive(typing.secondsPerAttachment, policy.typing.secondsPerAttachment);
+  policy.typing.secondsPerFiling = positive(typing.secondsPerFiling, policy.typing.secondsPerFiling);
 
   policy.capture = capture.createPolicy(source.capture);
   policy.warnings.push(...policy.capture.warnings);
@@ -133,6 +212,25 @@ function parse(input) {
   const catalog = documents.normalizeCatalog(source.documents);
   policy.documents = { shortcuts: catalog.shortcuts };
   policy.warnings.push(...catalog.warnings);
+
+  const filing = filer.normalizeFiling(source.filing);
+  policy.filing = { watch: filing.watch, fields: filing.fields, rules: filing.rules, fallback: filing.fallback, dateOrder: filing.dateOrder };
+  policy.warnings.push(...filing.warnings);
+
+  for (const [name, spec] of Object.entries(SUITE)) {
+    let normalized;
+    try {
+      normalized = spec.module[spec.normalize](source[name]);
+    } catch (error) {
+      // A section that makes its normaliser throw is dropped with a warning:
+      // the desk must start from a signed policy whatever one section holds.
+      policy.warnings.push(name + " section ignored: " + error.message);
+      normalized = spec.module[spec.normalize](undefined);
+    }
+    policy.warnings.push(...normalized.warnings);
+    delete normalized.warnings;
+    policy[name] = normalized;
+  }
 
   const library = source.library && typeof source.library === "object" && Array.isArray(source.library.shorthands)
     ? source.library.shorthands : Array.isArray(source.library) ? source.library : [];
@@ -177,6 +275,8 @@ function parse(input) {
   const retention = source.retention && typeof source.retention === "object" ? source.retention : {};
   policy.retention.metricsDays = Math.floor(positive(retention.metricsDays, policy.retention.metricsDays));
   policy.retention.corpusDays = Math.floor(positive(retention.corpusDays, policy.retention.corpusDays));
+  // Last, once every trigger owner is known.
+  policy.warnings.push(...triggerClashes(policy));
   return policy;
 }
 
