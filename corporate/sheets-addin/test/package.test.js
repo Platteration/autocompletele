@@ -21,7 +21,7 @@ const temp = (t) => {
   return dir;
 };
 const CONFIG = Object.freeze({
-  id: "3f2b8c1e-5d4a-4e7b-9c60-1a2b3c4d5e6f",
+  id: "1e3b5af4-cd4a-4ea4-a785-257ef5cfd9a8",
   baseUrl: "https://addins.example.org/extle/",
   providerName: "Example Logistics Ltd",
   version: "1.2.0.0",
@@ -249,6 +249,8 @@ test("a package holds what Excel and Apps Script need, with the manifest made fr
   assert.equal(served.length, 7, "IconUrl, HighResolutionIconUrl, SourceLocation, three ribbon images and the pane's URL resource");
   for (const url of served) {
     assert.ok(url.value.startsWith(CONFIG.baseUrl), url.element + " " + url.value + " is under baseUrl");
+    assert.equal(/[?#]/.test(url.value), false, url.value + " names the file in its path, with no query or fragment");
+    assert.equal(new URL(url.value).pathname, new URL(CONFIG.baseUrl).pathname + url.value.slice(CONFIG.baseUrl.length));
     const file = path.join(out, "excel", ...url.value.slice(CONFIG.baseUrl.length).split("/"));
     assert.ok(fs.statSync(file).isFile(), url.value + " is a file of the excel folder");
   }
@@ -436,11 +438,15 @@ test("a configuration is refused with every problem named, and nothing is writte
   const accepted = (change, options = {}) => build.validateConfig(typeof change === "function" ? change({ ...CONFIG }) : { ...CONFIG, ...change }, options);
 
   // id
-  for (const id of ["not-a-guid", "{3f2b8c1e-5d4a-4e7b-9c60-1a2b3c4d5e6f}", "3f2b8c1e5d4a4e7b9c601a2b3c4d5e6f", "3f2b8c1e-5d4a-4e7b-9c60-1a2b3c4d5e6", "3f2b8c1e-5d4a-4e7b-9c60-1a2b3c4d5e6g", 42]) refused({ id }, /^id must be a GUID/, { count: 1 });
+  for (const id of ["not-a-guid", "{1e3b5af4-cd4a-4ea4-a785-257ef5cfd9a8}", "1e3b5af4cd4a4ea4a785257ef5cfd9a8", "1e3b5af4-cd4a-4ea4-a785-257ef5cfd9a", "1e3b5af4-cd4a-4ea4-a785-257ef5cfd9ag", 42]) refused({ id }, /^id must be a GUID/, { count: 1 });
+  // The message shows how to make a GUID, not a GUID a person could paste.
+  refused({ id: "not-a-guid" }, /^id must be a GUID, hyphenated, without braces; generate one with: node -e "console.log\(crypto.randomUUID\(\)\)"$/, { count: 1 });
   for (const id of [...build.PLACEHOLDER_IDS, build.PLACEHOLDER_IDS[0].toUpperCase()]) {
     refused({ id }, /^id .* is a placeholder, not a GUID made for your organisation; generate one with: node -e "console.log\(crypto.randomUUID\(\)\)"/, { count: 1 });
     assert.equal(accepted({ id }, { dev: true }).id, id, "a development package may keep the placeholder");
   }
+  // The sample earlier versions of the build's message and of INSTALL.md showed.
+  refused({ id: "3f2b8c1e-5d4a-4e7b-9c60-1a2b3c4d5e6f" }, /^id 3f2b8c1e-5d4a-4e7b-9c60-1a2b3c4d5e6f is a placeholder/, { count: 1 });
   assert.equal(accepted({ id: CONFIG.id.toUpperCase() }).id, CONFIG.id.toUpperCase(), "capitals are a GUID too");
 
   // baseUrl and supportUrl
@@ -466,7 +472,23 @@ test("a configuration is refused with every problem named, and nothing is writte
   for (const baseUrl of ["", "addins.example.org/extle", "https://", 7]) refused({ baseUrl }, /^baseUrl (must be a URL|is not a URL)/);
   refused({ baseUrl: "https://addins.example.org/extle/?v=1" }, /^baseUrl must be a folder, without \? or #/);
   refused({ baseUrl: "https://addins.example.org/extle/#top" }, /^baseUrl must be a folder, without \? or #/);
+  // A bare ? or #: the URL parser gives an empty search and hash, but every URL the manifest
+  // holds would then end up in the query or the fragment.
+  for (const baseUrl of ["https://addins.example.org/extle/?", "https://addins.example.org/extle/#", "https://addins.example.org/extle/?#", "https://addins.example.org/extle?", "https://addins.example.org/extle#"]) {
+    refused({ baseUrl }, /^baseUrl must be a folder, without \? or #$/, { count: 1 });
+  }
+  assert.equal(accepted({ baseUrl: "https://addins.example.org/ex%3Ftle%23/" }).baseUrl, "https://addins.example.org/ex%3Ftle%23/", "an escaped ? or # is part of the folder's name");
+  assert.equal(accepted({ supportUrl: "https://intranet.example.org/help?" }).supportUrl, "https://intranet.example.org/help?", "the support page is a page, not a folder");
+  // A file instead of its folder, such as the task pane's own address.
+  for (const [baseUrl, file] of [["https://addins.example.org/extle/taskpane.html", "taskpane.html"], ["https://addins.example.org/extle/manifest.xml", "manifest.xml"], ["https://addins.example.org/extle/index.HTM", "index.HTM"], ["https://addins.example.org/extle/assets/icon-32.png", "icon-32.png"], ["https://addins.example.org/extle/pane.js", "pane.js"], ["https://addins.example.org/extle/pane.css", "pane.css"]]) {
+    refused({ baseUrl }, new RegExp("^baseUrl must be the folder that holds taskpane\\.html, not a file \\(" + file.replace(/\./g, "\\.") + "\\); end it with the folder's name and /$"), { count: 1 });
+  }
+  for (const [baseUrl, folder] of [["https://addins.example.org/extle/1.0.0.0", "https://addins.example.org/extle/1.0.0.0/"], ["https://addins.example.org/extle.v2", "https://addins.example.org/extle.v2/"], ["https://addins.example.org/extle/taskpane.html/", "https://addins.example.org/extle/taskpane.html/"]]) {
+    assert.equal(accepted({ baseUrl }).baseUrl, folder, "a folder whose name has a dot, or one closed with /, is a folder");
+  }
   refused({ baseUrl: "https://admin:secret@addins.example.org/extle/" }, /^baseUrl must not hold a user name or password/);
+  for (const baseUrl of ["https://admin@addins.example.org/extle/", "https://:secret@addins.example.org/extle/"]) refused({ baseUrl }, /^baseUrl must not hold a user name or password$/, { count: 1 });
+  refused({ supportUrl: "https://admin@intranet.example.org/help" }, /^supportUrl must not hold a user name or password$/, { count: 1 });
   refused({ supportUrl: "http://intranet.example.org/help" }, /^supportUrl must start with https:\/\//, { count: 1 });
   refused({ supportUrl: "https://localhost/help" }, /^supportUrl points at localhost/, { count: 1 });
   assert.equal(accepted({ baseUrl: "https://Addins.Example.org/extle" }).baseUrl, "https://addins.example.org/extle/", "a folder without its closing / gets one");
@@ -509,9 +531,39 @@ test("a configuration is refused with every problem named, and nothing is writte
 
   // keys
   refused((config) => { delete config.id; delete config.version; return config; }, /^id is missing$/, { count: 2 });
+  for (const key of ["id", "baseUrl", "providerName", "version", "supportUrl"]) {
+    refused((config) => { delete config[key]; return config; }, new RegExp("^" + key + " is missing$"), { count: 1 });
+  }
+  for (const key of ["displayName", "description"]) assert.ok(accepted((config) => { delete config[key]; return config; })[key], key + " is optional");
   refused({ baseURL: "https://addins.example.org/" }, /^unknown key "baseURL" \(the keys are id, baseUrl, providerName, version, supportUrl, displayName, description\)$/, { count: 1 });
   for (const config of [null, [], "extle", 3]) refused(() => config, /^the configuration must be a JSON object$/, { count: 1 });
   refused({ id: "x", baseUrl: "http://addins.example.org/", version: "one" }, /^id must be a GUID/, { count: 3 });
+
+  // Every problem of one value, not only its first: the person fixes the file once.
+  // Each problem as its key and first word, in the order they are listed.
+  const problemsOf = (change) => {
+    try {
+      build.validateConfig({ ...CONFIG, ...change });
+    } catch (error) {
+      return error.problems.map((problem) => problem.split(" ").slice(0, 2).join(" "));
+    }
+    return [];
+  };
+  assert.deepEqual(problemsOf({ providerName: "Birch\tCo" + "x".repeat(130) }), ["providerName holds", "providerName is"], "a control character and the length");
+  assert.deepEqual(problemsOf({ providerName: "\t\n" }), ["providerName is", "providerName holds"], "empty, and a control character");
+  assert.deepEqual(problemsOf({ displayName: "\ud800" + "x".repeat(120) + "\u0085" }), ["displayName holds", "displayName holds", "displayName is"], "a control character, a broken character and the length");
+  assert.deepEqual(problemsOf({ baseUrl: "https://localhost/" + "a".repeat(2100) + "/" }), ["baseUrl points", "baseUrl is"], "this computer, and too long");
+  assert.deepEqual(problemsOf({ baseUrl: "http://admin@addins.example.org/extle/taskpane.html?" }), ["baseUrl must", "baseUrl must", "baseUrl must", "baseUrl must"], "http, a user name, a bare ? and a file");
+  assert.deepEqual(problemsOf({ supportUrl: "https://localhost/" + "s".repeat(2100) }), ["supportUrl points", "supportUrl is"], "this computer, and too long");
+  assert.throws(() => build.validateConfig({ ...CONFIG, baseUrl: "http://admin@addins.example.org/extle/taskpane.html?" }), (error) => {
+    assert.deepEqual(error.problems, [
+      "baseUrl must start with https:// (http:// is accepted only for localhost, with --dev)",
+      "baseUrl must not hold a user name or password",
+      "baseUrl must be a folder, without ? or #",
+      "baseUrl must be the folder that holds taskpane.html, not a file (taskpane.html); end it with the folder's name and /",
+    ]);
+    return true;
+  });
 });
 
 test("the example configuration builds only as a development package; the real one and the package stay out of git", () => {
@@ -526,6 +578,15 @@ test("the example configuration builds only as a development package; the real o
   const ignored = fs.readFileSync(path.join(ADDIN, ".gitignore"), "utf8").split("\n");
   for (const line of ["package/", "extle.config.json"]) assert.ok(ignored.includes(line), line + " is not committed");
   assert.equal(ignored.includes("extle.config.example.json"), false);
+  // A GUID shown in the add-in's documentation or example could be pasted into a real
+  // configuration, so each one is a placeholder the build refuses without --dev. (A GUID inside a
+  // link, such as a Microsoft support page's address, is not one.)
+  for (const file of ["INSTALL.md", "README.md", "extle.config.example.json", "manifest.template.xml"]) {
+    const text = fs.readFileSync(path.join(ADDIN, file), "utf8").replace(/https?:\/\/[^\s)"'<>]+/g, "");
+    for (const [guid] of text.matchAll(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi)) {
+      assert.ok(build.PLACEHOLDER_IDS.includes(guid.toLowerCase()), file + " shows " + guid + ", which the build would accept");
+    }
+  }
 });
 
 test("a rebuild replaces its own files, keeps any other and lists it, and a development build says so", (t) => {
@@ -533,12 +594,14 @@ test("a rebuild replaces its own files, keeps any other and lists it, and a deve
   build.buildPackage({ config: CONFIG, out });
   fs.writeFileSync(path.join(out, "excel", "pane.js"), "changed by hand");
   fs.writeFileSync(path.join(out, "excel", "old-pane.js"), "from an older version");
+  fs.writeFileSync(path.join(out, "excel", ".htaccess"), "Header unset Cache-Control");
   fs.writeFileSync(path.join(out, "apps-script", ".clasp.json"), "{\"scriptId\":\"abc\"}");
   fs.writeFileSync(path.join(out, "apps-script", "Old.gs"), "function old() {}");
   const again = build.buildPackage({ config: { ...CONFIG, version: "1.2.0.1" }, out, dev: true });
   assert.equal(again.dev, true);
   assert.deepEqual(fs.readFileSync(path.join(out, "excel", "pane.js")), fs.readFileSync(path.join(ADDIN, "pane.js")), "the build's own file is written again");
-  assert.deepEqual(again.extra, ["excel/old-pane.js", "apps-script/Old.gs"], "other files are listed, clasp's own dot file is not");
+  // A dot file in excel/ is listed, since a host may serve it; clasp ignores those in apps-script/.
+  assert.deepEqual(again.extra, ["excel/.htaccess", "excel/old-pane.js", "apps-script/Old.gs"], "other files are listed, excel's dot file too, clasp's own dot file is not");
   assert.equal(fs.readFileSync(path.join(out, "apps-script", ".clasp.json"), "utf8"), "{\"scriptId\":\"abc\"}", "clasp's settings survive a rebuild");
   assert.ok(fs.existsSync(path.join(out, "excel", "old-pane.js")), "nothing is deleted");
   const manifest = fs.readFileSync(path.join(out, "excel", "manifest.xml"), "utf8");
@@ -584,4 +647,23 @@ test("the command line: refusals exit 1 with the problems, --dev builds the exam
   const plain = run("--out", path.join(dir, "plain"));
   assert.equal(plain.status, 0, "the plain build is unchanged");
   assert.match(plain.stdout, /^built dist\/sheets-core\.js, apps-script\/sheets-core\.html, apps-script\/pane\.html in /);
+  // The plain build takes --out DIR only: a near miss of package mode is refused, not built plainly.
+  for (const [args, message] of [
+    [["--package=" + EXAMPLE, "--out", path.join(dir, "equals")], 'unknown argument "--package=' + EXAMPLE + '"'],
+    [["--pakage", EXAMPLE, "--out", path.join(dir, "typo")], 'unknown argument "--pakage"'],
+    [["--out", path.join(dir, "zip"), "--zip"], 'unknown argument "--zip"'],
+  ]) {
+    const result = run(...args);
+    assert.equal(result.status, 1, args.join(" "));
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "build.js: " + message + "; the plain build takes --out DIR, and package mode --package FILE [--out DIR] [--dev]\n");
+    assert.equal(fs.existsSync(args[args.indexOf("--out") + 1]), false, "nothing written for " + args.join(" "));
+  }
+  const noValue = run("--out");
+  assert.equal(noValue.status, 1);
+  assert.equal(noValue.stderr, "build.js: --out needs a value\n");
+  assert.deepEqual(build.plainArguments([]), { out: undefined });
+  assert.deepEqual(build.plainArguments(["--out", "d"]), { out: "d" });
+  assert.throws(() => build.plainArguments(["--out", "--zip"]), /^Error: --out needs a value$/);
+  assert.throws(() => build.plainArguments(["dist"]), /^Error: unknown argument "dist"; the plain build takes --out DIR/);
 });

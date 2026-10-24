@@ -34,11 +34,17 @@ for). The build installs nothing and uses no network.
    cp extle.config.example.json extle.config.json
    ```
 
-2. Fill it in:
+2. Make the add-in's GUID once, and keep it for every later version:
+
+   ```
+   node -e "console.log(crypto.randomUUID())"
+   ```
+
+3. Fill in the file, with that GUID as `id`:
 
    ```json
    {
-     "id": "3f2b8c1e-5d4a-4e7b-9c60-1a2b3c4d5e6f",
+     "id": "the GUID from step 2",
      "baseUrl": "https://addins.example.org/extle/",
      "providerName": "Example Logistics Ltd",
      "version": "1.0.0.0",
@@ -48,8 +54,8 @@ for). The build installs nothing and uses no network.
 
    | Key | What it is | Rules the build enforces |
    | --- | --- | --- |
-   | `id` | The add-in's identity in Office. Make it once and keep it for every later version. | A GUID, hyphenated, no braces ([Id](https://learn.microsoft.com/en-us/javascript/api/manifest/id)). Not the example's GUID and not the all-zero one, except with `--dev`. Make one with `node -e "console.log(crypto.randomUUID())"`. |
-   | `baseUrl` | The address the `excel` folder is served at, folder and all. | `https://`. A trailing `/` is added when missing. No `?`, `#`, user name or password. Not an address of this computer, except with `--dev`: `localhost` or a `.localhost` name (also with a final dot, `localhost.`), `127.x.x.x`, `0.0.0.0`, `[::1]`, `[::]`, or `127.x.x.x` or `0.0.0.0` written as IPv6 (`[::ffff:127.0.0.1]`). `baseUrl` plus `taskpane.html` at most 2018 characters ([SourceLocation](https://learn.microsoft.com/en-us/javascript/api/manifest/sourcelocation)). |
+   | `id` | The add-in's identity in Office. Make it once and keep it for every later version. | A GUID, hyphenated, no braces ([Id](https://learn.microsoft.com/en-us/javascript/api/manifest/id)). Not one of the placeholders the build knows (the example's GUID, the all-zero GUID, and the sample an earlier version of this guide showed), except with `--dev`. Make one with `node -e "console.log(crypto.randomUUID())"`. |
+   | `baseUrl` | The address the `excel` folder is served at, folder and all. | `https://`. A trailing `/` is added when missing. No `?` or `#`, not even a bare one at the end, and no user name or password. The folder, not a file in it: a last part ending in `.html`, `.htm`, `.xml`, `.js`, `.css` or `.png` with no closing `/` is refused (`.../extle/taskpane.html` is the page; `.../extle/1.0.0.0` is a folder). Not an address of this computer, except with `--dev`: `localhost` or a `.localhost` name (also with a final dot, `localhost.`), `127.x.x.x`, `0.0.0.0`, `[::1]`, `[::]`, or `127.x.x.x` or `0.0.0.0` written as IPv6 (`[::ffff:127.0.0.1]`). `baseUrl` plus `taskpane.html` at most 2018 characters ([SourceLocation](https://learn.microsoft.com/en-us/javascript/api/manifest/sourcelocation)). |
    | `providerName` | Your organisation's name, as the add-in's provider. | At most 125 characters ([ProviderName](https://learn.microsoft.com/en-us/javascript/api/manifest/providername)). |
    | `version` | The manifest's version. | 1 to 4 numbers of at most 5 digits, separated by dots, such as `1.0.0.0` ([Version](https://learn.microsoft.com/en-us/javascript/api/manifest/version)). No leading zeros (`01`, `1.00`): Microsoft's page does not say whether the manifest's schema takes them, so the build keeps to plain numbers. |
    | `supportUrl` | A page where people get help with extle. | `https://`, the same rules as `baseUrl` for `localhost`. A query string is allowed. At most 2048 characters as the manifest holds it (a space counts as the three characters of `%20`): Microsoft gives that limit for the manifest's URLs ([Resources](https://learn.microsoft.com/en-us/javascript/api/manifest/resources)); the [SupportUrl](https://learn.microsoft.com/en-us/javascript/api/manifest/supporturl) page gives none of its own. |
@@ -62,15 +68,19 @@ for). The build installs nothing and uses no network.
    manifest. A file saved with a UTF-8 byte-order mark, as some Windows editors
    save it, is read as if the mark were not there.
 
-3. Build:
+4. Build:
 
    ```
    node build.js --package extle.config.json              # writes ./package/
    node build.js --package extle.config.json --out ~/extle-1.0.0.0
    ```
 
-   When the configuration is refused, the build lists every problem, writes
-   nothing and exits with status 1.
+   When the configuration is refused, the build lists the problems it finds
+   in every value, writes nothing and exits with status 1. A value of the
+   wrong kind (a number where a text belongs) or a URL that cannot be read
+   gets one problem only, since nothing more can be checked in it. Write
+   `--package FILE` with a space: an argument the build does not know, such
+   as `--package=FILE`, is refused in the same way.
 
 The package:
 
@@ -109,7 +119,8 @@ A rebuild into the same folder writes its own files again and deletes
 nothing. A file it did not write (left from an older version, say) stays and
 is listed after the build, so you can remove it before you upload. In
 `apps-script/`, names starting with a dot are not listed: clasp ignores them,
-and `.clasp.json` (below) lives there.
+and `.clasp.json` (below) lives there. In `excel/` they are listed (a
+`.htaccess`, say), since a host may serve them.
 
 The same sources and configuration give the same text files, byte for byte.
 The icons are compressed with Node's zlib, so another Node.js version may give
@@ -183,7 +194,7 @@ files stay on the host; only `manifest.xml` is copied.
    (`\\server\share`) as **Catalog Url**, choose **Add catalog**, tick **Show
    in Menu** and choose **OK**. Close and reopen Excel.
 3. **Home** > **Add-ins** > **Advanced**, then **SHARED FOLDER**, select
-   **extle** and choose **Add**.
+   **extle** (or your `displayName`) and choose **Add**.
 
 Microsoft says a network share is for testing only, not for production.
 
@@ -194,7 +205,7 @@ Microsoft says a network share is for testing only, not for production.
    Create the `wef` folder if it is not there.
 2. Copy `excel/manifest.xml` into it.
 3. Open Excel (restart it if it is running), open a workbook, then **Home** >
-   **Add-ins** and select extle.
+   **Add-ins** and select extle (or your `displayName`).
 
 **Excel on the web** ([Microsoft](https://learn.microsoft.com/en-us/office/dev/add-ins/testing/sideload-office-add-ins-for-testing)):
 
@@ -206,8 +217,9 @@ Microsoft says the uploaded manifest is kept in the browser's storage, so
 clearing the cache or using another browser means uploading it again.
 
 Once loaded, the Home tab has an **extle** group with an **Open extle**
-button that opens the pane. To remove a sideloaded add-in on Windows or Mac,
-clear the Office cache
+button that opens the pane (with a `displayName`, the group has that name and
+the button reads "Open" and that name). To remove a sideloaded add-in on
+Windows or Mac, clear the Office cache
 ([Microsoft](https://learn.microsoft.com/en-us/office/dev/add-ins/testing/clear-cache)).
 Then go through the checks in README.md, "Not verified here".
 

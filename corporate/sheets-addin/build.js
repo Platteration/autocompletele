@@ -9,6 +9,8 @@
 //   node build.js              writes dist/ and apps-script/*.html here
 //   node build.js --out DIR    writes DIR/dist/ and DIR/apps-script/
 //
+// Any other argument is refused with exit status 1 and nothing written.
+//
 // Package mode writes what an organisation uploads (INSTALL.md): the folder an
 // HTTPS host serves for Excel with a manifest made from manifest.template.xml
 // and the organisation's configuration, the ribbon icons, and the Apps Script
@@ -140,8 +142,10 @@ function appsScriptIncludes(script) {
 // the add-in (sheets-addin/test/hosts.test.js holds the generated manifest to that table).
 const NAME = "extle";
 const DEFAULT_DESCRIPTION = NAME + ": column-aware completion in Excel from your organisation's vocabularies, and blocks and formulas by trigger.";
-// The example configuration's id, and the all-zero GUID: neither was generated for an organisation.
-const PLACEHOLDER_IDS = ["7b1f6c9a-0000-4000-8000-000000000001", "00000000-0000-0000-0000-000000000000"];
+// GUIDs not generated for an organisation: the example configuration's id, the all-zero GUID, and
+// the sample that earlier versions of this build printed in their error message and INSTALL.md
+// showed, which a person may have pasted from there.
+const PLACEHOLDER_IDS = ["7b1f6c9a-0000-4000-8000-000000000001", "00000000-0000-0000-0000-000000000000", "3f2b8c1e-5d4a-4e7b-9c60-1a2b3c4d5e6f"];
 const KEYS = ["id", "baseUrl", "providerName", "version", "supportUrl", "displayName", "description"];
 const REQUIRED = ["id", "baseUrl", "providerName", "version", "supportUrl"];
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -155,6 +159,9 @@ const VERSION = /^(0|[1-9]\d{0,4})(\.(0|[1-9]\d{0,4})){0,3}$/;
 // URL; the SupportUrl page gives no limit of its own, so supportUrl is held to that 2048.
 const LIMITS = { displayName: 120, providerName: 125, description: 250, sourceLocation: 2018, url: 2048 };
 const SOURCE_PAGE = "taskpane.html";
+// A baseUrl whose last part ends like a file the excel folder holds (or .htm), with no closing /,
+// names a page or a file, not the folder. A folder such as 1.0.0.0 still passes.
+const FILE_ENDING = /\.(html?|xml|js|css|png)$/i;
 const ICON_SIZES = [16, 32, 64, 80]; // IconUrl 32, HighResolutionIconUrl 64, ribbon 16, 32 and 80
 const ICON_COLOUR = [0x24, 0x57, 0xc5]; // pane.css --accent in the light theme; white on it is 6.5:1
 // A bold lowercase e, eight by seven, drawn white on the colour.
@@ -182,16 +189,17 @@ function isLoopback(hostname) {
   return host === "localhost" || host.endsWith(".localhost") || /^127\.\d+\.\d+\.\d+$/.test(ipv4) || ipv4 === "0.0.0.0" || host === "[::1]" || host === "[::]";
 }
 
-/** What is wrong with one text the manifest shows; an empty list when nothing is. */
+/** Everything that is wrong with one text the manifest shows; an empty list when nothing is. */
 function textProblems(key, value, max, why) {
   if (typeof value !== "string") return [key + " must be a text"];
-  if (!/\S/.test(value)) return [key + " is empty"];
+  const problems = [];
+  if (!/\S/.test(value)) problems.push(key + " is empty");
   // XML 1.0 cannot hold U+0000 to U+001F other than tab and line breaks, nor U+FFFE or U+FFFF,
   // escaped or not. It can hold U+007F to U+009F, but no control character belongs in a name.
-  if (/[\u0000-\u001f\u007f-\u009f\ufffe\uffff]/.test(value)) return [key + " holds a control character (a tab, a line break or similar)"];
-  if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(value)) return [key + " holds a broken character (half of a surrogate pair)"];
-  if (value.length > max) return [key + " is " + value.length + " characters long; " + why];
-  return [];
+  if (/[\u0000-\u001f\u007f-\u009f\ufffe\uffff]/.test(value)) problems.push(key + " holds a control character (a tab, a line break or similar)");
+  if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(value)) problems.push(key + " holds a broken character (half of a surrogate pair)");
+  if (value.length > max) problems.push(key + " is " + value.length + " characters long; " + why);
+  return problems;
 }
 
 /** A URL the manifest holds: https, or http://localhost with --dev; localhost only with --dev. */
@@ -210,13 +218,21 @@ function urlProblems(key, value, dev, folder) {
   } else if (url.protocol !== "https:") problems.push(key + " must start with https://");
   if (local && !dev) problems.push(key + " points at " + url.hostname + ", which Excel on other computers cannot reach; build with --dev to test on this computer");
   if (url.username || url.password) problems.push(key + " must not hold a user name or password");
-  if (folder && (url.search || url.hash)) problems.push(key + " must be a folder, without ? or #");
+  if (folder) {
+    // url.search and url.hash are empty for a bare ? or #, but href keeps it. Before the query the
+    // parser reads the first ? or # as its start, and an escaped %3F or %23 stays escaped, so any
+    // ? or # in href means a query or a fragment, empty or not.
+    if (/[?#]/.test(url.href)) problems.push(key + " must be a folder, without ? or #");
+    const last = url.pathname.split("/").pop();
+    if (FILE_ENDING.test(last)) problems.push(key + " must be the folder that holds " + SOURCE_PAGE + ", not a file (" + last + "); end it with the folder's name and /");
+  }
   return { problems, url };
 }
 
 /**
- * Check a configuration and fill in its defaults. Every problem is listed in one error
- * (error.problems), so a person fixes the file once.
+ * Check a configuration and fill in its defaults. Every value is checked, and every problem
+ * found is listed in one error (error.problems). A value of the wrong type, or a URL that cannot
+ * be read, gets one problem, since nothing more can be checked in it.
  * @returns {{id:string, baseUrl:string, providerName:string, version:string, supportUrl:string, displayName:string, description:string, dev:boolean}}
  */
 function validateConfig(raw, options) {
@@ -232,7 +248,7 @@ function validateConfig(raw, options) {
   const has = (key) => Object.hasOwn(config, key);
 
   if (has("id")) {
-    if (typeof config.id !== "string" || !GUID.test(config.id)) problems.push("id must be a GUID such as 3f2b8c1e-5d4a-4e7b-9c60-1a2b3c4d5e6f (hyphenated, no braces); generate one with: node -e \"console.log(crypto.randomUUID())\"");
+    if (typeof config.id !== "string" || !GUID.test(config.id)) problems.push("id must be a GUID, hyphenated, without braces; generate one with: node -e \"console.log(crypto.randomUUID())\"");
     else if (PLACEHOLDER_IDS.includes(config.id.toLowerCase()) && !dev) problems.push("id " + config.id + " is a placeholder, not a GUID made for your organisation; generate one with: node -e \"console.log(crypto.randomUUID())\" (or build with --dev to test on this computer)");
   }
   if (has("version") && (typeof config.version !== "string" || !VERSION.test(config.version))) {
@@ -246,7 +262,7 @@ function validateConfig(raw, options) {
   if (has("baseUrl")) {
     const checked = urlProblems("baseUrl", config.baseUrl, dev, true);
     problems.push(...checked.problems);
-    if (checked.url && !checked.problems.length) {
+    if (checked.url) {
       baseUrl = checked.url.href.endsWith("/") ? checked.url.href : checked.url.href + "/";
       const source = baseUrl + SOURCE_PAGE;
       if (source.length > LIMITS.sourceLocation) problems.push("baseUrl is too long: " + source + " is " + source.length + " characters, and the manifest's SourceLocation allows " + LIMITS.sourceLocation);
@@ -256,7 +272,7 @@ function validateConfig(raw, options) {
   if (has("supportUrl")) {
     const checked = urlProblems("supportUrl", config.supportUrl, dev, false);
     problems.push(...checked.problems);
-    if (checked.url && !checked.problems.length) {
+    if (checked.url) {
       supportUrl = checked.url.href;
       if (supportUrl.length > LIMITS.url) problems.push("supportUrl is " + supportUrl.length + " characters long; the manifest's URLs hold at most " + LIMITS.url);
     }
@@ -469,6 +485,23 @@ function packageArguments(args) {
   return options;
 }
 
+/**
+ * The plain build's command line: --out DIR and nothing else, so a near miss such as
+ * --package=extle.config.json or --pakage is refused rather than building the plain files.
+ */
+function plainArguments(args) {
+  const options = { out: undefined };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--out") {
+      const next = args[++i];
+      if (next === undefined || next.startsWith("--")) throw new Error("--out needs a value");
+      options.out = next;
+    } else throw new Error("unknown argument " + JSON.stringify(arg) + "; the plain build takes --out DIR, and package mode --package FILE [--out DIR] [--dev]");
+  }
+  return options;
+}
+
 function packageMain(args) {
   try {
     const options = packageArguments(args);
@@ -491,14 +524,22 @@ if (require.main === module) {
   const args = process.argv.slice(2);
   if (args.includes("--package") || args.includes("--dev")) packageMain(args);
   else {
-    const at = args.indexOf("--out");
-    const result = build({ out: at >= 0 ? args[at + 1] : undefined });
-    console.log("built " + result.files.join(", ") + " in " + result.out + " (" + result.bytes + " bytes from " + result.modules.length + " modules)");
+    let options;
+    try {
+      options = plainArguments(args);
+    } catch (error) {
+      console.error("build.js: " + error.message);
+      process.exitCode = 1;
+    }
+    if (options) {
+      const result = build({ out: options.out });
+      console.log("built " + result.files.join(", ") + " in " + result.out + " (" + result.bytes + " bytes from " + result.modules.length + " modules)");
+    }
   }
 }
 
 module.exports = {
-  build, collect, bundle, inline, ROOT, ENTRY,
+  build, collect, bundle, inline, ROOT, ENTRY, plainArguments,
   buildPackage, validateConfig, readConfig, packageArguments, manifestFor, fillTemplate, escapeXml, iconPixels, iconPng, encodePng,
   NAME, DEFAULT_DESCRIPTION, PLACEHOLDER_IDS, LIMITS, ICON_SIZES, ICON_COLOUR, TEMPLATE,
 };

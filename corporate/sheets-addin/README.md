@@ -53,6 +53,10 @@ node build.js              # writes dist/sheets-core.js and apps-script/{sheets-
 node build.js --out /tmp/x # the same files under another folder
 ```
 
+Any other argument is refused with exit status 1 and nothing written, so a
+near miss of the package mode below (`--package=FILE`, `--pakage FILE`) does
+not build these files instead.
+
 The build reads `../core/sheets.js`, follows its relative `require` calls
 (`core/personal.js`, `core/phrase-miner.js`, `core/policy-pattern.js`,
 `core/sheets-usage.js` and the `core/metrics.js` it counts graphemes with, the personal edition's
@@ -517,7 +521,9 @@ Build the package, serve its `excel` folder over HTTPS, then sideload
 `excel/manifest.xml` on Windows, Mac or Excel on the web, or upload it in the
 Microsoft 365 admin center (**Integrated apps**) for the organisation:
 [INSTALL.md](INSTALL.md), sections 1 to 5. The manifest puts an **Open
-extle** button in an **extle** group on the Home tab; it opens the pane.
+extle** button in an **extle** group on the Home tab; it opens the pane. With
+a `displayName` in the configuration, the group and the button carry that
+name instead.
 
 The pane refreshes on every selection change and reads at most the first
 5,000 rows of the column (the selected cell's own row is left out); a longer
@@ -605,12 +611,16 @@ sizes they are declared as, every PNG's signature, IHDR, CRC-32 (computed by
 the test) and pixels, the same bytes from the same configuration twice,
 `taskpane.html`'s scripts and styles and `Sidebar.html`'s includes present,
 text such as `Birch & Co <"Ltd">` escaped and read back, each refusal (GUID,
-placeholder, `http`, `localhost` and the other addresses of this computer,
-version and its leading zeros, lengths, control characters, U+FFFE and U+FFFF,
-unknown and missing keys) with nothing written, the longest values allowed
-still within every length the manifest has, a rebuild that keeps and lists
-files it did not write, and the command line (a configuration file with a
-byte-order mark included). Its temporary folders are removed when a test
+each placeholder and any GUID the guide shows, `http`, `localhost` and the
+other addresses of this computer, a user name, a `?` or `#` even bare, a file
+named instead of its folder, version and its leading zeros, lengths, control
+characters, U+FFFE and U+FFFF, unknown keys and each missing key) with nothing
+written, every problem of one value listed together, the longest values
+allowed still within every length the manifest has, a rebuild that keeps and
+lists files it did not write (a dot file in `excel/` listed, clasp's in
+`apps-script/` not), and the command line (a configuration file with a
+byte-order mark included, and a plain build that refuses an argument it does
+not know). Its temporary folders are removed when a test
 ends, passed or failed.
 `corporate/test/sheets-usage.test.js` covers the
 usage model (names, caps, days, the merge, the longest text, the parser's refusals), and
