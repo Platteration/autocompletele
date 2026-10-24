@@ -275,7 +275,9 @@ test("the names people see come from one table: the tabs, their first lines, the
 });
 
 test("the simulator heads the filing walk-through and each app's with the name and what it covers", () => {
+  // execFileSync throws when the simulator exits non-zero, which it does when a walk-through fails.
   const lines = execFileSync(process.execPath, [path.join(__dirname, "..", "desktop", "simulate.js")], { encoding: "utf8" }).split("\n");
+  assert.deepEqual(lines.filter((line) => line.includes("FAILED")), [], "no walk-through failed");
   assert.ok(lines.includes(NAMES.filing.name + ": " + NAMES.filing.covers), "factle: document filing");
   assert.deepEqual(lines.filter((line) => line.endsWith(" (app)")), APP_IDS.map((id) => NAMES[id].name + ": " + NAMES[id].covers + " (app)"));
 });

@@ -243,7 +243,8 @@ managedDesk().then(() => {
   console.log(out.join("\n"));
   fs.rmSync(dataDir, { recursive: true, force: true });
   fs.rmSync(docsDir, { recursive: true, force: true });
-  process.exit(0);
+  // A walk-through that failed set exitCode above; keep it.
+  process.exit(process.exitCode || 0);
 }, (error) => {
   console.log(out.join("\n"));
   console.error(error);

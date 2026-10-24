@@ -171,6 +171,33 @@ test("report rolls up desk files, skips unreadable ones and writes CSV", () => {
   assert.equal(cli(["report", path.join(dir, "broken.json")]).code, 1, "no readable report is a failure");
 });
 
+test("report prints the suite apps' names for their items, and the CSV keeps the kind ids", () => {
+  const dir = temp();
+  const reportModule = require("../core/report.js");
+  const metrics = require("../core/metrics.js");
+  const { NAMES } = require("../desktop/apps/index.js");
+  const now = new Date(2026, 9, 20, 12).getTime();
+  const entry = (kind, trigger) => metrics.normalizeEntry({ at: now, kind, trigger, source: "organization", keystrokesSaved: 40 }, now);
+  const desk = reportModule.buildReport([entry("sheets", "/vat"), entry("reply", "late-delivery"), entry("filed", "invoice")], { now, installId: "a" });
+  fs.writeFileSync(path.join(dir, "a.json"), JSON.stringify(desk));
+  fs.writeFileSync(path.join(dir, "policy.json"), JSON.stringify({
+    sheets: { blocks: [{ trigger: "/vat", label: "VAT", formula: "=B2*0.19" }, { trigger: "/net", label: "Net", formula: "=B2/1.19" }] },
+    reply: { replies: [{ id: "late-delivery", label: "Late", body: "Sorry." }] },
+    filing: { rules: [{ id: "invoice", when: { keywords: ["invoice"] }, name: "[[date]]_invoice" }] },
+  }));
+  const csv = path.join(dir, "out.csv");
+  const result = cli(["report", path.join(dir, "a.json"), "--policy", path.join(dir, "policy.json"), "--csv", csv]);
+  assert.equal(result.code, 0, result.err);
+  for (const [app, trigger] of [["sheets", "/vat"], ["reply", "late-delivery"], ["filing", "invoice"]]) {
+    assert.match(result.out, new RegExp("^  " + NAMES[app].name + " " + trigger + " +1 inserts on 1 desk", "m"), app);
+  }
+  assert.match(result.out, new RegExp("never used: .*" + NAMES.sheets.name + " /net"));
+  assert.doesNotMatch(result.out, /^  (sheets|reply|filed) /m);
+  const rows = fs.readFileSync(csv, "utf8");
+  assert.match(rows, /^shortcut,sheets:\/vat,1,1,40,/m, "the CSV keeps the kind id");
+  assert.match(rows, /^unused,sheets:\/net,/m);
+});
+
 /** Run `body` in `dir` with HOME (and USERPROFILE) at `home`, restoring both however it ends. */
 function inFolder(dir, home, body) {
   const before = { cwd: process.cwd(), HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };

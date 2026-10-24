@@ -313,8 +313,10 @@ node admin/actle-admin.js report reports/*.json --policy org.json --rate 38 --cu
 ```
 
 prints desks, hours saved, estimated value, totals per team, organisation
-shortcuts by use and the ones nobody used (an extle vocabulary or trigger as
-`sheets <name>`; a vocabulary and a trigger with the same name share one line;
+shortcuts by use and the ones nobody used (a suite app's item under the app's
+name, e.g. an extle vocabulary or trigger as `extle <name>`, a mactle reply as
+`mactle <id>`; the CSV keeps the kind id, as `sheets:<name>`; a vocabulary and
+a trigger with the same name share one line;
 a name the add-in does not keep, longer than 40 characters or with a control
 character or a character outside the Basic Multilingual Plane, is never listed, since
 no use can carry it), and writes the same as CSV to a

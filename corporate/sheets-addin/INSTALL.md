@@ -296,8 +296,9 @@ There are two kinds of project:
   editor add-on as a standalone project, so use one to deploy to the domain
   ([Google](https://developers.google.com/workspace/add-ons/how-tos/building-editor-addons)).
 
-Then put the files of `package/apps-script/` into the project, by pasting or
-with clasp.
+Name the project **extle** (click its title, which reads "Untitled project"
+for a new one). Then put the files of `package/apps-script/` into the
+project, by pasting or with clasp.
 
 **Pasting**:
 
@@ -373,7 +374,9 @@ for the domain. From Google's pages
    fill in its **App Configuration**: visibility **Private** (Google says
    visibility cannot be changed later), the installation settings, the
    integration as a Sheets editor add-on with the script id and the version
-   number, and the two OAuth scopes below. Then the **Store Listing**, and
+   number, and the two OAuth scopes below. Give the add-on the name **extle**
+   in both the App Configuration and the **Store Listing**: a published
+   add-on's item under **Extensions** carries that name (section 7). Then
    publish. A third-party guide adds that the OAuth consent screen's audience
    should be **Internal**; that was not confirmed on Google's pages.
 4. An admin installs it for everyone or for chosen organisational units or

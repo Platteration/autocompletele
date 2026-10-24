@@ -1107,6 +1107,16 @@ test("while the document's configuration is in use a use is counted without a na
   assert.deepEqual(counters(pane)[2], ["completion", "vocabulary", "customers", 1, 16], "the organisation's again, with its name");
 });
 
+test("the Usage section says what extle counts and never counts", async () => {
+  const root = new Node("div");
+  const pane = Pane().createPane({ document, root, bridge: fakeHost(plain(CUSTOMER_CELL)).bridge, core: sheets, storage: storageOf(), now: TODAY });
+  await pane.start();
+  const usage = root.find((n) => n.tagName === "details" && n.className === "usage");
+  assert.ok(usage, "a Usage section");
+  assert.equal(usage.find((n) => n.tagName === "summary").textContent, "Usage");
+  assert.equal(usage.find((n) => n.className === "hint").textContent, "extle counts the completions and blocks it writes into cells: per day, how many and the keystrokes they saved, with the name of the organisation's vocabulary or trigger, when it has one. Never cell text, sheet or file names. Copy them for the desk to add them to your statistics there.");
+});
+
 test("counts continue from a stored text; a browser that cannot keep them, refuses to read them or fails a save is said, and counting goes on for the session", async () => {
   const earlier = sheets.usage.createUsage({ random: () => new Uint8Array(16).fill(0x11) });
   sheets.usage.record(earlier, { kind: "block", source: "formula", name: "/vat", inserted: "=1+1", typed: "/vat" }, "2026-10-20");

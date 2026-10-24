@@ -64,6 +64,11 @@ function simulate(sim, internals) {
   // main.js keeps one popover on screen; a new one closes the previous.
   let open = null;
   const unanswered = [];
+  // The summary reads the whole audit file, which may already hold warnings
+  // from earlier parts of the simulator, so this walk-through checks only
+  // what it adds.
+  const before = app.ipc["guard:summary"]().summary.total;
+  let raised = 0;
 
   function focus(context) {
     sim.focus(context);
@@ -84,6 +89,7 @@ function simulate(sim, internals) {
     const replaced = leftOpen();
     if (replaced.length) print("  a new warning replaces the window: " + replaced.join(", ") + " left unanswered");
     open = Object.assign({ kind: "app" }, action);
+    raised += open.hits.length;
     if (JSON.stringify(open).includes(CARD.slice(0, 9))) throw new Error("card digits reached the action");
     print("  popover (" + open.hits.length + " warning" + (open.hits.length === 1 ? "" : "s") + ", masked):");
     for (const hit of open.hits) {
@@ -148,7 +154,10 @@ function simulate(sim, internals) {
   print(`  Try it with an outside recipient -> ${tried.hits.map((hit) => hit.rule + " [" + hit.findings.map((f) => f.value).join(", ") + "]").join("; ") || "nothing"}`);
   const summary = app.ipc["guard:summary"]().summary;
   print(`  counts: ${summary.total.raised} raised, ${summary.total.accepted} fixed, ${summary.total.dismissed} dismissed, ${summary.total.unanswered} unanswered`);
-  if (summary.total.unanswered !== unanswered.length) throw new Error("unanswered: summary says " + summary.total.unanswered + ", the shell saw " + unanswered.length);
+  const added = (key) => summary.total[key] - before[key];
+  print(`  of these, this walk-through: ${added("raised")} raised, ${added("accepted")} fixed, ${added("dismissed")} dismissed, ${added("unanswered")} unanswered`);
+  if (added("raised") !== raised) throw new Error("raised: the summary added " + added("raised") + ", the shell saw " + raised);
+  if (added("unanswered") !== unanswered.length) throw new Error("unanswered: the summary added " + added("unanswered") + ", the shell saw " + unanswered.length);
   for (const row of summary.byRule) print(`    ${row.pack}/${row.rule}: raised ${row.raised}, fixed ${row.accepted}, dismissed ${row.dismissed}, unanswered ${row.unanswered}`);
   const auditFile = path.join(host.dataDir, "audit.jsonl");
   const audit = fs.existsSync(auditFile) ? fs.readFileSync(auditFile, "utf8") : "";

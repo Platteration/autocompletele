@@ -632,9 +632,10 @@ test("an imported extle use is an organisation item in the usage report and in a
   const code = admin.run(["report", path.join(files, "desk.json"), "--policy", path.join(files, "policy.json")], { stdout: (line) => out.push(line), stderr: () => {} });
   assert.equal(code, 0);
   const printed = out.join("\n");
-  assert.match(printed, /sheets customers\s+2 inserts on 1 desk\(s\)/);
-  assert.match(printed, /sheets \/vat\s+1 inserts on 1 desk\(s\)/);
-  assert.match(printed, /never used: .*sheets costCentres, sheets \/exp/);
+  // The printout names the app as people know it; the kind id stays "sheets" in the report data.
+  assert.match(printed, /^  extle customers\s+2 inserts on 1 desk\(s\)/m);
+  assert.match(printed, /^  extle \/vat\s+1 inserts on 1 desk\(s\)/m);
+  assert.match(printed, /never used: .*extle costCentres, extle \/exp/);
   assert.match(printed, /personal shortcuts \(not itemised\): 2 inserts/);
   assert.equal(printed.includes("regions"), false, "a name the policy does not define is not itemised");
   for (const dir of [dataDir, files]) fs.rmSync(dir, { recursive: true, force: true });

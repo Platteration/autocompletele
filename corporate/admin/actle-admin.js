@@ -27,6 +27,13 @@ const filer = require("../core/filer.js");
 // The suite apps' names; the policy keeps the section keys (desktop/apps/index.js loads no app at require time).
 const { NAMES } = require("../desktop/apps/index.js");
 
+// A report's metric kinds are internal ids; the printout names the suite's
+// apps as people know them (the CSV keeps the ids).
+const KIND_APPS = Object.freeze({ reply: "reply", sheets: "sheets", form: "forms", guard: "guard", notes: "notes", filed: "filing" });
+function kindLabel(kind) {
+  return Object.hasOwn(KIND_APPS, kind) ? NAMES[KIND_APPS[kind]].name : kind;
+}
+
 const USAGE = `actle Corporate admin tool
 
   keygen <dir>                    create policy-signing.key (keep secret) and policy-signing.pub
@@ -326,8 +333,8 @@ function run(argv, io) {
         if (merged.byTeam.length) out("\nby team");
         for (const t of merged.byTeam) out("  " + t.team.padEnd(20) + String(t.desks).padStart(4) + " desks " + hours(t.secondsSaved).padStart(10));
         if (merged.byShortcut.length) out("\norganisation shortcuts by use");
-        for (const s of merged.byShortcut) out("  " + (s.kind + " " + s.trigger).padEnd(30) + String(s.inserts).padStart(6) + " inserts on " + s.desks + " desk(s)");
-        if (merged.unused.length) out("\nnever used: " + merged.unused.map((s) => (s.kind ? s.kind + " " : "") + s.trigger).join(", "));
+        for (const s of merged.byShortcut) out("  " + (kindLabel(s.kind) + " " + s.trigger).padEnd(30) + String(s.inserts).padStart(6) + " inserts on " + s.desks + " desk(s)");
+        if (merged.unused.length) out("\nnever used: " + merged.unused.map((s) => (s.kind ? kindLabel(s.kind) + " " : "") + s.trigger).join(", "));
         const csvFile = one(args.flags, "csv");
         if (csvFile) {
           writeNew(csvFile, report.toCsv(merged));

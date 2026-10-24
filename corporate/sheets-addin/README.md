@@ -262,7 +262,9 @@ cell text ("Only values from the "costCentres" list.") and:
   - Google: `SpreadsheetApp.newDataValidation().requireValueInList(values,
     true).setAllowInvalid(false)` set with `setDataValidation` on rows 2 to the
     sheet's last row as it is when the rule is set (`getMaxRows()`). A sheet
-    with no row below the header is refused.
+    with no row below the header is refused. The rule carries no message of
+    extle's, so a refused value gets Google's own rejection text, not the
+    "Only values from ..." line Excel shows.
 - **Remove list validation** clears every data validation rule on the same
   range, not only one set here, after a confirmation that says so.
 - When the configuration in use is the document's own, the questions for a
